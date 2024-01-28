@@ -181,7 +181,7 @@ function Curve.rasterize(curve_points)
             elseif math.abs(dp23.y) == 1 then
                 elongation_axis = "x"
             else
-                game.print("Not supposed to happen")
+                game.print("Bezierio W: Something that is not supposed to happen, happened.")
                 goto continue
             end
             local elongation = math.abs(dp23[elongation_axis])
@@ -201,16 +201,19 @@ function Curve.rasterize(curve_points)
     return rounded_curve_points
 end
 
-function Curve.BuildCurve(entity_from, rasterized_points, thickness)
+function Curve.BuildCurve(entity_from, rasterized_points)
     local p1, p2
     local dp, p0
     local blueprint_inventory
+    local thickness = entity_from.build_params.thickness
+    local buildable = entity_from.build_params.buildable
+    
     for _, connector in pairs(entity_from.connectors) do
         if connector.name == "curve-projector-controller" then
             blueprint_inventory = connector.get_inventory(defines.inventory.chest)
         end
     end
-
+    
     local start = -(math.floor((thickness - 1) / 2))
     local stop = (math.floor(thickness / 2))
 
@@ -218,19 +221,23 @@ function Curve.BuildCurve(entity_from, rasterized_points, thickness)
         blueprint_inventory[1].clear_blueprint()
         local blueprint_entity_array = {}
 
-
         local entity_number = 0
-
         for i = start, stop do
             table.insert(blueprint_entity_array, {
-                name = "stone-wall",
+                name = buildable,
                 entity_number = entity_number,
                 position = { 0, i },
             })
             entity_number = entity_number + 1
         end
 
-        blueprint_inventory[1].set_blueprint_entities(blueprint_entity_array)
+        local success, _ = pcall(blueprint_inventory[1].set_blueprint_entities, blueprint_entity_array)
+        if not success then
+            success, _ = pcall(blueprint_inventory[1].set_blueprint_tiles, blueprint_entity_array)
+        end
+        if not success then
+            game.print(string.format("Warning: Bezierio: Entity/tile [%s] is invalid for placement.", buildable))
+        end
     end
 
     if blueprint_inventory[2] then
@@ -244,7 +251,7 @@ function Curve.BuildCurve(entity_from, rasterized_points, thickness)
                 if i * j >= 0 then
                     if start-1 <= i+j and i+j <= stop+1 then
                         table.insert(blueprint_entity_array, {
-                            name = "stone-wall",
+                            name = buildable,
                             entity_number = entity_number,
                             position = { i, j },
                         })
@@ -254,7 +261,10 @@ function Curve.BuildCurve(entity_from, rasterized_points, thickness)
             end
         end
 
-        blueprint_inventory[2].set_blueprint_entities(blueprint_entity_array)
+        local success, _ = pcall(blueprint_inventory[2].set_blueprint_entities, blueprint_entity_array)
+        if not success then
+            pcall(blueprint_inventory[2].set_blueprint_tiles, blueprint_entity_array)
+        end
     end
 
     for i = 1, #rasterized_points - 1 do

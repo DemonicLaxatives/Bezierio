@@ -1,9 +1,9 @@
 {
   "name": "Bezierio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "title": "Bézierio",
   "author": "DemonicLaxatives",
   "factorio_version": "1.1",
   "dependencies": ["base >= 1.1", "stdlib"],
-  "description": "Build walls along a curve."
+  "description": "Build entities and tiles along a curve."
 }

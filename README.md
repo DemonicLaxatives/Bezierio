@@ -19,11 +19,19 @@ Build defenses with curve projector.
 # How to:
 1. Research the curve projector
 2. Place it
-3. Connect a green wires to the connectors on either side of the projector, they are looking for X, Y, U, V signals. X,Y signify the position of the control point, U, V signify the control vector at that point.
-4. Connect a green wire to the connector in the middle of the projector, send it signal D to **D**raw the curve, send sit signal B to **B**uild the wall, and signal T to set the **T**hickness.
-5. Gaze at your beutiful curvy walls.
+3. Connect signal wires to the connectors on either side of the projector, they need X, Y, U, V signals. X,Y signify the position of the control point, U, V signify the control vector at that point.
+4. Connect a signal wire to the connector in the middle of the projector, send it signal 
+    - D to **D**raw the curve,
+    - signal B to **B**uild it
+    - signal T to set the **T**hickness (default is 1) 
+    - and a signal of *most placable item like tiles or entites to set what to build, walls by default, it will pick a **valid signal with the highest signal value.
+5. Gaze at the beutiful curves (squinting advised).
 
+\* Some items like rails and hazard concrete will not work.
 
+\*\* It will fail with aformentioned items and raise a warning.
+
+------------
 This is an early release of the mod, I'm only releasing it now to see if there would be any interest for something like this.
 
-There other features planned for the future, but right now it has only one. Feel free to share your thoughts and crashlogs on the modpage.
+There other features planned for the future, but right now it has only one. Feel free to share your thoughts and crashlogs on the modpage or github.

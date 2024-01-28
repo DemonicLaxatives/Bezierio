@@ -3,6 +3,7 @@ util = require "scripts.util"
 
 local Event = require('__stdlib__/stdlib/event/event')
 local Table = require('__stdlib__/stdlib/utils/table')
+local Math = require('__stdlib__/stdlib/utils/math')
 
 local to_vector = math2d.position.ensure_xy
 local add = math2d.position.add
@@ -73,6 +74,7 @@ function Bezierio.on_entity_created(event)
       build_params = {
         build = false,
         thickness = 1,
+        buildable = "stone-wall",
       },
 
       curve_params = {
@@ -151,9 +153,11 @@ Event.register(defines.events.on_player_mined_entity, Bezierio.on_entity_removed
 Event.register(defines.events.script_raised_destroy, Bezierio.on_entity_removed)
 
 function make_signal_table(signals)
-  local result = {}
+  local result = {item = {}, virtual = {}, fluid = {}}
   for _, signal in pairs(signals) do
-    result[signal.signal.name] = signal.count
+    local type = signal.signal.type
+    local name = signal.signal.name
+    result[type][name] = signal.count
   end
   return result
 end
@@ -166,73 +170,81 @@ function Bezierio.keep_inputs_updated()
       else
         for slot, connector in pairs(curve_projector.connectors) do
           curve_projector.connector_activity[slot] = false
-          
-          local circuit_network = connector.get_circuit_network(defines.wire_type.green)
-          if circuit_network then
-            local signals = circuit_network.signals
 
-            if signals then
-              curve_projector.connector_activity[slot] = true
-              signals = make_signal_table(signals)
-              if slot == "connector_1" then
-                local values = {
-                  p1 = {signals["signal-X"] or 0, signals["signal-Y"] or 0},
-                  v1 = {signals["signal-U"] or 0, signals["signal-V"] or 0}}
+          local signals = connector.get_merged_signals()
+          if signals then
+            curve_projector.connector_activity[slot] = true
+            signals = make_signal_table(signals)
+            local virtual = signals["virtual"]
+            local items = signals["item"]
+            local values = {}
 
-                for key, value in pairs(values) do
-                  if curve_projector.curve_params[key] then
-                    if util.is_equal(curve_projector.curve_params[key], value) then
-                      goto continue_1
+            if slot == "controller" then
+              curve_projector.draw =  (virtual["signal-D"]  or 0) ~= 0
+              values.build = (virtual["signal-B"]  or 0) ~= 0
+              values.thickness = virtual["signal-T"] or 1
+              local buildable = curve_projector.build_params.buildable
+              local max_count = items[buildable] or -Math.MAXINT
+
+              for item, count in pairs(items) do
+                local item_prototype = game.item_prototypes[item]
+                local place_result = item_prototype.place_result or item_prototype.place_as_tile_result
+                if place_result then
+                  if count > max_count then
+                    max_count = count
+                    if item ~= buildable then
+                      buildable = item
+                      curve_projector.build_params.buildable = buildable
+                      curve_projector.build_params_changed = true
                     end
                   end
-
-                  curve_projector.curve_params[key] = value
-                  curve_projector.curve_params_changed = true
-                  curve_projector.redraw = true
-                  curve_projector.build_params_changed = true
-                  ::continue_1::
                 end
-              elseif slot == "connector_2" then
-
-                local values = {
-                  p2 = {signals["signal-X"] or 0, signals["signal-Y"] or 0},
-                  v2 = {signals["signal-U"] or 0, signals["signal-V"] or 0}}
-
-                for key, value in pairs(values) do
-                  if curve_projector.curve_params[key] then
-                    if util.is_equal(curve_projector.curve_params[key], value) then
-                      goto continue_2
-                    end
-                  end
-
-                  curve_projector.curve_params[key] = value
-                  curve_projector.curve_params_changed = true
-                  curve_projector.redraw = true
-                  curve_projector.build_params_changed = true
-                  ::continue_2::
-                end
-
-              elseif slot == "controller" then
-                curve_projector.draw =  (signals["signal-D"]  or 0) ~= 0
-                local values = {
-                  build = (signals["signal-B"]  or 0) ~= 0,
-                  thickness = signals["signal-T"] or 1,
-                }
-                
-                for key, value in pairs(values) do
-                  if curve_projector.build_params[key] then
-                    if curve_projector.build_params[key] == value then
-                      goto continue_c
-                    end
-                  end
-                  curve_projector.build_params[key] = value
-                  curve_projector.build_params_changed = true
-                  ::continue_c::
-                end
-
+              end
+              
+              if max_count == -Math.MAXINT and (curve_projector.build_params.buildable ~= "stone-wall") then
+                curve_projector.build_params.buildable = "stone-wall"
+                curve_projector.build_params_changed = true
               end
 
+              for key, value in pairs(values) do
+                if curve_projector.build_params[key] then
+                  if curve_projector.build_params[key] == value then
+                    goto continue
+                  end
+                end
+
+                curve_projector.build_params[key] = value
+                curve_projector.build_params_changed = true
+                curve_projector.redraw = true
+                ::continue::
+              end
             end
+        
+            if slot == "connector_1" then
+              values.p1 = {virtual["signal-X"] or 0, virtual["signal-Y"] or 0}
+              values.v1 = {virtual["signal-U"] or 0, virtual["signal-V"] or 0}
+
+            elseif slot == "connector_2" then
+              values.p2 = {virtual["signal-X"] or 0, virtual["signal-Y"] or 0}
+              values.v2 = {virtual["signal-U"] or 0, virtual["signal-V"] or 0}
+            end
+
+            if slot ~= "controller" then
+              for key, value in pairs(values) do
+                if curve_projector.curve_params[key] then
+                  if util.is_equal(curve_projector.curve_params[key], value) then
+                    goto continue
+                  end
+                end
+
+                curve_projector.curve_params[key] = value
+                curve_projector.build_params_changed = true
+                curve_projector.curve_params_changed = true
+                curve_projector.redraw = true
+                ::continue::
+              end
+            end
+
           end
         end
       end
@@ -253,7 +265,7 @@ function Bezierio.on_60th_tick()
         local p2 = curve_projector.curve_params.p2
         local v1 = curve_projector.curve_params.v1
         local v2 = curve_projector.curve_params.v2
-
+        
         if connector_activity and curve_projector.curve_params_changed then
           curve_projector.curve = Curve.CalculateBezierCurve(p1, p2, v1, v2)
           curve_projector.curve_params_changed = false
@@ -285,7 +297,7 @@ function Bezierio.on_60th_tick()
 
         if build_bool then
           local curve = Table.deep_copy(curve_projector.curve)
-          Curve.BuildCurve(curve_projector, Curve.rasterize(curve), curve_projector.build_params.thickness)
+          Curve.BuildCurve(curve_projector, Curve.rasterize(curve))
           curve_projector.build_params_changed = false
         end
 
