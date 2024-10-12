@@ -2,17 +2,17 @@
 A factorio mod for building parametrically defined defenses.
 
 
-![Build small](https://github.com/DemonicLaxatives/Bezierio/blob/main/Bezierio/graphics/modpage/small-forest-wall.png)
+![Build small](https://github.com/DemonicLaxatives/Bezierio/blob/main/graphics/modpage/small-forest-wall.png)
 
 Build small.
 
 
-![Build big](https://github.com/DemonicLaxatives/Bezierio/blob/main/Bezierio/graphics/modpage/big-editor-wall.png)
+![Build big](https://github.com/DemonicLaxatives/Bezierio/blob/main/graphics/modpage/big-editor-wall.png)
 
 Build big.
 
 
-![Build with this](https://github.com/DemonicLaxatives/Bezierio/blob/main/Bezierio/graphics/modpage/curve-projector.png)
+![Build with this](https://github.com/DemonicLaxatives/Bezierio/blob/main/graphics/modpage/curve-projector.png)
 
 Build defenses with curve projector.
 
