@@ -34,10 +34,10 @@ script.on_configuration_changed(function()
         {filter = "place-as-tile", elem_filters = tile_filter},
     }
 
-    global.item_filter = {{filter = "name", name = {}}}
-    local items = game.get_filtered_item_prototypes(item_filter)
+    storage.item_filter = {{filter = "name", name = {}}}
+            local items = prototypes.get_item_filtered(item_filter)
     for name, _ in pairs(items) do
-        table.insert(global.item_filter[1].name, name)
+        table.insert(storage.item_filter[1].name, name)
     end
 
 end)

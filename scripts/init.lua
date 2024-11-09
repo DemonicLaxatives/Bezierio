@@ -2,6 +2,7 @@ local util = require('__core__/lualib/util')
 local calc = require('scripts.calc')
 local draw = require('scripts.draw')
 local build = require('scripts.builder')
+local mod_gui = require("mod-gui")
 
 --- @class InterfaceState
 --- @field draw_curve boolean
@@ -18,15 +19,15 @@ local build = require('scripts.builder')
 --- @field curve BezierCurve|nil
 
 --- @class SpriteCache
---- @field curve integer[]
---- @field p1 integer[]
---- @field p2 integer[]
---- @field v1 integer[]
---- @field v2 integer[]
+--- @field curve LuaRenderObject[]
+--- @field p1 LuaRenderObject[]
+--- @field p2 LuaRenderObject[]
+--- @field v1 LuaRenderObject[]
+--- @field v2 LuaRenderObject[]
 
 local function initilize_global(player)
     if not player then return end 
-    if not global.controllers[player.index] then
+    if not storage.controllers[player.index] then
         --- @type ControlPoints
         local control_points = {}
 
@@ -48,10 +49,10 @@ local function initilize_global(player)
             curve = nil,
         }
 
-        global.controllers[player.index] = controller
+        storage.controllers[player.index] = controller
     end 
-    if not global.sprites[player.index] then
-        global.sprites[player.index] = {
+    if not storage.sprites[player.index] then
+        storage.sprites[player.index] = {
             curve = {},
             p1 = {},
             p2 = {},
@@ -63,17 +64,16 @@ end
 
 local function create_button(player)
     if not player then return end
-    if player.gui.top.bezierio_button then return end
-    player.gui.top.add{
-        type = "frame",
-        name = "bezierio_frame",
-    }
-
-    player.gui.top.bezierio_frame.add{
-        type = "sprite-button",
-        name = "bezierio_button",
-        sprite = "utility/check_mark",
-    }
+    local button_flow = mod_gui.get_button_flow(player)
+    if not button_flow.railbow_button then
+        button_flow.add{
+            type = "sprite-button",
+            name = "bezierio_button",
+            sprite = "utility/check_mark",
+            tooltip = {"tooltips.bezierio-open-gui"},
+            style=mod_gui.button_style
+        }
+    end
 end
 
 --- @class EntityFilter
@@ -82,9 +82,9 @@ end
 
 script.on_init(function()
     --- @type table<integer, BezierioController>
-    global.controllers = {}
+    storage.controllers = {}
     --- @type table<integer, SpriteCache>
-    global.sprites = {}
+    storage.sprites = {}
 
     for _, player in pairs(game.players) do
         initilize_global(player)
@@ -92,9 +92,9 @@ script.on_init(function()
     end
     
     --- @type EntityFilter
-    -- global.entity_filter = {filter = "name", name = {}}
+    -- storage.entity_filter = {filter = "name", name = {}}
     --- @type EntityFilter
-    global.item_filter = {filter = "name", name = {}}
+    storage.item_filter = {filter = "name", name = {}}
 end)
 
 script.on_event(defines.events.on_player_created,
@@ -106,7 +106,7 @@ end)
 
 script.on_event(defines.events.on_player_removed,
 function(e)
-    global.controllers[e.player_index] = nil
+    storage.controllers[e.player_index] = nil
 end)
 
 script.on_event(defines.events.on_console_chat,
@@ -114,7 +114,7 @@ function (e)
     local player = game.get_player(e.player_index)
     if not player then return end
     if not player.gui.screen.bezierio_window then return end
-    local state = global.controllers[player.index].state
+    local state = storage.controllers[player.index].state
     if not state.active_control_point then return end
     
     local message = e.message

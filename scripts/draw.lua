@@ -9,19 +9,19 @@ local draw = {}
 --- @param key string|nil
 function draw.delete_sprites(player, key)
     if not key then
-        local sprite_cache = global.sprites[player.index]
+        local sprite_cache = storage.sprites[player.index]
         for key, elem in pairs(sprite_cache) do
             if elem then
-                for _, id in pairs(elem) do
-                    rendering.destroy(id)
+                for _, obj in pairs(elem) do
+                    obj.destroy()
                 end
             end
             sprite_cache[key] = {}
         end
     else
-        local sprite_cache = global.sprites[player.index][key]
-        for _, id in pairs(sprite_cache) do
-            rendering.destroy(id)
+        local sprite_cache = storage.sprites[player.index][key]
+        for _, obj in pairs(sprite_cache) do
+            obj.destroy()
         end
         sprite_cache = {}
     end
@@ -34,7 +34,7 @@ end
 --- @param append boolean|nil
 --- @param size integer|nil
 function draw.curve(player, points, color, width, append, size)
-    local sprites = global.sprites[player.index].curve
+    local sprites = storage.sprites[player.index].curve
     if not append then
         draw.delete_sprites(player, "curve")
         sprites = {}
@@ -83,12 +83,12 @@ function draw.curve(player, points, color, width, append, size)
         point_marker.target = point
         table.insert(sprites, rendering.draw_circle(point_marker))
     end
-    global.sprites[player.index].curve = sprites
+    storage.sprites[player.index].curve = sprites
 end
 
 function draw.vector(player, key)
-    local state = global.controllers[player.index].state
-    local sprites = global.sprites[player.index][key]
+    local state = storage.controllers[player.index].state
+    local sprites = storage.sprites[player.index][key]
     if sprites then
         draw.delete_sprites(player, key)
     end
@@ -136,7 +136,7 @@ function draw.vector(player, key)
     line.to = vect.add(p2, arrow_head_2)
     table.insert(sprites, rendering.draw_line(line))
 
-    global.sprites[player.index][key] = sprites
+    storage.sprites[player.index][key] = sprites
 end
 
 --- @param player LuaPlayer
@@ -144,13 +144,13 @@ function draw.point(player, key)
     if (not key == "p1") or (not key == "p2") then
         error("Invalid key")
     end
-    local state = global.controllers[player.index].state
+    local state = storage.controllers[player.index].state
     -- local control_points = util.table.deepcopy(state.control_points)
     local control_points = state.control_points
     local point = control_points[key]
 
     if not point then return end
-    local sprites = global.sprites[player.index][key]
+    local sprites = storage.sprites[player.index][key]
     if sprites then
         draw.delete_sprites(player, key)
     end
@@ -175,7 +175,7 @@ function draw.point(player, key)
 
     circle.target = point
     sprites = {rendering.draw_circle(circle),}
-    global.sprites[player.index][key] = sprites
+    storage.sprites[player.index][key] = sprites
 end
 
 --- @param player LuaPlayer
@@ -189,8 +189,8 @@ end
 
 script.on_nth_tick(5, function()
     for _, player in pairs(game.players) do
-        if not global.controllers[player.index] then return end
-        local state = global.controllers[player.index].state
+        if not storage.controllers[player.index] then return end
+        local state = storage.controllers[player.index].state
         if state.draw_curve then
             if not state.parameters_changed then return end
 

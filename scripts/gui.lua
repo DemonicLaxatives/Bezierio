@@ -30,7 +30,7 @@ local function add_title_bar(frame)
     title_bar.add{
         type = "sprite-button",
         name = "bezierio_close_button",
-        sprite = "utility/close_white",
+        sprite = "utility/close",
         style = "frame_action_button",
         mouse_button_filter = {"left"}
     }
@@ -39,7 +39,7 @@ end
 --- @param frame LuaGuiElement
 local function add_slider_flow(frame)
     local player_index = frame.player_index
-    local state = global.controllers[player_index].state
+    local state = storage.controllers[player_index].state
 
     local flow = frame.add{
         type = "flow",
@@ -52,7 +52,7 @@ local function add_slider_flow(frame)
         name = "buildable",
         elem_type = "item",
         item = state.buildable,
-        elem_filters = global.item_filter,
+        elem_filters = storage.item_filter,
     }
 
     flow.add{
@@ -90,7 +90,7 @@ end
 --- @param frame LuaGuiElement
 local function add_control_point_buttons(frame)
     local player_index = frame.player_index
-    local state = global.controllers[player_index].state
+    local state = storage.controllers[player_index].state
 
     local flow = frame.add{
         type = "flow",
@@ -130,7 +130,7 @@ end
 --- @param frame LuaGuiElement
 local function add_controls(frame)
     local player_index = frame.player_index
-    local state = global.controllers[player_index].state
+    local state = storage.controllers[player_index].state
 
     frame.add{
         type = "button",
@@ -168,7 +168,7 @@ end
 
 local function close_main_window(player)
     if player.gui.screen.bezierio_window then
-        global.controllers[player.index].state.active_control_point = nil
+        storage.controllers[player.index].state.active_control_point = nil
         player.gui.screen.bezierio_window.destroy()
     end
 end
@@ -179,7 +179,7 @@ local function active_control_point_changed(e)
     if not player then return end
     local flow = player.gui.screen.bezierio_window.main.button_flow
 
-    local state = global.controllers[e.player_index].state
+    local state = storage.controllers[e.player_index].state
     local previous_control_point = state.active_control_point
 
     --- untoggle the previous control point
@@ -219,7 +219,7 @@ function (e)
     elseif element.name == "bezierio_close_button" then
         close_main_window(player)
     elseif element.name == "draw_curve" then
-        state = global.controllers[player.index].state
+        state = storage.controllers[player.index].state
         state.draw_curve = element.toggled
         if not element.toggled then
             state.parameters_changed = true
@@ -234,7 +234,7 @@ function (e)
     local player = game.get_player(e.player_index)
     if not player then return end
     local element = e.element
-    local state = global.controllers[player.index].state
+    local state = storage.controllers[player.index].state
     if element.name == "build_thickness" then
         state.build_thickness = element.slider_value
     elseif element.name == "build_spacing" then
