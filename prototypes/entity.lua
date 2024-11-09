@@ -33,16 +33,10 @@ curve_projector_p2 = table.deepcopy(curve_projector_p1)
 curve_projector_p1.name = "curve-projector-p1"
 curve_projector_p2.name = "curve-projector-p2"
 
-controller = table.deepcopy(connector)
-controller.name = "curve-projector-controller"
-controller.collision_box = {{-0.8, -0.4},{0.8, 0.4}}
-controller.selection_box = {{-0.8, -0.4},{0.8, 0.4}}
-controller.inventory_size = 2
 
 data:extend{
     curve_projector_p1,
     curve_projector_p2,
-    controller,
     {
       type = "container",
       name = "curve-projector",
@@ -51,15 +45,14 @@ data:extend{
       flags = {"placeable-neutral", "placeable-player", "player-creation", "no-automated-item-removal", "no-automated-item-insertion"},
       minable = {mining_time = 0.2, result = "curve-projector"},
       max_health = 250,
-      collision_box = {{-1.8, -0.4}, {1.8, 0.4}},
-      selection_box = {{-2, -0.5}, {2, 0.5}},
+      collision_box = {{-1.3, -0.4}, {1.3, 0.4}},
+      selection_box = {{-1.5, -0.5}, {1.5, 0.5}},
       vehicle_impact_sound = { filename = "__base__/sound/car-metal-impact.ogg", volume = 0.65 },
       inventory_size = 0,
       picture = {filename = "__Bezierio__/graphics/entity/curve-projector.png",
       priority = "extra-high",
       width = 128,
       height = 32},
-
       selection_priority = 0,
     },
 

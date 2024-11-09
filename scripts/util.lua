@@ -1,72 +1,117 @@
-local Table = require('__stdlib__/stdlib/utils/table')
+math2d = require("__core__.lualib.math2d")
+util = require("__core__.lualib.util")
 
-local util = {}
-util.rotation_matrix_90 =  {{0, -1}, {1, 0}}
+local lib = {}
+--- @class Vector
+--- @field public x number
+--- @field public y number
 
-local to_vector = math2d.position.ensure_xy
-local add = math2d.position.add
-local sub = math2d.position.subtract
-local scale = math2d.position.multiply_scalar
-local norm = math2d.position.vector_length
-
-function util.matmul(m1, m2)
-  local mtx = {}
-
-  for i = 1,#m1 do
-    mtx[i] = {}
-    for j = 1,#m2[1] do
-      local num = m1[i][1] * m2[1][j]
-      for n = 2,#m1[1] do
-        num = num + m1[i][n] * m2[n][j]
-      end
-      mtx[i][j] = num
-    end
-  end
-
-  return mtx
+function math.sign(x)
+  return x > 0 and 1 or x < 0 and -1 or 0
 end
 
-function util.mat_dot_vect(mat, vector)
+lib.rotation_matrix_90 =  {{0, -1}, {1, 0}}
 
-  if not mat then return vector end
-
-  local vect = {}
-  
-  for i, elem_i in pairs(vector) do
-      local num = mat[1][i]*elem_i
-      for j = 2,#mat do
-          num = num + elem_i * mat[j][i]
-      end
-      vect[i] = num
-  end
-
-  return vect
+--- @param num number
+--- @return integer
+function lib.num_round(num)
+  -- if num >= 0 then
+      return math.floor(num + 0.5)
+  -- else
+      -- return math.ceil(num - 0.5)
+  -- end
 end
 
-function util.cardinal_direction_to_transform(direction)
-  direction = direction / 2
-
-  if direction == 0 then
-      return nil
-  end
-
-  local transform = Table.deep_copy(util.rotation_matrix_90)
-
-  for i = 1, direction do
-    transform = util.matmul(util.rotation_matrix_90, transform)
-  end
-
-  return transform
+--- @param vector Vector
+--- @return Vector
+function lib.round(vector)
+  return {x = lib.num_round(vector.x), y = lib.num_round(vector.y)}
 end
 
-function util.is_equal(vec1, vec2)
-  if xor(not vec1, not vec2) then
-    return false
-  end
-  vec1 = math2d.position.ensure_xy(vec1)
-  vec2 = math2d.position.ensure_xy(vec2)
-
-  return (vec1.x == vec2.x) and (vec1.y == vec2.y)
+--- @param vector number[]
+--- @return Vector
+function lib.to_vector(vector)
+  return math2d.position.ensure_xy(vector)
 end
 
-return util
+--- @param v1 Vector
+--- @param v2 Vector
+--- @return Vector
+function lib.add(v1, v2)
+  return math2d.position.add(v1, v2)
+end
+
+--- @param v1 Vector
+--- @param v2 Vector
+--- @return Vector
+function lib.sub(v1, v2)
+  return math2d.position.subtract(v1, v2)
+end
+
+--- @param vector Vector
+--- @param scalar number
+--- @return Vector
+function lib.scale(vector, scalar)
+  return math2d.position.multiply_scalar(vector, scalar)
+end
+
+--- @param vector Vector
+--- @return number
+function lib.norm(vector)
+  return math2d.position.vector_length(vector)
+end
+
+--- @param vector Vector
+--- @return Vector
+function lib.normalize(vector)
+  return lib.scale(vector, 1 / lib.norm(vector))
+end
+
+--- @param vector1 Vector
+--- @param vector2 Vector
+--- @return number
+function lib.cross(vector1, vector2)
+  return vector1.x * vector2.y - vector1.y * vector2.x
+end
+
+--- @param vector1 Vector
+--- @param vector2 Vector
+--- @return number
+function lib.dot(vector1, vector2)
+  return vector1.x * vector2.x + vector1.y * vector2.y
+end
+
+--- @param vector Vector
+--- @param angle_in_deg number
+--- @return Vector
+function lib.rotate_vector(vector, angle_in_deg)
+  return math2d.position.rotate_vector(vector, angle_in_deg)
+end
+
+--- @param vector Vector
+--- @return Vector
+function lib.abs(vector)
+  return {x = math.abs(vector.x), y = math.abs(vector.y)}
+end
+
+--- @param vector Vector
+--- @param num number
+--- @return boolean
+function lib.all_gt(vector, num)
+  return vector.x > num and vector.y > num
+end
+
+--- @param vector Vector
+--- @return boolean
+function lib.any_zero(vector)
+  return vector.x == 0 or vector.y == 0
+end
+
+--- @param vector Vector
+--- @return Vector
+function lib.sign(vector)
+  return {x = math.sign(vector.x), y = math.sign(vector.y)}
+end
+
+return lib
+
