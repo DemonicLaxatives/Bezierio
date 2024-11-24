@@ -4,14 +4,19 @@ local draw = require('scripts.draw')
 local build = require('scripts.builder')
 local mod_gui = require("mod-gui")
 
+--- @class QualityItem
+--- @field name string
+--- @field quality string
+
 --- @class InterfaceState
 --- @field draw_curve boolean
---- @field buildable string|nil
+--- @field buildable QualityItem|nil
 --- @field build_thickness integer
 --- @field build_spacing integer
---- @field control_vector_strengh [number, number]
---- @field control_points ControlPoints
---- @field active_control_point string|nil
+--- @field degree integer
+--- @field raw_control_points table<integer, Vector|nil>
+--- @field control_points table<integer, Vector>
+--- @field active_control_point integer|nil
 --- @field parameters_changed boolean
 
 --- @class BezierioController
@@ -20,16 +25,11 @@ local mod_gui = require("mod-gui")
 
 --- @class SpriteCache
 --- @field curve LuaRenderObject[]
---- @field p1 LuaRenderObject[]
---- @field p2 LuaRenderObject[]
---- @field v1 LuaRenderObject[]
---- @field v2 LuaRenderObject[]
+--- @field control_points LuaRenderObject[]
 
 local function initilize_global(player)
     if not player then return end 
     if not storage.controllers[player.index] then
-        --- @type ControlPoints
-        local control_points = {}
 
         --- @type InterfaceState
         local InterfaceState = {
@@ -37,8 +37,9 @@ local function initilize_global(player)
             buildable = nil,
             build_thickness = 1,
             build_spacing = 1,
-            control_vector_strengh = {100, 100},
-            control_points = control_points,
+            degree = 2,
+            raw_control_points = {},
+            control_points = {},
             active_control_point = nil,
             parameters_changed = false,
         }
@@ -54,10 +55,7 @@ local function initilize_global(player)
     if not storage.sprites[player.index] then
         storage.sprites[player.index] = {
             curve = {},
-            p1 = {},
-            p2 = {},
-            v1 = {},
-            v2 = {},
+            control_points = {},
         }
     end
 end
@@ -90,9 +88,7 @@ script.on_init(function()
         initilize_global(player)
         create_button(player)
     end
-    
-    --- @type EntityFilter
-    -- storage.entity_filter = {filter = "name", name = {}}
+
     --- @type EntityFilter
     storage.item_filter = {filter = "name", name = {}}
 end)
@@ -124,8 +120,7 @@ function (e)
     y = tonumber(y)
     local position = {x = x, y = y}
 
-    state.control_points[state.active_control_point] = position
-    draw.control_point(player, state.active_control_point)
+    state.raw_control_points[state.active_control_point] = position
 
     state.parameters_changed = true
 end)

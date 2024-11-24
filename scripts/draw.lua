@@ -1,6 +1,5 @@
 local vect = require("scripts/util")
 local calc = require("scripts/calc")
-local util = require("__core__/lualib/util")
 
 local draw = {}
 
@@ -86,105 +85,76 @@ function draw.curve(player, points, color, width, append, size)
     storage.sprites[player.index].curve = sprites
 end
 
-function draw.vector(player, key)
-    local state = storage.controllers[player.index].state
-    local sprites = storage.sprites[player.index][key]
-    if sprites then
-        draw.delete_sprites(player, key)
-    end
-
-    if not state.draw_curve then return end
-
-    -- local control_points = util.table.deepcopy(state.control_points)
-    local control_points = state.control_points
-    local p1, p2
-    if key == "v1" then
-        p1 = control_points.p1
-        p2 = control_points.v1
-    elseif key == "v2" then
-        p1 = control_points.p2
-        p2 = control_points.v2
-    else
-        error("Invalid key")
-    end
-
-    if not p1 or not p2 then return end
-
-    local line = {
-        color = {r = 0.5, g = 0, b = 1},
-        width = 2,
-        gap_length = 0,
-        dash_length = 0,
-        players = {player},
-        surface = player.surface,
-        time_to_live = 60*60*5
-    }
-
-    line.from = p1
-    line.to = p2
-    table.insert(sprites, rendering.draw_line(line))
-    
-    local vector = vect.sub(p2, p1)
-    vector = vect.normalize(vector)
-    local arrow_head_1 = vect.rotate_vector(vector, 135)
-    local arrow_head_2 = vect.rotate_vector(vector, -135)
-
-    line.from = p2
-    line.to = vect.add(p2, arrow_head_1)
-    table.insert(sprites, rendering.draw_line(line))
-
-    line.to = vect.add(p2, arrow_head_2)
-    table.insert(sprites, rendering.draw_line(line))
-
-    storage.sprites[player.index][key] = sprites
-end
-
 --- @param player LuaPlayer
-function draw.point(player, key)
-    if (not key == "p1") or (not key == "p2") then
-        error("Invalid key")
-    end
+function draw.points(player)
+    
     local state = storage.controllers[player.index].state
-    -- local control_points = util.table.deepcopy(state.control_points)
-    local control_points = state.control_points
-    local point = control_points[key]
+    local control_points = state.raw_control_points
 
-    if not point then return end
-    local sprites = storage.sprites[player.index][key]
-    if sprites then
-        draw.delete_sprites(player, key)
-    end
-
-    if key == "p1" then
-        draw.vector(player, "v1")
-    elseif key == "p2" then
-        draw.vector(player, "v2")
-    end
+    local sprites = storage.sprites[player.index].control_points
 
     if not state.draw_curve then return end
 
     local circle = {}
     circle.color = { r = 0.5, g = 0, b = 0.2, a = 1 }
-    circle.radius = 1
-    circle.width = 5
+    circle.radius = 0.5
+    circle.width = 10
     circle.force = player.force
     circle.surface = player.surface
     circle.time_to_live = 60*60*5
     circle.visible = true
     circle.fill = false
 
-    circle.target = point
-    sprites = {rendering.draw_circle(circle),}
-    storage.sprites[player.index][key] = sprites
+    local point_label = {}
+    point_label.color = { r = 1, g = 1, b = 1, a = 1 }
+    point_label.scale = 3
+    point_label.force = player.force
+    point_label.surface = player.surface
+    point_label.time_to_live = 60*60*5
+    point_label.visible = true
+
+    for i, point in pairs(control_points) do
+        if point then
+            circle.target = point
+            table.insert(sprites, rendering.draw_circle(circle))
+            point_label.target = point
+            point_label.text = "P"..tostring(i)
+            table.insert(sprites, rendering.draw_text(point_label))
+        end
+    end
+    storage.sprites[player.index].control_points = sprites
 end
 
 --- @param player LuaPlayer
-function draw.control_point(player, key)
-    if key == "p1" or key == "p2" then
-        draw.point(player, key)
-    elseif key == "v1" or key == "v2" then
-        draw.vector(player, key)
+function draw.lines(player)
+    local state = storage.controllers[player.index].state
+    local control_points = calc.filter_control_points(state.raw_control_points)
+
+    local sprites = storage.sprites[player.index].control_points
+
+    if not state.draw_curve then return end
+
+    local line = {}
+    line.color = {r = 0.5, g = 0, b = 1}
+    line.width = 5
+    line.force = player.force
+    line.surface = player.surface
+    line.time_to_live = 60*60*5
+    line.visible = true
+
+    for i = 1, #control_points - 1 do
+        line.from = control_points[i]
+        line.to = control_points[i + 1]
+        table.insert(sprites, rendering.draw_line(line))
     end
+    storage.sprites[player.index].control_points = sprites
+end
+
+--- @param player LuaPlayer
+function draw.control_points(player)
+    draw.delete_sprites(player, "control_points")
+    draw.points(player)
+    draw.lines(player)
 end
 
 script.on_nth_tick(5, function()
@@ -193,19 +163,20 @@ script.on_nth_tick(5, function()
         local state = storage.controllers[player.index].state
         if state.draw_curve then
             if not state.parameters_changed then return end
-
-            local curve = calc.calculate_bezier_curve(state)
+            draw.control_points(player)
+            local curve = calc.generate_bezier_curve(state)
             if curve then
-                local curve_points = calc.get_curve_points(curve, 0.9, 1.414)
-                local raser_curve_points,_ = calc.rasterize(curve_points, state.build_spacing)
+                local curve_points = calc.get_curve_points(curve, 1.414)
+                local raser_curve_points, indices = calc.rasterize(curve_points, state.build_spacing)
+                local curve_points_ = {}
+                for _, i in pairs(indices) do
+                    table.insert(curve_points_, curve_points[i])
+                end
                 draw.curve(player, raser_curve_points, { r = 0.5, g = 0.1, b = 0.2, a = 0.7 }, 15, false, state.build_spacing)
-                draw.curve(player, curve_points, { r = 0.5, g = 0, b = 0.7, a = 1 }, 5, true)
-                draw.control_point(player, 'p1')
-                draw.control_point(player, 'p2')
+                draw.curve(player, curve_points_, { r = 0.5, g = 0, b = 0.7, a = 1 }, 5, true)
             else
                 draw.delete_sprites(player)
             end
-
             state.parameters_changed = false
         end
     end

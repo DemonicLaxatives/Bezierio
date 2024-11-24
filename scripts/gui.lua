@@ -29,7 +29,7 @@ local function add_title_bar(frame)
 
     title_bar.add{
         type = "sprite-button",
-        name = "bezierio_close_button",
+        name = "main_close_button",
         sprite = "utility/close",
         style = "frame_action_button",
         mouse_button_filter = {"left"}
@@ -50,8 +50,8 @@ local function add_slider_flow(frame)
     flow.add{
         type = "choose-elem-button",
         name = "buildable",
-        elem_type = "item",
-        item = state.buildable,
+        elem_type = "item-with-quality" ,
+        item_with_quality = state.buildable,
         elem_filters = storage.item_filter,
     }
 
@@ -71,20 +71,7 @@ local function add_slider_flow(frame)
         value = state.build_spacing
     }
 
-    flow.add{
-        type = "slider",
-        name = "control_vector_strengh_1",
-        minimum_value = 1,
-        maximum_value = 1000,
-        value = state.control_vector_strengh[1]
-    }
-    flow.add{
-        type = "slider",
-        name = "control_vector_strengh_2",
-        minimum_value = 1,
-        maximum_value = 1000,
-        value = state.control_vector_strengh[2]
-    }
+
 end
 
 --- @param frame LuaGuiElement
@@ -95,36 +82,21 @@ local function add_control_point_buttons(frame)
     local flow = frame.add{
         type = "flow",
         name = "button_flow",
-        direction = "vertical"
+        direction = "horizontal"
     }
 
-    flow.add{
-        type = "button",
-        name = "control_point_p1",
-        caption = {"button.p1"},
-        auto_toggle = true
-    }
-
-    flow.add{
-        type = "button",
-        name = "control_point_p2",
-        caption = {"button.p2"},
-        auto_toggle = true
-    }
-
-    flow.add{
-        type = "button",
-        name = "control_point_v1",
-        caption = {"button.v1"},
-        auto_toggle = true
-    }
-
-    flow.add{
-        type = "button",
-        name = "control_point_v2",
-        caption = {"button.v2"},
-        auto_toggle = true
-    }
+    for i = 1, 9 do
+        local button = flow.add{
+            type = "button",
+            name = "control_point_"..i,
+            caption = i,
+            auto_toggle = true,
+            style = "tool_button"
+        }
+        if state.active_control_point == i then
+            button.toggled = true
+        end
+    end
 end
 
 --- @param frame LuaGuiElement
@@ -190,6 +162,8 @@ local function active_control_point_changed(e)
     --- set the new active control point
     local element = e.element
     local control_point = element.name:match("control_point_(.*)")
+    control_point = tonumber(control_point)
+    if not control_point then return end
 
     if element.toggled then
         state.active_control_point = control_point
@@ -199,9 +173,9 @@ local function active_control_point_changed(e)
 
     --- if it was a right click, reset the control point
     if e.button == defines.mouse_button_type.right then
-        state.control_points[control_point] = nil
+        state.raw_control_points[control_point] = nil
         state.parameters_changed = true
-        draw.control_point(player, control_point)
+        draw.control_points(player)
     end
 end
 
@@ -210,19 +184,21 @@ function (e)
     local player = game.get_player(e.player_index)
     if not player then return end
     local element = e.element
+    if element.get_mod() ~= "Bezierio" then return end
     if element.name == "bezierio_button" then
         if player.gui.screen.bezierio_window then
             close_main_window(player)
         else
             open_main_window(player)
         end
-    elseif element.name == "bezierio_close_button" then
+    elseif element.name == "main_close_button" then
         close_main_window(player)
     elseif element.name == "draw_curve" then
         state = storage.controllers[player.index].state
         state.draw_curve = element.toggled
         if not element.toggled then
             state.parameters_changed = true
+            draw.delete_sprites(player)
         end
     elseif string.find(element.name, "control_point_") then
         active_control_point_changed(e)
@@ -234,6 +210,7 @@ function (e)
     local player = game.get_player(e.player_index)
     if not player then return end
     local element = e.element
+    if element.get_mod() ~= "Bezierio" then return end
     local state = storage.controllers[player.index].state
     if element.name == "build_thickness" then
         state.build_thickness = element.slider_value
@@ -246,6 +223,19 @@ function (e)
             state.control_vector_strengh[index] = element.slider_value
             state.parameters_changed = true
         end
+    end
+end)
+
+script.on_event(defines.events.on_gui_elem_changed,
+function (e)
+    local player = game.get_player(e.player_index)
+    if not player then return end
+    local element = e.element
+    if element.get_mod() ~= "Bezierio" then return end
+    local state = storage.controllers[player.index].state
+    if element.name == "buildable" then
+        state.buildable = element.elem_value
+        state.parameters_changed = true
     end
 end)
 
