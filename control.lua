@@ -1,4 +1,4 @@
 require("scripts.init")
-require("scripts.calc")
-require("scripts.gui")
 require("scripts.draw")
+require("scripts.gui.gui")
+require("scripts.custom-input")

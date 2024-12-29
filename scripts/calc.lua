@@ -1,160 +1,77 @@
-local vect = require("scripts.util")
+local vect = require("scripts.vector_math")
 local util = require("__core__/lualib/util")
-local coefficients = require("scripts/generated/curve_coefficients")
-
---- @class Polynomial2D
---- @field degree integer
---- @field coefficients Vector[]
-
---- @class BezierCurve
---- @field coordinate_polynomial Polynomial2D
---- @field derivative_polynomial Polynomial2D
---- @field control_points Vector[]
 
 local lib = {}
 
-function lib.filter_control_points(points)
-    local filtered_points = {}
-    --- TODO: Offset relative to the first point
-    for _, point in pairs(points) do
-        if point then
-            table.insert(filtered_points, {x = point.x, y = point.y})
+--- Evaluate a Bezier curve with De Casteljau's algorithm
+--- @param controlPoints Vector[]
+--- @param t number
+--- @return Vector
+function lib.calculateBezierPoint(controlPoints, t)
+    local points = util.table.deepcopy(controlPoints)
+
+    -- De Casteljau's algorithm:
+    -- Repeatedly interpolate between consecutive points until only one point remains.
+    for r = 1, #controlPoints-1 do
+        for i = 1, #controlPoints - r do
+            local p1, p2 = points[i], points[i+1]
+            points[i] = vect.add(vect.scale(1 - t, p1), vect.scale(t, p2))
         end
     end
-    return filtered_points
+    return points[1]
 end
 
---- @param poly Polynomial2D
---- @return Polynomial2D
-function lib.get_derivative_poly(poly)
-    local derivative = {degree = poly.degree - 1, coefficients = {}}
-    for i, coeff in pairs(poly.coefficients) do
-        if i > 1 then
-            table.insert(derivative.coefficients, vect.scale(coeff, i-1))
-        end
+--- Recursive function to sample points from tStart to tEnd
+--- Ensures no segment is longer than maxDistance
+--- @param controlPoints Vector[]
+--- @param tStart number
+--- @param tEnd number
+--- @param maxDistance number
+--- @param result Vector[]
+function lib.sampleBezierSegment(controlPoints, tStart, tEnd, maxDistance, result)
+    local pStart = lib.calculateBezierPoint(controlPoints, tStart)
+    local pEnd = lib.calculateBezierPoint(controlPoints, tEnd)
+
+    local d = vect.distance(pStart, pEnd)
+    if d <= maxDistance then
+        table.insert(result, pEnd)
+    else
+        local tMid = 0.5 * (tStart + tEnd)
+        lib.sampleBezierSegment(controlPoints, tStart, tMid, maxDistance, result)
+        lib.sampleBezierSegment(controlPoints, tMid, tEnd, maxDistance, result)
     end
-    return derivative
 end
 
---- Returns two polynomials one for the coordinates and one for the derivatives
---- @param state InterfaceState
---- @return BezierCurve|nil
-function lib.generate_bezier_curve(state)
-    local cp = lib.filter_control_points(state.raw_control_points)
-    local error_state, params = pcall(coefficients.get_coefficients, cp)
-    if not error_state then return end
-    if not params then return end
-    --- @type Polynomial2D
-    local curve_poly = {coefficients = params, degree = #params - 1}
-    local curve = {
-        coordinate_polynomial = curve_poly,
-        derivative_polynomial = lib.get_derivative_poly(curve_poly),
-        control_points = cp,
-    }
-    return curve
-end
-
---- @param t number 
---- @param poly Polynomial2D
-function lib.apply_poly(t, poly)
-    local result = {x = 0, y = 0}
-    for i, coeff in pairs(poly.coefficients) do
-        local term = vect.scale(coeff, t^(i-1))
-        result = vect.add(result, term)
-    end
+--- Main function to sample a Bezier curve
+--- @param controlPoints Vector[]
+--- @param maxDistance number
+--- @return Vector[]
+function lib.sampleBezierCurve(controlPoints, maxDistance)
+    local result = {}
+    table.insert(result, lib.calculateBezierPoint(controlPoints, 0.0))
+    lib.sampleBezierSegment(controlPoints, 0.0, 1.0, maxDistance, result)
     return result
 end
 
---- @param curve BezierCurve
---- @param t number
---- @return Vector
-function lib.get_point(curve, t)
-    return lib.apply_poly(t, curve.coordinate_polynomial)
-end
-
---- @param curve BezierCurve
---- @param t number
---- @return Vector
-function lib.get_derivative(curve, t)
-    return lib.apply_poly(t, curve.derivative_polynomial)
-end
-
---- @param curve BezierCurve
---- @param threshold_high number
---- @return Vector[]
-function lib.get_curve_points(curve, threshold_high)
-    local MAX_ITERATIONS = 1000
-    local control_points = lib.filter_control_points(curve.control_points)
-    local curve_points = {control_points[1]}
-    local norm_derivative = vect.norm(lib.get_derivative(curve, 0))
-    local dt = 1 / norm_derivative
-    local t = dt
-    local curve_point, norm_d_p
-    local i = 0
-    while (t <= 1)  and (i < MAX_ITERATIONS) do
-        i = i + 1
-        curve_point = lib.get_point(curve, t)
-        local d_p = vect.sub(curve_point, curve_points[#curve_points])
-        norm_d_p = vect.norm(d_p)
-
-        if norm_d_p > threshold_high then
-            t = t - dt*(1 - 1/norm_d_p)
-        else
-            table.insert(curve_points, curve_point)
-            norm_derivative = vect.norm(lib.get_derivative(curve, t))
-
-            if norm_derivative == 0 then
-                dt = 1 - t
-            else
-                dt = 1 / norm_derivative
-            end
-
-            t = t + dt
-        end
-    end
-    if i == MAX_ITERATIONS then
-        game.print("Bezierio W: Maximum iterations reached.")
-    end
-
-    if curve_points[#curve_points] ~= curve.control_points then
-        table.insert(curve_points, control_points[#control_points])
-    end
-    return curve_points
-end
-
---- @param num number
---- @param odd boolean
---- @return number
-function lib.odd_round(num, odd)
-    if odd then
-        return math.floor(num) + 0.5
-    end
-    return math.floor(num + 0.5)
-end
-
---- @param vector Vector
---- @param odd boolean
---- @return Vector
-function lib.odd_round_vector(vector, odd)
-    return {x = lib.odd_round(vector.x, odd), y = lib.odd_round(vector.y, odd)}
-end
-
+--- Round a curve to a grid
 --- @param curve_points Vector[]
 --- @param size integer
---- @return Vector[], integer[]
-function lib.rasterize(curve_points, size)
-    local odd = size % 2 == 1
-    local rounded_curve_points = {lib.odd_round_vector(curve_points[1], odd)}
+--- @param cell_center boolean|nil
+--- @return Vector[]
+function lib.curveRound(curve_points, size, cell_center)
+    if cell_center == nil then
+        cell_center = size % 2 == 1
+    end
+    local rounded_curve_points = {vect.cc_round(curve_points[1], cell_center)}
 
-    local indices = {1}
-    table.remove(curve_points, 1)
     local j = 1
-    for i, point in pairs(curve_points) do
-        local rounded_point = lib.odd_round_vector(point, odd)
+    for i =  2, #curve_points do
+        local point = curve_points[i]
+        local rounded_point = vect.cc_round(point, cell_center)
         local dp = vect.sub(rounded_point, rounded_curve_points[j])
         local dp_abs = vect.abs(dp)
         local db_sign = vect.sign(dp)
-        local size_offset = {x = size - dp_abs.x, y = size - dp_abs.y}
+        local size_offset = vect.sub({x = size, y = size}, dp_abs)
 
         local insert = false
         for key, elem in pairs(size_offset) do
@@ -163,13 +80,14 @@ function lib.rasterize(curve_points, size)
                 rounded_point[key] = rounded_point[key] - elem * db_sign[key]
             end
         end
+
         if insert then
-            table.insert(indices, i)
             table.insert(rounded_curve_points, rounded_point)
             j = j + 1
         end
     end
-    return rounded_curve_points, indices
+    return rounded_curve_points
 end
+
 
 return lib

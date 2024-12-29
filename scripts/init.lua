@@ -8,20 +8,23 @@ local mod_gui = require("mod-gui")
 --- @field name string
 --- @field quality string
 
+--- @class CurveParameters
+--- @field raw_control_points table<integer, Vector|nil>
+--- @field p0 Vector|nil
+--- @field control_points table<integer, Vector>|nil
+--- @field degree integer
+--- @field parameters_changed boolean
+
 --- @class InterfaceState
 --- @field draw_curve boolean
 --- @field buildable QualityItem|nil
 --- @field build_thickness integer
 --- @field build_spacing integer
---- @field degree integer
---- @field raw_control_points table<integer, Vector|nil>
---- @field control_points table<integer, Vector>
 --- @field active_control_point integer|nil
---- @field parameters_changed boolean
 
 --- @class BezierioController
 --- @field state InterfaceState
---- @field curve BezierCurve|nil
+--- @field curve_params CurveParameters
 
 --- @class SpriteCache
 --- @field curve LuaRenderObject[]
@@ -37,17 +40,23 @@ local function initilize_global(player)
             buildable = nil,
             build_thickness = 1,
             build_spacing = 1,
-            degree = 2,
-            raw_control_points = {},
-            control_points = {},
             active_control_point = nil,
             parameters_changed = false,
         }
 
+        --- @type CurveParameters
+        local CurveParameters = {
+            raw_control_points = {},
+            p0 = nil,
+            control_points = {},
+            degree = -1,
+            parameters_changed = false,
+        }
+    
         --- @type BezierioController
         local controller = {
             state = InterfaceState,
-            curve = nil,
+            curve_params = CurveParameters,
         }
 
         storage.controllers[player.index] = controller
@@ -103,24 +112,4 @@ end)
 script.on_event(defines.events.on_player_removed,
 function(e)
     storage.controllers[e.player_index] = nil
-end)
-
-script.on_event(defines.events.on_console_chat,
-function (e)
-    local player = game.get_player(e.player_index)
-    if not player then return end
-    if not player.gui.screen.bezierio_window then return end
-    local state = storage.controllers[player.index].state
-    if not state.active_control_point then return end
-    
-    local message = e.message
-    local x, y = string.match(message, "%[gps=(%-?%d+%.?%d*),(%-?%d+%.?%d*)%]")
-    if (not x) or (not y) then return end
-    x = tonumber(x)
-    y = tonumber(y)
-    local position = {x = x, y = y}
-
-    state.raw_control_points[state.active_control_point] = position
-
-    state.parameters_changed = true
 end)
