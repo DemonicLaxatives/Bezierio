@@ -34,6 +34,6 @@ set +e
   --test-scenario "bezierio-test/$SCENARIO" --test-ticks 3600 > "$WORKDIR/stdout.log" 2>&1
 code=$?
 set -e
-grep -E "Error|error|TEST|SMOKE|FAIL|PASS|step ok|plan:" "$WORKDIR/stdout.log" | grep -v "Checksum" | tail -40
+grep -E "Error|error|TEST|SMOKE|FAIL|PASS|step ok|plan:" "$WORKDIR/stdout.log" | grep -v "Checksum" | tail -40 || true
 echo "exit code: $code   (full log: $WORKDIR/stdout.log)"
 exit $code

@@ -23,7 +23,17 @@ local cases = {
         layers = { [0] = { idx = 0, type = "wall", name = "wall", quality = "normal", radius = 2, checkerboard = 0, size = 1, offset = 0, priority = 100 } },
     },
     {
-        name = "closed loop",
+        name = "closed loop (flag)",
+        closed = true,
+        points = { { x = 0, y = 0 }, { x = 40, y = -40 }, { x = 60, y = 10 }, { x = 20, y = 40 } },
+        layers = {
+            [0] = { idx = 0, type = "wall", name = "wall", quality = "normal", radius = 2, checkerboard = 0, size = 1, offset = 0, priority = 100 },
+            [1] = { idx = 1, type = "electric-pole", name = "pole", quality = "normal", size = 1, offset = 0, priority = 10, spacing = 7, wire_distance = 7 },
+            [-1] = { idx = -1, type = "tile", name = "tile", quality = "normal", radius = 2, checkerboard = 0, size = 1, offset = 0, priority = 100 },
+        },
+    },
+    {
+        name = "returns to start (open)",
         points = { { x = 0, y = 0 }, { x = 40, y = -40 }, { x = 40, y = 40 }, { x = 0, y = 0 } },
         layers = {
             [0] = { idx = 0, type = "wall", name = "wall", quality = "normal", radius = 1, checkerboard = 0, size = 1, offset = 0, priority = 100 },
@@ -41,7 +51,7 @@ end
 local lines = {}
 for _, case in ipairs(cases) do
     lines[#lines + 1] = "## " .. case.name
-    lines[#lines + 1] = helpers.canonical(helpers.plan(case.points, case.layers))
+    lines[#lines + 1] = helpers.canonical(helpers.plan(case.points, case.layers, nil, case.closed))
 end
 local actual = table.concat(lines, "\n") .. "\n"
 

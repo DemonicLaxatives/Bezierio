@@ -14,7 +14,6 @@ return {
             -- Leave a tile of slack: positions get snapped to the grid after spacing.
             default = function(layer) return math.max(layer.size, layer.wire_distance - 1) end,
         },
-        { name = "smart_placement",            widget = "checkbox", default = false },
         { name = "connect_with_circuit_wires", widget = "checkbox", default = false },
     },
     --- @param layer Layer

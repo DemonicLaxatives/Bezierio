@@ -8,6 +8,7 @@
 if not script.active_mods["bezierio-test"] then return end
 
 local interactions = require("scripts.gui.interactions")
+local window = require("scripts.gui.window")
 local custom_input = require("scripts.custom_input")
 local state = require("scripts.state")
 local planner = require("scripts.build.planner")
@@ -17,6 +18,11 @@ local jobs = require("scripts.jobs")
 --- @param path string[]|LuaGuiElement  # element names, starting from player.gui
 --- @return LuaGuiElement
 local function find(player_index, path)
+    if type(path) == "string" then -- an element name in the main window
+        local element = window.find(game.get_player(player_index), path)
+        if not element then error("No GUI element named " .. path) end
+        return element
+    end
     if type(path) ~= "table" then return path end -- already an element
     local element = game.get_player(player_index).gui
     for _, name in ipairs(path) do
@@ -71,8 +77,11 @@ remote.add_interface("bezierio-dev", {
             input_name = "bezierio-pointer", in_gui = over ~= nil, element = element,
         })
     end,
-    pointer_cycle = function(player_index, step)
-        custom_input.on_pointer_cycle({ player_index = player_index, input_name = "bezierio-pointer-up" }, step)
+    pointer_remove = function(player_index, position)
+        custom_input.on_pointer_remove({
+            player_index = player_index, cursor_position = position,
+            input_name = "bezierio-pointer-remove", in_gui = false,
+        })
     end,
     controller = function(player_index)
         return state.get(player_index)
@@ -83,7 +92,7 @@ remote.add_interface("bezierio-dev", {
     end,
     --- True when this player's planning, drawing and building have caught up.
     idle = function(player_index)
-        return jobs.is_idle(state.get(player_index))
+        return jobs.is_idle(player_index, state.get(player_index))
     end,
     item_filter = function()
         return state.item_filter()

@@ -4,21 +4,23 @@
 
 ```
 info.json, data.lua, control.lua   mod entry points
+settings.lua             map setting: work budget per tick
 prototypes/
-  items.lua              bezierio-pointer-1..9: cursor-only items marking control points
-  custom_input.lua       left click with a pointer, Alt+1..9, Alt+scroll
+  items.lua              bezierio-pointer: cursor-only item for placing control points
+  custom_input.lua       pointer click / right-click, Alt+B to take the pointer
 scripts/
   state.lua              the definition of `storage`, accessors, migrations (start here)
   jobs.lua               per-tick runner: planning, drawing, building, within a budget
-  draw.lua               rendering: control points, curve, build preview
+  draw.lua               rendering: control points, curve, build preview, bend warnings
+  palette.lua            one colour per layer (layer list and preview)
   init.lua               on_init / on_configuration_changed / players, mod-gui button
-  custom_input.lua       pointer click / cycle handlers, keeps P-buttons in sync with the cursor
+  custom_input.lua       the curve pointer in the world
   dev.lua                remote interface for the test scenarios (only when `bezierio-test` is active)
   debug.lua              debug.print; `lib.debug` should be false for releases
   vector_math.lua        2D vector helpers
   curve/
-    curve.lua            curve data ({kind, points}) and resumable sampling
-    bezier.lua           the "bezier" kind: one Bézier through all points
+    curve.lua            curve data ({points, closed}), editing, resumable sampling
+    catmull_rom.lua      centripetal Catmull-Rom spline through the points
   layers/
     registry.lua         layer types: lookup, fields, new layers, item picker filter
     common.lua           pieces shared by layer types
@@ -26,17 +28,18 @@ scripts/
   build/
     geometry.lua         frames, spatial index, grid distance from the curve
     planner.lua          curve + layers -> BuildPlan, as a resumable job
-    executor.lua         BuildPlan -> world, as a resumable job
+    executor.lua         BuildPlan -> world, as a resumable job (incl. wiring)
+    undo.lua             keeps a whole build in one undo item
     outputs/ghost.lua    ... as ghosts
     outputs/instant.lua  ... as real entities (map editor, cheat mode)
   gui/
     interactions.lua     routes GUI events to lib[tags.group][tags.action](event)
+    window.lua           find window elements by name
     layout.lua           main window (group "main")
-    control.lua          Draw / Preview / Build buttons (group "control")
-    curve_control.lua    control point table (group "curve")
-    layer_rows.lua       builds the layer rows from the registry
+    control.lua          Draw / Preview / Build buttons, status and totals lines (group "control")
+    curve_control.lua    pointer button, closed loop, point list (group "curve")
+    layer_view.lua       layer list and the selected layer's detail pane
     layer_control.lua    layer actions (group "layer")
-python_scripts/          offline experiments (sympy/numpy notebooks, icon generation); not used by the mod
 tests/                   see Testing
 ```
 
@@ -54,20 +57,33 @@ changed:
 `jobs.lua` runs every tick and, per player, spends a budget of work units
 (`jobs.BUDGET`):
 
-1. **Reset if needed.** On a new revision, drop the plan and redraw. On a redraw
-   request, clear the render objects and redraw the control points (≤ 9, cheap).
+0. **Clear old drawings.** Destroy retired render objects, a budgeted number per
+   tick (`draw.step_trash`).
+1. **Reset if needed.** On a new revision, once edits have paused for
+   `SETTLE_TICKS`, drop the plan and redraw. On a redraw request, retire the
+   render objects and redraw the control points (cheap).
 2. **Draw.** Draw what the planner has produced so far, using at most
    `DRAW_SHARE` of the budget.
 3. **Plan.** Advance the planner: only up to the curve samples when just the curve
    is shown; the whole plan when the preview is on or a build is waiting.
 4. **Build.** Start a waiting build when its plan is done, then advance the build
    job.
+5. **Window.** Update the status line (progress) and, once a plan is done, the
+   totals line (length, items per layer, bend warnings, pole gaps).
 
 Heavy work is never done in a single tick. Every job is plain data in
 `storage.controllers[i].work`: no closures or coroutines. So jobs survive
 save/load and run identically on every multiplayer peer. Costs per operation
 are in each module's `COST` table, and the budget counts work units, not time,
 which keeps it deterministic.
+
+The budget is the map setting `bezierio-work-budget` (default 1000). Measured
+with the `bench` scenario:
+- one unit is about 2.5–3 µs, whether planning, drawing or building;
+- the default costs roughly 2.5–3 ms per tick per player;
+- the 850-tile, 23k-placement test curve plans in ~730 ticks and builds in ~125.
+
+After changing costs or the planner, rerun the bench and keep the units balanced.
 
 The map editor starts with ticks paused, and then nothing happens. Unpause it
 when testing.
@@ -79,13 +95,13 @@ The shape is documented at the top of [scripts/state.lua](../scripts/state.lua):
 ```
 storage.schema_version
 storage.controllers[player_index]
-    ui        preset_index, draw_curve, preview_build, active_control_point
-    curve     {kind = "bezier", points = {[n] = {x, y}}}   (sparse; half-entered points allowed)
+    ui        preset_index, draw_curve, preview_build, held_point, selected_layer
+    curve     {kind = "catmull_rom", points = {{x, y}, ...}, closed}
     presets   {{name, layers = {[k] = Layer}}}             (layer k: … -1, 0, 1 …)
-    revision  bumped on curve/layer changes
+    revision  bumped on curve/layer changes (changed_tick: when)
     redraw    view needs redrawing
     work      jobs: plan (PlannerJob), draw progress, pending_build, build (BuildJob)
-storage.sprites[player_index]   LuaRenderObjects: curve / control_points / preview
+storage.sprites[player_index]   LuaRenderObjects: curve / control_points / preview / trash
 storage.item_filter             ItemPrototypeFilter for the layer pickers
 ```
 
@@ -98,6 +114,24 @@ Always go through the `state` accessors.
 
 `state.ensure()` runs the migrations in order. Data with no migration path
 (0.1.x, or a newer version) is discarded.
+
+## Curves
+
+A curve is a list of control points and a `closed` flag. It is drawn as a
+centripetal Catmull-Rom spline (`curve/catmull_rom.lua`):
+
+- it passes through every point;
+- each point only bends the curve between its neighbours;
+- the centripetal form never forms cusps or loops within a segment.
+
+Open curves get reflected end neighbours, so they start and end exactly on the
+first and last points. Closed curves wrap around. Consecutive duplicate points are
+dropped before sampling. The sampler is resumable, one piece of a segment at a time.
+
+The pointer (`custom_input.lua`) edits the list:
+- left-click appends a point or picks one up (within `PICK_RADIUS`);
+- a second left-click drops the held point;
+- right-click removes a point, or cancels a hold.
 
 ## Layer types
 
@@ -139,13 +173,28 @@ survive mods changing prototypes.
      deterministically into one band.
    - Each cell gets at most one band, so layers never overlap.
    - Band layers emit placements as cells are classified.
-5. **Spaced layers** walk their band's centre line by arc length, in priority
+5. **Tight bends**: a stage measures curvature (the turn of the tangent between
+   neighbouring samples). Where a bend is tighter than the outermost layer on its
+   inside, it records a warning position (`plan.warnings`); the preview marks
+   them.
+6. **Spaced layers** walk their band's centre line by arc length, in priority
    order.
-   - Each placement tries the 4 nearest grid-aligned positions.
-   - It is skipped if all of them collide with a cell already taken.
+   - Each placement tries the 4 nearest grid-aligned positions, then the same
+     with the target shifted up to ±2 tiles along the curve.
+   - It is skipped only if all of those are taken.
+   - **Pole layers** (with `wire_distance`) also form a chain (`plan.chains`, in
+     order along the curve). If the next pole would be out of wire reach of the
+     previous one, poles are inserted in between, halving the gap recursively;
+     closed curves also close the chain.
+   - Gaps that can't be bridged because there's no room are counted in
+     `plan.gaps` and reported.
+
+Entity sizes come from the prototype's `tile_width`/`tile_height`. The collision
+box is smaller than the footprint; rounding it outward made 1×1 entities 2×2.
 
 Each stage keeps a cursor, so `planner.step(job, budget)` can stop anywhere and
-continue next tick.
+continue next tick. The plan also records the curve length and placements per
+layer, for the totals line.
 
 Known geometric limits:
 - On the inside of a bend tighter than a side layer's distance from the curve,
@@ -160,6 +209,15 @@ The executor walks the plan's tiles, then its entities. For each placement it:
 2. runs the placement check;
 3. handles obstacles: forced = trees/rocks only, superforced = own and neutral
    entities.
+
+After the entities, the executor connects each pole chain's consecutive poles
+(ghosts or real) with copper wire, plus red and green wire when the layer has
+*Circuit wires* on.
+
+Every action carries an `undo_index`, so a build spread over many ticks is still
+one undo item (`build/undo.lua`). Items are addressed from the top of the stack,
+so the job remembers the stack size right after creating its item; anything the
+player does meanwhile shifts the index.
 
 It then hands off to an output module:
 - `ghost` places ghosts and marks obstacles for deconstruction;
@@ -191,6 +249,10 @@ before it could open.
 Pointer clicks (`bezierio-pointer`) are ignored when the event has `in_gui` or an
 `element` set. `element` alone isn't enough: slider clicks don't report one.
 
+Element names are unique within the window (`cp_x_3`, `radius_slider`,
+`layer_select_-1`, ...). `gui/window.lua` finds elements by name, so code and tests
+don't depend on the layout.
+
 ## Testing
 
 ```sh
@@ -198,6 +260,7 @@ tests/unit/run_all.sh                                    # all unit tests, no ga
 tests/run.sh smoke                                       # loads, runs 120 ticks with a player
 tests/run.sh gui-flow                                    # full UI flow, builds in all modes
 tests/run.sh gui-flow space-age quality elevated-rails   # same, with DLC mods enabled
+tests/run.sh bench                                       # timing of plan / build (read the BENCH lines)
 ```
 
 **Unit tests** (`tests/unit/`, plain Lua 5.4) load mod modules through
@@ -207,7 +270,7 @@ tests/run.sh gui-flow space-age quality elevated-rails   # same, with DLC mods e
 |---|---|
 | `plan_snapshot.lua` | Planner output for 27 fixed cases matches `snapshots/plans.txt`. Run with `--update` only for an intended change, and review the diff. |
 | `planner_jobs.lua` | Running the planner in tiny slices gives exactly the one-shot plan. |
-| `plan_properties.lua` | Random curves: no overlaps, and the layer 0 wall line is unbroken. |
+| `plan_properties.lua` | Random curves and loops: no overlaps, an unbroken layer 0 wall line (a ring through the seam for loops), poles in reach except counted gaps, and bend warnings where they belong. |
 | `migrations.lua` | Storage upgrades. |
 
 `helpers.plan` is the only place the tests touch the planner API.

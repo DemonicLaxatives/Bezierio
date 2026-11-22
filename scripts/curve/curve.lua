@@ -1,45 +1,51 @@
---- Curve data and sampling, independent of how the curve is defined.
+--- Curve data and sampling.
 ---
---- A curve is plain data: a kind and numbered control points (sparse: unset or
---- half-entered points are skipped). Everything downstream only sees sample points,
---- so new kinds (e.g. piecewise cubic) only need a sampler module here.
+--- A curve is plain data: an ordered list of control points and whether it is a
+--- closed loop. It is drawn as a centripetal Catmull-Rom spline through the points.
+--- Everything downstream only sees sample points.
 local vect = require("scripts.vector_math")
+local catmull_rom = require("scripts.curve.catmull_rom")
 
 local lib = {}
 
 --- @class Curve
---- @field kind string                              # key in lib.kinds
---- @field points table<integer, {x: number?, y: number?}>  # sparse, by control point number
+--- @field kind "catmull_rom"
+--- @field points Vector[]   # control points, in order
+--- @field closed boolean    # loop back from the last point to the first (needs 3+ points)
 
---- @class CurveKind
---- @field new_sampler fun(points: Vector[], max_step: number): table
---- @field step fun(sampler: table, out: Vector[], budget: number): number
-
---- @type table<string, CurveKind>
-lib.kinds = {
-    bezier = require("scripts.curve.bezier"),
-}
-
---- @param kind string|nil
 --- @return Curve
-function lib.new(kind)
-    return { kind = kind or "bezier", points = {} }
+function lib.new()
+    return { kind = "catmull_rom", points = {}, closed = false }
 end
 
---- Set one control point (coordinates rounded to 0.01), or clear it with nil.
---- A point with only x or only y is kept but not used until complete.
+--- @param point Vector
+--- @return Vector
+local function rounded(point)
+    return { x = vect.scalar.round(point.x, 2), y = vect.scalar.round(point.y, 2) }
+end
+
+--- Add a point at the end. Coordinates are rounded to 0.01.
+--- @param curve Curve
+--- @param point Vector
+--- @return integer index
+function lib.append(curve, point)
+    table.insert(curve.points, rounded(point))
+    return #curve.points
+end
+
+--- Move an existing point.
 --- @param curve Curve
 --- @param idx integer
---- @param point {x: number?, y: number?}|nil
+--- @param point Vector
 function lib.set_point(curve, idx, point)
-    if point then
-        point = {
-            x = point.x and vect.scalar.round(point.x, 2),
-            y = point.y and vect.scalar.round(point.y, 2),
-        }
-        if point.x == nil and point.y == nil then point = nil end
-    end
-    curve.points[idx] = point
+    if curve.points[idx] then curve.points[idx] = rounded(point) end
+end
+
+--- Remove a point; later points move up one place.
+--- @param curve Curve
+--- @param idx integer
+function lib.remove(curve, idx)
+    if curve.points[idx] then table.remove(curve.points, idx) end
 end
 
 --- @param curve Curve
@@ -47,43 +53,65 @@ function lib.clear(curve)
     curve.points = {}
 end
 
---- Complete control points in order of their numbers.
+--- Index of the control point nearest to `position`, if within `radius`.
+--- @param curve Curve
+--- @param position Vector
+--- @param radius number
+--- @return integer|nil
+function lib.point_near(curve, position, radius)
+    local best, best_d = nil, radius
+    for i, p in ipairs(curve.points) do
+        local d = vect.distance(p, position)
+        if d <= best_d then best, best_d = i, d end
+    end
+    return best
+end
+
+--- Control points with consecutive duplicates removed (and, for a loop, a last
+--- point equal to the first).
 --- @param curve Curve
 --- @return Vector[]
-function lib.defined_points(curve)
-    local indices = {}
-    for idx, p in pairs(curve.points) do
-        if p.x and p.y then table.insert(indices, idx) end
-    end
-    table.sort(indices)
+function lib.distinct_points(curve)
     local points = {}
-    for i, idx in ipairs(indices) do
-        local p = curve.points[idx]
-        points[i] = { x = p.x, y = p.y }
+    for _, p in ipairs(curve.points) do
+        local last = points[#points]
+        if not last or last.x ~= p.x or last.y ~= p.y then
+            points[#points + 1] = { x = p.x, y = p.y }
+        end
+    end
+    if lib.is_closed(curve) and #points > 1 then
+        local first, last = points[1], points[#points]
+        if first.x == last.x and first.y == last.y then points[#points] = nil end
     end
     return points
+end
+
+--- Whether the curve is drawn as a loop (closed flag and enough points).
+--- @param curve Curve
+--- @return boolean
+function lib.is_closed(curve)
+    return curve.closed == true and #curve.points >= 3
 end
 
 --- @param curve Curve
 --- @return boolean
 function lib.is_drawable(curve)
-    return #lib.defined_points(curve) >= 2
+    return #lib.distinct_points(curve) >= 2
 end
 
 --- @class CurveSampler
---- @field kind string
---- @field state table
+--- @field state CatmullRomSampler
 --- @field done boolean
 
---- A resumable sampler; nil when the curve has fewer than two points.
+--- A resumable sampler; nil when the curve has fewer than two distinct points.
 --- @param curve Curve
 --- @param max_step number
 --- @return CurveSampler|nil
 function lib.new_sampler(curve, max_step)
-    local points = lib.defined_points(curve)
+    local points = lib.distinct_points(curve)
     if #points < 2 then return nil end
-    local kind = lib.kinds[curve.kind] or error("Unknown curve kind: " .. tostring(curve.kind))
-    return { kind = curve.kind, state = kind.new_sampler(points, max_step), done = false }
+    local closed = lib.is_closed(curve) and #points >= 3
+    return { state = catmull_rom.new_sampler(points, max_step, closed), done = false }
 end
 
 --- Append up to about `budget` samples (world coordinates) to `out`.
@@ -92,12 +120,12 @@ end
 --- @param budget number
 --- @return number used
 function lib.step(sampler, out, budget)
-    local used = lib.kinds[sampler.kind].step(sampler.state, out, budget)
+    local used = catmull_rom.step(sampler.state, out, budget)
     sampler.done = sampler.state.done
     return used
 end
 
---- All samples at once (for small curves and tests).
+--- All samples at once (small curves, tests).
 --- @param curve Curve
 --- @param max_step number
 --- @return Vector[]

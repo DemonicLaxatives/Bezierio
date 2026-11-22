@@ -13,7 +13,7 @@ function lib.create_button(player)
         type = "sprite-button",
         name = "bezierio_button",
         tags = { group = "main", action = "toggle" },
-        sprite = "item/bezierio-pointer-1",
+        sprite = "item/bezierio-pointer",
         tooltip = { "tooltip.bezierio-open-gui" },
         style = mod_gui.button_style,
     }
@@ -45,6 +45,14 @@ script.on_event(defines.events.on_player_created,
     --- @param e EventData.on_player_created
     function(e)
         lib.setup_player(game.get_player(e.player_index))
+    end)
+
+--- Drawings belong to a surface: redraw on the player's new one. A running build
+--- continues on the surface it started on.
+script.on_event(defines.events.on_player_changed_surface,
+    --- @param e EventData.on_player_changed_surface
+    function(e)
+        state.request_redraw(e.player_index)
     end)
 
 script.on_event(defines.events.on_player_removed,

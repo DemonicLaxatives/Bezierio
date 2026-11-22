@@ -1,88 +1,67 @@
-local layer_rows = require("scripts.gui.layer_rows")
-local curve_control = require("scripts.gui.curve_control")
+--- The main window (group = "main"): controls and curve on the left, layers on the right.
 local control = require("scripts.gui.control")
+local curve_control = require("scripts.gui.curve_control")
+local layer_view = require("scripts.gui.layer_view")
+local state = require("scripts.state")
 
 local lib = {}
 
 --- @param frame LuaGuiElement
-function lib.add_title_bar(frame)
-    if frame.title_bar then
-        frame.title_bar.destroy()
-    end
-    local title_bar = frame.add{
-        type = "flow", 
-        name = "title_bar", 
-        direction = "horizontal"
-    }
-
-    title_bar.add{
+local function add_title_bar(frame)
+    local title_bar = frame.add { type = "flow", name = "title_bar", direction = "horizontal" }
+    title_bar.add {
         type = "label",
         style = "frame_title",
-        caption = {"titles.gui-title"},
-        ignored_by_interaction = true
+        caption = { "titles.gui-title" },
+        ignored_by_interaction = true,
     }
-
-    local dragger = title_bar.add{
-        type = "empty-widget",
-        style = "draggable_space_header",
-    }
+    local dragger = title_bar.add { type = "empty-widget", style = "draggable_space_header" }
     dragger.style.horizontally_stretchable = true
     dragger.style.height = 24
     dragger.style.minimal_width = 24
     dragger.drag_target = frame
-
-    title_bar.add{
+    title_bar.add {
         type = "sprite-button",
         name = "main_close_button",
-        tags = {group = "main", action = "close"},
+        tags = { group = "main", action = "close" },
         sprite = "utility/close",
         style = "frame_action_button",
-        mouse_button_filter = {"left"}
+        mouse_button_filter = { "left" },
     }
 end
 
---- @param frame LuaGuiElement
-function lib.add_controls(frame)
-    control.add_control_flow(frame)
-    curve_control.add_curve_control_flow(frame)
-    layer_rows.add_layer_rows(frame)
-end
-
+--- @param player LuaPlayer
 function lib.create_main_window(player)
-    local frame = player.gui.screen.add{
-        type = "frame",
-        name = "bezierio_window",
-        direction = "vertical"
-    }
-    frame.location = {75, 75}
+    -- The status and totals lines start empty; make jobs.lua fill them in again.
+    local work = state.get(player.index).work
+    work.status, work.totals_revision = nil, nil
+
+    local frame = player.gui.screen.add { type = "frame", name = "bezierio_window", direction = "vertical" }
+    frame.location = { 75, 75 }
     player.opened = frame
 
-    lib.add_title_bar(frame)
-
-    frame.add{
-        type = "flow",
-        name = "main",
-        direction = "horizontal"
-    }
-    lib.add_controls(frame.main)
+    add_title_bar(frame)
+    local main = frame.add { type = "flow", name = "main", direction = "horizontal" }
+    local left = main.add { type = "flow", name = "left_column", direction = "vertical" }
+    control.add(left, player)
+    curve_control.add(left, player)
+    layer_view.add(main, player.index)
 end
 
 --- @param e EventData.on_gui_click|EventData.on_gui_closed
-lib["close"] = function (e)
+lib["close"] = function(e)
     local player = game.get_player(e.player_index)
-    if not player then return end
-
-    if player.gui.screen.bezierio_window then
+    if player and player.gui.screen.bezierio_window then
         player.gui.screen.bezierio_window.destroy()
     end
 end
 
 --- @param e EventData.on_gui_click
-lib["toggle"] = function (e)
+lib["toggle"] = function(e)
     local player = game.get_player(e.player_index)
     if not player then return end
     if player.gui.screen.bezierio_window then
-            lib["close"](e)
+        lib["close"](e)
     else
         lib.create_main_window(player)
     end

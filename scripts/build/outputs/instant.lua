@@ -9,13 +9,13 @@ return {
         return nil -- carry on and set the tile
     end,
 
-    place_tile = function(job, player, tile)
+    place_tile = function(job, player, tile, undo_index)
         table.insert(job.tile_batch, { name = tile.name, position = { x = tile.x, y = tile.y } })
     end,
 
-    flush = function(job, player)
+    flush = function(job, player, undo_index)
         if #job.tile_batch > 0 then
-            job.surface.set_tiles(job.tile_batch, true, "abort_on_collision", true, true, player)
+            job.surface.set_tiles(job.tile_batch, true, "abort_on_collision", true, true, player, undo_index)
             job.tile_batch = {}
         end
     end,
@@ -25,14 +25,15 @@ return {
         return "existing"
     end,
 
-    clear = function(job, player, obstacle)
-        obstacle.destroy { raise_destroy = true }
+    clear = function(job, player, obstacle, undo_index)
+        obstacle.destroy { raise_destroy = true, player = player, undo_index = undo_index }
     end,
 
-    create_entity = function(job, player, entity)
+    create_entity = function(job, player, entity, undo_index)
         return job.surface.create_entity {
             name = entity.name, position = entity.position, quality = entity.quality,
             force = job.force, player = player, raise_built = true, move_stuck_players = true,
+            undo_index = undo_index,
         }
     end,
 }

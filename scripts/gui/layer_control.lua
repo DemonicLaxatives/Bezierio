@@ -1,8 +1,8 @@
---- GUI actions for the layer list (group = "layer").
+--- GUI actions for the layer list and detail pane (group = "layer").
 local debug = require("scripts.debug")
 local state = require("scripts.state")
 local registry = require("scripts.layers.registry")
-local layer_rows = require("scripts.gui.layer_rows")
+local layer_view = require("scripts.gui.layer_view")
 
 local lib = {}
 
@@ -17,16 +17,21 @@ local function key_bounds(layers)
     return min_key, max_key
 end
 
---- Layers changed: plan again and rebuild the layer list.
+--- Layers changed: plan again and rebuild the layer column.
 --- @param player_index integer
 local function layers_changed(player_index)
     state.changed(player_index)
     local player = game.get_player(player_index)
-    if not player then return end
-    local window = player.gui.screen.bezierio_window
-    if window then
-        layer_rows.add_layer_rows(window.main)
-    end
+    if player then layer_view.refresh(player) end
+end
+
+--- @param e EventData.on_gui_click
+lib["select"] = function(e)
+    local idx = tonumber(e.element.tags.idx)
+    if idx == nil then return end
+    state.ui(e.player_index).selected_layer = idx
+    local player = game.get_player(e.player_index)
+    if player then layer_view.refresh(player) end
 end
 
 --- @param e EventData.on_gui_click
@@ -38,10 +43,11 @@ lib["new_layer"] = function(e)
     local min_key, max_key = key_bounds(layers)
     local key = direction == 1 and max_key + 1 or min_key - 1
     layers[key] = registry.new_empty(key)
+    state.ui(e.player_index).selected_layer = key
     layers_changed(e.player_index)
 end
 
---- Swap a layer with its neighbour.
+--- Swap a layer with its neighbour; the selection follows the moved layer.
 --- @param e EventData.on_gui_click
 lib["move"] = function(e)
     local layers = state.layers(e.player_index)
@@ -57,6 +63,12 @@ lib["move"] = function(e)
     layer_b.idx = idx
     layers[idx] = layer_b
     layers[other] = layer_a
+    local ui = state.ui(e.player_index)
+    if ui.selected_layer == idx then
+        ui.selected_layer = other
+    elseif ui.selected_layer == other then
+        ui.selected_layer = idx
+    end
     layers_changed(e.player_index)
 end
 
@@ -81,6 +93,8 @@ lib["delete"] = function(e)
         end
         layers[min_key] = nil
     end
+    local ui = state.ui(e.player_index)
+    if not layers[ui.selected_layer] then ui.selected_layer = 0 end
     layers_changed(e.player_index)
 end
 
@@ -127,7 +141,8 @@ lib["set_value"] = function(e)
     if max then value = math.min(max, value) end
 
     layer[field_name] = value
-    layer_rows.sync_value(element, layer, field_name)
+    local player = game.get_player(e.player_index)
+    if player then layer_view.sync_value(player, layer, field_name) end
     state.changed(e.player_index)
 end
 

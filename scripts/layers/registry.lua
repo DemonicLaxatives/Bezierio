@@ -17,7 +17,8 @@ local lib = {}
 ---@class LayerType
 ---@field name string                       # stored as layer.type
 ---@field entity_types? string[]        # entity prototype types this layer type is used for
----@field tile? boolean                 # used for tiles
+---@field tile? boolean                  # used for tiles
+---@field hidden? boolean                # not offered in the item picker (not buildable yet)
 ---@field placement "band"|"spaced"|"none"|"unsupported"
 ---@field output? "entity"|"tile"
 ---@field priority integer                  # higher priority layers claim contested cells first
@@ -126,14 +127,13 @@ end
 -- Prototype helpers (runtime only: they use `prototypes`). -------------------
 
 --- Footprint of a prototype in whole tiles (largest side).
+--- Uses the prototype's grid footprint, not its collision box: rounding the box
+--- outward makes 1x1 entities (poles, walls, boxes of ±0.15..0.29) look 2x2.
 --- @param prototype LuaEntityPrototype|LuaTilePrototype
 --- @return integer
 function lib.footprint_size(prototype)
     if prototype.type == "tile" then return 1 end
-    local box = prototype.collision_box
-    local width = math.ceil(box.right_bottom.x) - math.floor(box.left_top.x)
-    local height = math.ceil(box.right_bottom.y) - math.floor(box.left_top.y)
-    return math.max(1, width, height)
+    return math.max(1, prototype.tile_width, prototype.tile_height)
 end
 
 --- What an item places.
@@ -185,7 +185,9 @@ end
 --- @return ItemPrototypeFilter[]
 function lib.build_item_filter()
     local entity_types = {}
-    for entity_type in pairs(by_entity_type) do table.insert(entity_types, entity_type) end
+    for entity_type, def in pairs(by_entity_type) do
+        if not def.hidden then table.insert(entity_types, entity_type) end
+    end
     table.sort(entity_types)
 
     local item_filter = {

@@ -1,15 +1,13 @@
 -- End-to-end test of the Bézierio window: points, drawing, layers, preview, building.
 -- Runs headless with one player: tests/run.sh gui-flow
+--
+-- GUI elements are addressed by name (names are unique within the window), so the
+-- test doesn't depend on the window layout.
 local P = 1 -- player index
-local WIN = { "screen", "bezierio_window", "main" }
 
-local function path(...)
-  local p = { table.unpack(WIN) }
-  for _, name in ipairs({ ... }) do table.insert(p, name) end
-  return p
-end
 local function dev(fn, ...) return remote.call("bezierio-dev", fn, ...) end
 local function controller() return dev("controller", P) end
+local function layers() return controller().presets[1].layers end
 local function check(cond, msg) if not cond then error("CHECK FAILED: " .. msg, 2) end end
 
 local function find_named(element, name)
@@ -20,9 +18,16 @@ local function find_named(element, name)
   end
 end
 
+--- An element of the main window by name.
+local function el(player, name)
+  return find_named(player.gui.screen.bezierio_window, name)
+end
+
 local function ghosts(surface, inner)
   return surface.find_entities_filtered { ghost_name = inner }
 end
+
+local function point_count() return #controller().curve.points end
 
 local function prepare_ground(surface)
   surface.request_to_generate_chunks({ 0, 0 }, 4)
@@ -36,7 +41,7 @@ local function prepare_ground(surface)
   surface.set_tiles(tiles)
 end
 
--- Every wall ghost must be reachable from every other through 4-neighbours.
+-- Number of 4-connected pieces of a set of 1x1 entities (anything with .position).
 local function wall_components(walls)
   local set, keys = {}, {}
   for _, w in pairs(walls) do
@@ -64,18 +69,43 @@ local function wall_components(walls)
   return components
 end
 
+local function count_planned(plan)
+  local n = {}
+  for _, e in pairs(plan.entities) do n[e.name] = (n[e.name] or 0) + 1 end
+  return n
+end
+
+local function planned_walls(plan)
+  local walls = {}
+  for _, e in pairs(plan.entities) do if e.name == "stone-wall" then table.insert(walls, e) end end
+  return walls
+end
+
+--- The first two poles of the pole chain, as built (ghost or real).
+local function first_pole_pair(surface, plan)
+  local chain = plan.chains[1]
+  local function at(i)
+    local e = plan.entities[chain.members[i]]
+    return surface.find_entity(e.name, e.position)
+        or surface.find_entities_filtered { ghost_name = e.name, position = e.position, limit = 1 }[1]
+  end
+  return at(1), at(2)
+end
+
+--- Whether a and b are connected by the given wire.
+local function wired(a, b, connector_id)
+  local connector = a.get_wire_connector(connector_id, false)
+  if not connector then return false end
+  for _, connection in pairs(connector.connections) do
+    if connection.target.owner == b then return true end
+  end
+  return false
+end
+
 local steps = {}
 -- wait: ticks to wait after the step, or "idle" = until the mod's planning, drawing
 -- and building have caught up (they run spread over ticks).
 local function step(name, fn, wait) table.insert(steps, { name = name, fn = fn, wait = wait or 1 }) end
-
-local function point_count()
-  local n = 0
-  for _, p in pairs(controller().curve.points) do
-    if p.x and p.y then n = n + 1 end
-  end
-  return n
-end
 
 step("setup + open window", function(player)
   prepare_ground(player.surface)
@@ -83,40 +113,51 @@ step("setup + open window", function(player)
   check(button, "mod-gui button exists")
   dev("click", P, button)
   check(player.gui.screen.bezierio_window, "window opened")
+  check(el(player, "no_points"), "empty point list shows a hint")
 end)
 
-step("place P1, P2 with pointer", function(player)
-  dev("click", P, path("button_flow", "cp_table", "cp_button_1"))
-  check(player.cursor_stack.valid_for_read and player.cursor_stack.name == "bezierio-pointer-1", "pointer 1 in cursor")
+step("pointer adds points", function(player)
+  dev("click", P, "pointer_button")
+  check(player.cursor_stack.valid_for_read and player.cursor_stack.name == "bezierio-pointer", "pointer in cursor")
   dev("pointer", P, { x = -30.3, y = 5 })
-  dev("click", P, path("button_flow", "cp_table", "cp_button_2"))
-  check(player.cursor_stack.name == "bezierio-pointer-2", "pointer 2 in cursor")
   dev("pointer", P, { x = 0, y = -40 })
-  -- a click over a GUI with the pointer in hand must not move the point
-  dev("pointer", P, { x = 99, y = 99 }, path("button_flow", "cp_table", "cp_x_1"))
-  dev("pointer", P, { x = 98, y = 98 }, true) -- over a GUI, no element reported (slider)
-  local p2 = controller().curve.points[2]
-  check(p2.x == 0 and p2.y == -40, "pointer click over GUI ignored")
+  dev("pointer", P, { x = 99, y = 99 }, "cp_x_1") -- click on a GUI element: ignored
+  dev("pointer", P, { x = 98, y = 98 }, true)     -- over a GUI, no element reported: ignored
+  dev("pointer", P, { x = 30, y = 5 })
+  check(point_count() == 3, "3 points: " .. point_count())
+  check(el(player, "cp_x_1").text == "-30.3" and el(player, "cp_y_3").text == "5", "point list shows coordinates")
 end)
 
-step("pointer buttons follow cursor; P3 via textfields", function(player)
-  local cp = player.gui.screen.bezierio_window.main.button_flow.cp_table
-  check(cp.cp_button_2.toggled and not cp.cp_button_1.toggled,
-    "only P2 toggled (1=" ..
-    tostring(cp.cp_button_1.toggled) ..
-    " 2=" .. tostring(cp.cp_button_2.toggled) .. " active=" .. tostring(controller().ui.active_control_point) .. ")")
-  check(cp.cp_x_1.text == "-30.3", "P1 x textfield = " .. cp.cp_x_1.text)
-  dev("set_text", P, path("button_flow", "cp_table", "cp_x_3"), "30")
-  check(point_count() == 2, "half-entered P3 is ignored")
-  dev("set_text", P, path("button_flow", "cp_table", "cp_y_3"), "5")
-  check(point_count() == 3, "3 points after P3")
-  dev("set_text", P, path("button_flow", "cp_table", "cp_y_3"), "abc")
-  check(cp.cp_y_3.text == "5", "invalid input reverted")
-  player.cursor_stack.clear()
+step("pointer picks up, drops and removes points", function(player)
+  dev("pointer", P, { x = 0.4, y = -39.5 })        -- near P2: pick it up
+  check(controller().ui.held_point == 2, "P2 held")
+  dev("pointer", P, { x = 0, y = -35 })            -- drop it
+  local p2 = controller().curve.points[2]
+  check(controller().ui.held_point == nil and p2.x == 0 and p2.y == -35, "P2 moved")
+  dev("pointer", P, { x = 0, y = -35 })            -- pick up again ...
+  dev("pointer", P, { x = 0, y = -40 })            -- ... and put it back
+  dev("pointer", P, { x = 20, y = 20 })            -- P4
+  check(point_count() == 4, "P4 added")
+  dev("pointer_remove", P, { x = 20.5, y = 19.5 }) -- right-click near P4
+  check(point_count() == 3, "P4 removed")
+  dev("pointer", P, { x = -30, y = 5 })            -- pick up P1
+  dev("pointer_remove", P, { x = 0, y = 0 })       -- right-click while holding: put it back
+  check(controller().ui.held_point == nil and controller().curve.points[1].x == -30.3, "hold cancelled, P1 unchanged")
+end)
+
+step("point list edits", function(player)
+  dev("set_text", P, "cp_x_3", "abc")
+  check(el(player, "cp_x_3").text == "30", "invalid input reverted")
+  dev("pointer", P, { x = 10, y = 10 })
+  check(point_count() == 4, "P4 added")
+  dev("click", P, "cp_delete_4")
+  check(point_count() == 3 and not el(player, "cp_x_4"), "P4 deleted from the list")
+  dev("click", P, "pointer_button") -- put the pointer away
+  check(not player.cursor_stack.valid_for_read, "pointer put away")
 end)
 
 step("draw curve", function(player)
-  dev("click", P, path("control_flow", "draw_curve"))
+  dev("click", P, "draw_curve")
   check(controller().ui.draw_curve, "draw toggled on")
 end, "idle")
 
@@ -125,63 +166,69 @@ step("curve rendered", function(player)
 end)
 
 step("configure layers", function(player)
-  local L = function(k, ...) return path("layer_flow", "layer_" .. k, ...) end
   -- Clicking the picker (which opens the item chooser in the real game) must not
-  -- rebuild the row: that destroyed the picker before it could open.
-  local picker = player.gui.screen.bezierio_window.main.layer_flow.layer_0.layer_type
+  -- rebuild the pane: that destroyed the picker before it could open.
+  local picker = el(player, "layer_type")
   dev("click", P, picker)
   check(picker.valid, "item picker survives being clicked")
-  check(controller().presets[1].layers[0].type == "empty", "click alone changes nothing")
-  dev("set_elem", P, L(0, "layer_type"), { name = "stone-wall", quality = "normal" })
-  -- clicks on sliders / number boxes are not value changes either
-  local radius_box = player.gui.screen.bezierio_window.main.layer_flow.layer_0.radius_frame.radius_labels.slider_indicator
+  check(layers()[0].type == "empty", "click alone changes nothing")
+
+  local offered = {}
+  for _, n in pairs(dev("item_filter")[1].name) do offered[n] = true end
+  check(offered["stone-wall"] and offered["small-electric-pole"] and not offered["rail"], "rails not offered in the picker")
+
+  dev("set_elem", P, "layer_type", { name = "stone-wall", quality = "normal" })
+  dev("set_value", P, "radius_slider", 2)
+  check(layers()[0].radius == 2, "radius from slider")
+  local radius_box = el(player, "radius_value")
   dev("click", P, radius_box)
   check(radius_box.valid, "number box survives being clicked")
-  dev("set_value", P, L(0, "radius_frame", "radius_slider_flow", "radius"), 2)
-  check(controller().presets[1].layers[0].radius == 2, "radius from slider")
-  dev("set_text", P, L(0, "radius_frame", "radius_labels", "slider_indicator"), "99")
-  check(controller().presets[1].layers[0].radius == 10, "radius clamped to 10")
-  dev("set_text", P, L(0, "radius_frame", "radius_labels", "slider_indicator"), "1")
+  dev("set_text", P, "radius_value", "99")
+  check(layers()[0].radius == 10, "radius clamped to 10")
+  dev("set_text", P, "radius_value", "1")
 
-  dev("click", P, path("layer_flow", "add_layer_above"))
-  dev("set_elem", P, L(1, "layer_type"), { name = "small-electric-pole", quality = "normal" })
-  dev("set_checked", P, L(1, "smart_placement"), true)
-  check(controller().presets[1].layers[1].smart_placement == true, "checkbox stored")
+  dev("click", P, "add_layer_above")
+  check(controller().ui.selected_layer == 1, "new layer selected")
+  dev("set_elem", P, "layer_type", { name = "small-electric-pole", quality = "normal" })
+  check(layers()[1].size == 1, "small pole is 1x1, not 2x2: " .. layers()[1].size)
+  check(not el(player, "smart_placement"), "smart placement checkbox gone")
+  dev("set_checked", P, "connect_with_circuit_wires", true)
+  check(layers()[1].connect_with_circuit_wires == true, "circuit wires on")
 
-  dev("click", P, path("layer_flow", "add_layer_below"))
-  dev("set_elem", P, L(-1, "layer_type"), { name = "stone-brick", quality = "normal" })
-  dev("set_value", P, L(-1, "radius_frame", "radius_slider_flow", "radius"), 3)
-  dev("set_value", P, L(-1, "checkerboard_frame", "checkerboard_slider_flow", "checkerboard"), -2)
+  dev("click", P, "add_layer_below")
+  dev("set_elem", P, "layer_type", { name = "stone-brick", quality = "normal" })
+  dev("set_value", P, "radius_slider", 3)
+  dev("set_value", P, "checkerboard_slider", -2)
+  check(layers()[-1].type == "tile" and layers()[-1].radius == 3, "tile layer")
 
-  dev("click", P, path("layer_flow", "add_layer_above"))
-  dev("set_elem", P, L(2, "layer_type"), { name = "laser-turret", quality = "normal" })
-  dev("set_value", P, L(2, "offset_frame", "offset_slider_flow", "offset"), 1)
-  dev("set_value", P, L(2, "spacing_frame", "spacing_slider_flow", "spacing"), 6)
+  dev("click", P, "add_layer_above")
+  dev("set_elem", P, "layer_type", { name = "laser-turret", quality = "normal" })
+  dev("set_value", P, "offset_slider", 1)
+  dev("set_value", P, "spacing_slider", 6)
+  check(layers()[2].size == 2 and layers()[2].offset == 1, "turret layer")
 
-  dev("click", P, path("layer_flow", "add_layer_above"))
-  dev("set_elem", P, L(3, "layer_type"), { name = "rail", quality = "normal" })
-  local plan = dev("plan", P)
-  check(#plan.unsupported == 1 and plan.unsupported[1] == 3, "rail layer reported unsupported")
+  -- an empty layer 3; move it and the selection follows; delete it
+  dev("click", P, "add_layer_above")
+  dev("click", P, "layer_move_down_3")
+  check(layers()[2].type == "empty" and controller().ui.selected_layer == 2, "moved down, selection follows")
+  dev("click", P, "layer_move_up_2")
+  dev("click", P, "layer_delete_3")
+  check(layers()[3] == nil and layers()[2].type == "electric-turret", "deleted")
 
-  -- move the rail layer down and back up, then delete it
-  dev("click", P, L(3, "layer_move_down"))
-  check(controller().presets[1].layers[2].type == "straight-rail", "moved down")
-  dev("click", P, L(2, "layer_move_up"))
-  check(controller().presets[1].layers[3].type == "straight-rail", "moved up")
-  dev("click", P, L(3, "layer_delete"))
-  check(controller().presets[1].layers[3] == nil, "deleted")
-  check(controller().presets[1].layers[2].type == "electric-turret", "turret still layer 2")
+  dev("click", P, "layer_select_0")
+  check(controller().ui.selected_layer == 0 and el(player, "layer_type").elem_value.name == "stone-wall", "layer 0 selected")
 end)
 
 step("preview", function(player)
   storage.before = dev("render_count")
-  dev("click", P, path("control_flow", "preview_build"))
+  dev("click", P, "preview_build")
 end, "idle")
 
-step("preview rendered", function(player)
+step("preview rendered, totals shown", function(player)
   check(dev("render_count") > storage.before + 50, "preview drawn: " .. dev("render_count"))
+  check(el(player, "status").caption == "", "status empty when idle")
+  check(type(el(player, "totals").caption) == "table", "totals line filled")
 
-  -- Layers must not overlap.
   local plan = dev("plan", P)
   local cells = {}
   for _, e in pairs(plan.entities) do
@@ -194,32 +241,19 @@ step("preview rendered", function(player)
       end
     end
   end
-  local planned_walls = {}
-  for _, e in pairs(plan.entities) do if e.name == "stone-wall" then table.insert(planned_walls, e) end end
-  check(wall_components(planned_walls) == 1, "planned walls are one 4-connected line")
+  check(wall_components(planned_walls(plan)) == 1, "planned walls are one 4-connected line")
+  check(plan.gaps == 0, "poles all within reach")
   log("plan: " .. #plan.entities .. " entities, " .. #plan.tiles .. " tiles, skipped " .. plan.skipped)
 end)
 
-local function count_planned(plan)
-  local n = {}
-  for _, e in pairs(plan.entities) do n[e.name] = (n[e.name] or 0) + 1 end
-  return n
-end
-
-local function wall_spots(plan)
-  local spots = {}
-  for _, e in pairs(plan.entities) do if e.name == "stone-wall" then table.insert(spots, e.position) end end
-  return spots
-end
-
 step("force build", function(player)
   local s = player.surface
-  -- obstacles: a tree and one of our own chests on wall spots
-  local spots = wall_spots(dev("plan", P))
-  storage.tree = s.create_entity { name = "tree-01", position = spots[5] }
-  storage.chest = s.create_entity { name = "wooden-chest", position = spots[10], force = player.force }
+  local walls = planned_walls(dev("plan", P))
+  storage.tree = s.create_entity { name = "tree-01", position = walls[5].position }
+  storage.chest = s.create_entity { name = "wooden-chest", position = walls[10].position, force = player.force }
   check(storage.tree and storage.chest, "obstacles placed")
-  dev("click", P, path("control_flow", "build"))
+  storage.undo_before = player.undo_redo_stack.get_undo_item_count()
+  dev("click", P, "build")
   check(#ghosts(s, "stone-wall") == 0, "nothing built inside the click handler")
 end, "idle")
 
@@ -236,12 +270,22 @@ step("force build placed ghosts", function(player)
     "every planned tile ghost placed: " .. #s.find_entities_filtered { type = "tile-ghost" } .. "/" .. #plan.tiles)
   check(#ghosts(s, "small-electric-pole") == planned["small-electric-pole"], "every planned pole placed")
   check(#ghosts(s, "laser-turret") == planned["laser-turret"], "every planned turret placed")
-  dev("click", P, path("control_flow", "build"))
+
+  local stack = player.undo_redo_stack
+  check(stack.get_undo_item_count() == storage.undo_before + 1, "the whole build is one undo item: "
+    .. stack.get_undo_item_count() - storage.undo_before)
+  check(#stack.get_undo_item(1) >= #walls, "undo item holds the build's actions: " .. #stack.get_undo_item(1))
+
+  local a, b = first_pole_pair(s, plan)
+  check(a and b, "pole ghosts found")
+  check(wired(a, b, defines.wire_connector_id.circuit_red) and wired(a, b, defines.wire_connector_id.circuit_green),
+    "pole ghosts wired red and green")
+  dev("click", P, "build")
 end, "idle")
 
 step("second build adds nothing", function(player)
   check(#ghosts(player.surface, "stone-wall") == storage.wall_count, "second build adds nothing")
-  dev("click", P, path("control_flow", "super_build"))
+  dev("click", P, "super_build")
 end, "idle")
 
 step("superforced build", function(player)
@@ -263,11 +307,11 @@ end
 step("instant build in cheat mode", function(player)
   local s = player.surface
   clear_build(s)
-  local spots = wall_spots(dev("plan", P))
-  storage.tree2 = s.create_entity { name = "tree-01", position = spots[20] }
-  storage.chest2 = s.create_entity { name = "wooden-chest", position = spots[30], force = player.force }
+  local walls = planned_walls(dev("plan", P))
+  storage.tree2 = s.create_entity { name = "tree-01", position = walls[20].position }
+  storage.chest2 = s.create_entity { name = "wooden-chest", position = walls[30].position, force = player.force }
   player.cheat_mode = true
-  dev("click", P, path("control_flow", "build"))
+  dev("click", P, "build")
 end, "idle")
 
 step("cheat mode built real entities", function(player)
@@ -283,7 +327,11 @@ step("cheat mode built real entities", function(player)
     "tiles set: " .. s.count_tiles_filtered { name = "stone-path" } .. "/" .. #plan.tiles)
   check(not storage.tree2.valid, "tree removed, not marked")
   check(storage.chest2.valid, "chest kept by forced build")
-  dev("click", P, path("control_flow", "super_build"))
+  local a, b = first_pole_pair(s, plan)
+  check(a and b and a.type == "electric-pole", "real poles found")
+  check(wired(a, b, defines.wire_connector_id.pole_copper), "real poles connected with copper")
+  check(wired(a, b, defines.wire_connector_id.circuit_red), "real poles wired red")
+  dev("click", P, "super_build")
 end, "idle")
 
 step("cheat mode superforced", function(player)
@@ -299,16 +347,12 @@ step("instant build in map editor", function(player)
   local s = player.surface
   clear_build(s)
   -- a ghost from an earlier build gets revived instead of skipped
-  for _, e in pairs(dev("plan", P).entities) do
-    if e.name == "stone-wall" then
-      s.create_entity { name = "entity-ghost", inner_name = "stone-wall", position = e.position, force = player.force }
-      break
-    end
-  end
+  local wall = planned_walls(dev("plan", P))[1]
+  s.create_entity { name = "entity-ghost", inner_name = "stone-wall", position = wall.position, force = player.force }
   player.toggle_map_editor()
   check(player.controller_type == defines.controllers.editor, "in map editor")
   game.tick_paused = false -- builds run in the tick loop
-  dev("click", P, path("control_flow", "build"))
+  dev("click", P, "build")
 end, "idle")
 
 step("map editor built real entities", function(player)
@@ -321,18 +365,27 @@ step("map editor built real entities", function(player)
   check(player.controller_type ~= defines.controllers.editor, "left map editor")
 end)
 
-step("closed curve does not collapse", function(player)
-  dev("set_text", P, path("button_flow", "cp_table", "cp_x_4"), "-30.3")
-  dev("set_text", P, path("button_flow", "cp_table", "cp_y_4"), "5")
-  local plan = dev("plan", P)
-  check(#plan.entities > 100, "closed loop still planned: " .. #plan.entities)
+step("no build without permission", function(player)
+  local group = game.permissions.create_group("no-build")
+  group.set_allows_action(defines.input_action.build, false)
+  local old = player.permission_group
+  group.add_player(player)
+  dev("click", P, "build")
+  check(controller().work.pending_build == nil, "build refused")
+  if old then old.add_player(player) end
+  group.destroy()
 end)
 
-step("remove points, clear", function(player)
-  dev("click", P, path("button_flow", "cp_table", "cp_button_4"), defines.mouse_button_type.right)
-  check(point_count() == 3, "right click removed P4")
-  check(not player.gui.screen.bezierio_window.main.button_flow.cp_table.cp_button_4.toggled, "P4 button not toggled")
-  dev("click", P, path("button_flow", "control_point_flow", "control_points_clear"))
+step("closed loop", function(player)
+  dev("set_checked", P, "closed_loop", true)
+  check(controller().curve.closed == true, "closed flag set")
+  local plan = dev("plan", P)
+  check(plan.closed and #plan.entities > 100, "closed loop planned: " .. #plan.entities)
+  dev("set_checked", P, "closed_loop", false)
+end)
+
+step("clear points", function(player)
+  dev("click", P, "control_points_clear")
   check(point_count() == 0, "cleared")
 end, "idle")
 
@@ -340,23 +393,12 @@ step("cleared curve leaves nothing rendered", function(player)
   check(dev("render_count") == 0, "no sprites after clear: " .. dev("render_count"))
 end)
 
-step("pointer cycling", function(player)
-  player.cursor_stack.set_stack { name = "bezierio-pointer-9", count = 1 }
-  dev("pointer_cycle", P, 1)
-  check(player.cursor_stack.name == "bezierio-pointer-1", "9 -> 1")
-  dev("pointer_cycle", P, -1)
-  check(player.cursor_stack.name == "bezierio-pointer-9", "1 -> 9")
-  player.cursor_stack.clear()
-end)
-
 step("close and reopen keeps state", function(player)
   player.opened = nil
   check(not player.gui.screen.bezierio_window, "window closed via on_gui_closed")
-  local button = find_named(player.gui.top, "bezierio_button")
-  dev("click", P, button)
-  local main = player.gui.screen.bezierio_window.main
-  check(main.control_flow.draw_curve.toggled, "draw toggle restored")
-  check(main.layer_flow.layer_0.layer_type.elem_value.name == "stone-wall", "layer type restored")
+  dev("click", P, find_named(player.gui.top, "bezierio_button"))
+  check(el(player, "draw_curve").toggled, "draw toggle restored")
+  check(el(player, "layer_type").elem_value.name == "stone-wall", "layer type restored")
 end)
 
 local IDLE_TIMEOUT = 1200

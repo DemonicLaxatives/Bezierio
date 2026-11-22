@@ -2,7 +2,10 @@
 ---
 --- What "building" means is up to the output module (outputs/*.lua): ghosts, or
 --- real entities in the map editor / cheat mode. This module does what they share:
---- skipping what's already there, the placement check, and finding obstacles.
+--- skipping what's already there, the placement check, finding obstacles, wiring
+--- pole chains, and keeping everything in one undo item.
+local undo = require("scripts.build.undo")
+
 local lib = {}
 
 --- @alias BezierioBuildMode "forced"|"superforced"
@@ -10,11 +13,11 @@ local lib = {}
 --- @class BuildOutput
 --- @field name string
 --- @field matching_tile_ghost fun(job: BuildJob, player: LuaPlayer, ghost: LuaEntity): "existing"|nil
---- @field place_tile fun(job: BuildJob, player: LuaPlayer, tile: PlannedTile)
---- @field flush fun(job: BuildJob, player: LuaPlayer)
+--- @field place_tile fun(job: BuildJob, player: LuaPlayer, tile: PlannedTile, undo_index: integer)
+--- @field flush fun(job: BuildJob, player: LuaPlayer, undo_index: integer)
 --- @field matching_entity_ghost fun(job: BuildJob, player: LuaPlayer, ghost: LuaEntity): "placed"|"existing"
---- @field clear fun(job: BuildJob, player: LuaPlayer, obstacle: LuaEntity)
---- @field create_entity fun(job: BuildJob, player: LuaPlayer, entity: PlannedEntity): LuaEntity|nil
+--- @field clear fun(job: BuildJob, player: LuaPlayer, obstacle: LuaEntity, undo_index: integer)
+--- @field create_entity fun(job: BuildJob, player: LuaPlayer, entity: PlannedEntity, undo_index: integer): LuaEntity|nil
 
 --- @type table<string, BuildOutput>
 lib.outputs = {
@@ -23,7 +26,7 @@ lib.outputs = {
 }
 
 --- Work units per placement, for budgeting.
-lib.COST = { tile = 3, entity = 6 }
+lib.COST = { tile = 3, entity = 6, wire = 4 }
 
 --- @class BuildResult
 --- @field placed integer
@@ -37,9 +40,12 @@ lib.COST = { tile = 3, entity = 6 }
 --- @field mode BezierioBuildMode
 --- @field output string          # key in lib.outputs
 --- @field plan BuildPlan         # finished plan (read only)
---- @field stage "tiles"|"entities"|"done"
+--- @field stage "tiles"|"entities"|"wires"|"done"
 --- @field cursor integer
+--- @field chain_keys integer[]   # layer indices of plan.chains, for the wires stage
+--- @field chain_cursor integer
 --- @field tile_batch Tile[]      # used by the instant output
+--- @field undo UndoTracking
 --- @field result BuildResult
 
 local IGNORED_IN_THE_WAY = {
@@ -65,6 +71,9 @@ end
 --- @param mode BezierioBuildMode
 --- @return BuildJob
 function lib.new_job(player, plan, mode)
+    local chain_keys = {}
+    for idx in pairs(plan.chains) do table.insert(chain_keys, idx) end
+    table.sort(chain_keys)
     return {
         player_index = player.index,
         surface = player.surface,
@@ -74,9 +83,41 @@ function lib.new_job(player, plan, mode)
         plan = plan,
         stage = "tiles",
         cursor = 1,
+        chain_keys = chain_keys,
+        chain_cursor = 1,
         tile_batch = {},
+        undo = {},
         result = { placed = 0, existing = 0, blocked = 0 },
     }
+end
+
+--- Rough share of the work done, 0..1.
+--- @param job BuildJob
+--- @return number
+function lib.progress(job)
+    local total = #job.plan.tiles + #job.plan.entities
+    if total == 0 or job.stage == "done" or job.stage == "wires" then return 1 end
+    local done = job.stage == "tiles" and job.cursor - 1 or #job.plan.tiles + job.cursor - 1
+    return done / total
+end
+
+--- Run one output action inside the job's undo item. `arg` is the action's subject
+--- (tile, entity, obstacle) or nil for actions without one.
+--- @param job BuildJob
+--- @param player LuaPlayer
+--- @param fn function
+--- @param arg any
+--- @return any
+local function with_undo(job, player, fn, arg)
+    local index = undo.index(job.undo, player)
+    local result
+    if arg == nil then
+        result = fn(job, player, index)
+    else
+        result = fn(job, player, arg, index)
+    end
+    undo.after(job.undo, player)
+    return result
 end
 
 --- @param job BuildJob
@@ -106,7 +147,7 @@ local function build_tile(job, player, output, tile)
         result.blocked = result.blocked + 1
         return
     end
-    output.place_tile(job, player, tile)
+    with_undo(job, player, output.place_tile, tile)
     result.placed = result.placed + 1
 end
 
@@ -147,7 +188,7 @@ local function build_entity(job, player, output, entity)
                     other.destroy()
                 elseif not IGNORED_IN_THE_WAY[other.type]
                     and (other.force == force or other.force.name == "neutral") then
-                    output.clear(job, player, other)
+                    with_undo(job, player, output.clear, other)
                 end
             end
         end
@@ -163,18 +204,75 @@ local function build_entity(job, player, output, entity)
             return
         end
         for _, other in pairs(surface.find_entities_filtered { area = area, type = { "tree", "simple-entity" } }) do
-            output.clear(job, player, other)
+            with_undo(job, player, output.clear, other)
         end
     end
 
-    if output.create_entity(job, player, entity) then
+    if with_undo(job, player, output.create_entity, entity) then
         result.placed = result.placed + 1
     else
         result.blocked = result.blocked + 1
     end
 end
 
---- Do up to about `budget` units of work. Tiles go first, then entities.
+--- The pole (or pole ghost) built for a planned entity.
+--- @param surface LuaSurface
+--- @param entity PlannedEntity
+--- @return LuaEntity|nil
+local function built_entity(surface, entity)
+    return surface.find_entity(entity.name, entity.position)
+        or surface.find_entities_filtered { ghost_name = entity.name, position = entity.position, limit = 1 }[1]
+end
+
+local WIRES = {
+    copper = { defines.wire_connector_id.pole_copper },
+    circuit = { defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green },
+}
+
+--- Connect two poles (or ghosts) with copper, and red/green wire if asked.
+--- @param a LuaEntity
+--- @param b LuaEntity
+--- @param circuit boolean
+local function connect(a, b, circuit)
+    local ids = { table.unpack(WIRES.copper) }
+    if circuit then
+        for _, id in ipairs(WIRES.circuit) do table.insert(ids, id) end
+    end
+    for _, id in ipairs(ids) do
+        local from = a.get_wire_connector(id, true)
+        local to = b.get_wire_connector(id, true)
+        if from and to then from.connect_to(to, true, defines.wire_origin.player) end
+    end
+end
+
+--- Wire each pole chain in order along the curve.
+--- @param job BuildJob
+--- @param budget number
+--- @return number used
+local function step_wires(job, budget)
+    local used, plan = 0, job.plan
+    while job.chain_cursor <= #job.chain_keys and used < budget do
+        local chain = plan.chains[job.chain_keys[job.chain_cursor]]
+        local members = chain.members
+        local count = #members
+        local pairs_total = (plan.closed and count > 2) and count or count - 1
+        while job.cursor <= pairs_total and used < budget do
+            local a = built_entity(job.surface, plan.entities[members[job.cursor]])
+            local b = built_entity(job.surface, plan.entities[members[job.cursor % count + 1]])
+            if a and b then connect(a, b, chain.wires) end
+            job.cursor = job.cursor + 1
+            used = used + lib.COST.wire
+        end
+        if job.cursor > pairs_total then
+            job.chain_cursor = job.chain_cursor + 1
+            job.cursor = 1
+        end
+    end
+    if job.chain_cursor > #job.chain_keys then job.stage = "done" end
+    return used
+end
+
+--- Do up to about `budget` units of work: tiles, then entities, then wires.
 --- @param job BuildJob
 --- @param budget number
 --- @return boolean done, number used
@@ -193,7 +291,7 @@ function lib.step(job, budget)
             job.cursor = job.cursor + 1
             used = used + lib.COST.tile
         end
-        output.flush(job, player)
+        with_undo(job, player, output.flush)
         if job.cursor > #plan.tiles then
             job.stage, job.cursor = "entities", 1
         end
@@ -205,8 +303,11 @@ function lib.step(job, budget)
             used = used + lib.COST.entity
         end
         if job.cursor > #plan.entities then
-            job.stage = "done"
+            job.stage, job.cursor = "wires", 1
         end
+    end
+    if job.stage == "wires" and used < budget then
+        used = used + step_wires(job, budget - used)
     end
     return job.stage == "done", used
 end

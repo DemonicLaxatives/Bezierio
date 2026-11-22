@@ -25,7 +25,7 @@ lib.COST = {
     sample = 1,  -- one curve sample
     frame = 1,   -- one pass over one sample (tangent / fill / normal + index)
     sweep = 1,   -- one probe across the curve
-    cell = 8,    -- classifying one cell (nearest-sample search)
+    cell = 10,   -- classifying one cell (nearest-sample search)
     place = 4,   -- trying one spaced entity position
 }
 
@@ -42,11 +42,21 @@ lib.COST = {
 --- @field y integer
 --- @field layer integer
 
+--- @class PlanChain
+--- @field wires boolean        # connect consecutive members with red and green wire
+--- @field members integer[]    # indices into plan.entities, in order along the curve
+
 --- @class BuildPlan
 --- @field entities PlannedEntity[]
 --- @field tiles PlannedTile[]
 --- @field unsupported integer[]   # layer indices whose type can't be built yet
 --- @field skipped integer         # spaced entities that found no free spot
+--- @field length number           # curve length in tiles
+--- @field counts table<integer, integer>   # placements per layer index
+--- @field chains table<integer, PlanChain> # pole layers: poles in order, for wiring
+--- @field gaps integer           # consecutive poles out of wire reach (no room for a pole between)
+--- @field warnings Vector[]       # where a bend is tighter than the layers on its inside
+--- @field closed boolean        # the curve is a loop (pole chains close too)
 --- @field done boolean
 
 --- @class LayerBand
@@ -54,11 +64,12 @@ lib.COST = {
 --- @field lo number
 --- @field hi number
 
---- @alias PlannerStage "sample"|"tangents"|"fill"|"normals"|"bands"|"rasterize"|"spaced"|"done"
+--- @alias PlannerStage "sample"|"tangents"|"fill"|"normals"|"bands"|"bends"|"rasterize"|"spaced"|"done"
 
 --- @class PlannerJob
 --- @field stage PlannerStage
 --- @field layers table<integer, Layer>   # copied at creation; later edits don't affect the job
+--- @field closed boolean                 # the curve is a loop
 --- @field sampler CurveSampler|nil
 --- @field points Vector[]                # curve samples (world coordinates)
 --- @field frames CurveFrame[]
@@ -72,7 +83,10 @@ lib.COST = {
 --- @field occupied table<string, boolean># cells taken by entities
 --- @field spaced integer[]               # indices into bands, in placement order
 --- @field spaced_cursor integer
---- @field walk {i: integer, travelled: number, next_at: number}|nil
+--- @field walk {i: integer, travelled: number, next_at: number, last: Vector|nil}|nil
+--- @field outer_plus number              # outermost built distance on the + side (grid units)
+--- @field outer_minus number             # ... on the - side
+--- @field last_warning Vector|nil
 --- @field plan BuildPlan
 
 --- @param x integer
@@ -95,6 +109,7 @@ function lib.new_job(curve, layers)
     return {
         stage = sampler and "sample" or "done",
         layers = copy,
+        closed = curve_lib.is_closed(curve),
         sampler = sampler,
         points = {},
         frames = {},
@@ -109,7 +124,15 @@ function lib.new_job(curve, layers)
         spaced = {},
         spaced_cursor = 1,
         walk = nil,
-        plan = { entities = {}, tiles = {}, unsupported = {}, skipped = 0, done = sampler == nil },
+        outer_plus = 0,
+        outer_minus = 0,
+        last_warning = nil,
+        plan = {
+            entities = {}, tiles = {}, unsupported = {}, skipped = 0,
+            length = 0, counts = {}, chains = {}, gaps = 0, warnings = {},
+            closed = curve_lib.is_closed(curve),
+            done = sampler == nil,
+        },
     }
 end
 
@@ -202,13 +225,14 @@ local function stage_tangents(job, budget)
     local used, points, frames = 0, job.points, job.frames
     while job.cursor <= #points and used < budget do
         local i = job.cursor
-        local t = geometry.raw_tangent(points, i)
+        local t = geometry.raw_tangent(points, i, job.closed)
         if geometry.is_zero(t) then
             t = job.last_tangent -- may still be nil; fixed by the backward fill
         else
             job.last_tangent = t
         end
         frames[i] = { p = points[i], t = t } --[[@as CurveFrame]]
+        if i > 1 then job.plan.length = job.plan.length + vect.distance(points[i - 1], points[i]) end
         job.cursor = i + 1
         used = used + lib.COST.frame
     end
@@ -281,9 +305,53 @@ local function stage_bands(job)
         if pa ~= pb then return pa > pb end
         return la.idx < lb.idx
     end)
-    job.stage = #bands > 0 and "rasterize" or "spaced"
+    for _, band in ipairs(bands) do
+        if registry.type_of(band.layer).placement ~= "none" then
+            if band.hi > 0 then job.outer_plus = math.max(job.outer_plus, band.hi) end
+            if band.lo < 0 then job.outer_minus = math.max(job.outer_minus, -band.lo) end
+        end
+    end
+    job.stage = #bands > 0 and "bends" or "spaced"
     job.cursor = 1
     return 1
+end
+
+--- Minimum spacing of tight-bend warnings along the curve, in tiles.
+local WARNING_SPACING = 1
+
+--- Find where the curve bends tighter than the layers on the inside of the bend:
+--- there the layers fold over and split. Curvature at sample i is the turn of
+--- the tangent between its neighbours over the distance between them.
+--- @param job PlannerJob
+--- @param budget number
+local function stage_bends(job, budget)
+    local used, frames = 0, job.frames
+    local n = #frames
+    while job.cursor <= n and used < budget do
+        local i = job.cursor
+        local prev = frames[i - 1] or (job.closed and frames[n - 1]) or frames[i]
+        local next = frames[i + 1] or (job.closed and frames[2]) or frames[i]
+        local ds = vect.distance(prev.p, next.p)
+        if ds > 0 then
+            local turn = prev.t.x * next.t.y - prev.t.y * next.t.x -- sin of the angle turned
+            local curvature = turn / ds                         -- > 0: bends towards the + side
+            local inside = curvature > 0 and job.outer_plus or job.outer_minus
+            if inside > 0 and math.abs(curvature) * inside > 1 then
+                local p = frames[i].p
+                local last = job.last_warning
+                if not last or vect.distance(last, p) >= WARNING_SPACING then
+                    table.insert(job.plan.warnings, { x = p.x, y = p.y })
+                    job.last_warning = p
+                end
+            end
+        end
+        job.cursor = i + 1
+        used = used + lib.COST.frame
+    end
+    if job.cursor > n then
+        job.stage, job.cursor = "rasterize", 1
+    end
+    return used
 end
 
 --- Classify the cells around one frame and emit band placements.
@@ -310,6 +378,7 @@ local function rasterize_frame(job, f)
                         local layer = band.layer
                         local def = registry.type_of(layer)
                         if def.placement == "band" and checkerboard_keep(x, y, layer.checkerboard) then
+                            plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
                             if def.output == "tile" then
                                 table.insert(plan.tiles, { name = layer.name, x = x, y = y, layer = layer.idx })
                             else
@@ -344,12 +413,13 @@ local function stage_rasterize(job, budget)
     return used
 end
 
---- Place a spaced entity at the free grid position nearest to `target`.
+--- The free grid position nearest to `target` for an entity of `size`, if any.
 --- @param job PlannerJob
---- @param layer Layer
+--- @param size integer
 --- @param target Vector
-local function try_place(job, layer, target)
-    local size, occupied = layer.size, job.occupied
+--- @return Vector|nil
+local function find_spot(job, size, target)
+    local occupied = job.occupied
     local xa, xb = snap_candidates(target.x, size)
     local ya, yb = snap_candidates(target.y, size)
     local candidates = { { x = xa, y = ya }, { x = xb, y = ya }, { x = xa, y = yb }, { x = xb, y = yb } }
@@ -362,19 +432,112 @@ local function try_place(job, layer, target)
                 if occupied[cell_key(x0 + dx, y0 + dy)] then free = false end
             end
         end
-        if free then
-            for dx = 0, size - 1 do
-                for dy = 0, size - 1 do
-                    occupied[cell_key(x0 + dx, y0 + dy)] = true
-                end
-            end
-            table.insert(job.plan.entities, {
-                name = layer.name, quality = layer.quality, position = pos, size = size, layer = layer.idx,
-            })
-            return
+        if free then return pos end
+    end
+    return nil
+end
+
+--- Shifts along the curve (tiles) tried when the spot itself is taken.
+local SHIFTS = { 0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2 }
+
+--- A free spot near `target`, also trying a little ahead of and behind it along
+--- the curve.
+--- @param job PlannerJob
+--- @param size integer
+--- @param target Vector
+--- @param direction Vector  # unit vector along the curve
+--- @return Vector|nil, number used
+local function search_spot(job, size, target, direction)
+    local used = 0
+    for _, shift in ipairs(SHIFTS) do
+        used = used + lib.COST.place
+        local pos = find_spot(job, size, vect.add(target, vect.scale(shift, direction)))
+        if pos then return pos, used end
+    end
+    return nil, used
+end
+
+--- Claim a spot and add the entity to the plan.
+--- @param job PlannerJob
+--- @param layer Layer
+--- @param pos Vector
+local function commit(job, layer, pos)
+    local size = layer.size
+    local x0, y0 = footprint_origin(pos, size)
+    for dx = 0, size - 1 do
+        for dy = 0, size - 1 do
+            job.occupied[cell_key(x0 + dx, y0 + dy)] = true
         end
     end
-    job.plan.skipped = job.plan.skipped + 1
+    local plan = job.plan
+    table.insert(plan.entities, {
+        name = layer.name, quality = layer.quality, position = pos, size = size, layer = layer.idx,
+    })
+    plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
+    local chain = plan.chains[layer.idx]
+    if chain then
+        local previous = chain.members[#chain.members]
+        if previous and vect.distance(plan.entities[previous].position, pos) > layer.wire_distance then
+            plan.gaps = plan.gaps + 1
+        end
+        table.insert(chain.members, #plan.entities)
+    end
+end
+
+--- Pole layers: fill gaps longer than the wire reach with extra poles, halving
+--- the gap each time (at most a few levels deep).
+--- @param job PlannerJob
+--- @param layer Layer
+--- @param a Vector
+--- @param b Vector
+--- @param depth integer
+--- @return number used
+local function bridge(job, layer, a, b, depth)
+    local reach = layer.wire_distance
+    if not reach or vect.distance(a, b) <= reach or depth > 4 then return 0 end
+    local mid = vect.scale(0.5, vect.add(a, b))
+    local direction = vect.normalize(vect.sub(b, a))
+    local pos, used = search_spot(job, layer.size, mid, direction)
+    if not pos then return used end
+    used = used + bridge(job, layer, a, pos, depth + 1)
+    -- The poles just added between a and pos may have taken pos.
+    if not find_spot(job, layer.size, pos) or find_spot(job, layer.size, pos).x ~= pos.x
+        or find_spot(job, layer.size, pos).y ~= pos.y then
+        local more
+        pos, more = search_spot(job, layer.size, mid, direction)
+        used = used + more
+        if not pos then return used end
+    end
+    commit(job, layer, pos)
+    return used + bridge(job, layer, pos, b, depth + 1)
+end
+
+--- Place one spaced entity near `target`, keeping pole chains within reach.
+--- @param job PlannerJob
+--- @param layer Layer
+--- @param walk {last: Vector|nil}
+--- @param target Vector
+--- @param direction Vector
+--- @return number used
+local function place(job, layer, walk, target, direction)
+    local pos, used = search_spot(job, layer.size, target, direction)
+    if not pos then
+        job.plan.skipped = job.plan.skipped + 1
+        return used
+    end
+    if walk.last and layer.wire_distance and vect.distance(walk.last, pos) > layer.wire_distance then
+        used = used + bridge(job, layer, walk.last, pos, 0)
+        local again, more = search_spot(job, layer.size, target, direction)
+        used = used + more
+        pos = again
+        if not pos then
+            job.plan.skipped = job.plan.skipped + 1
+            return used
+        end
+    end
+    commit(job, layer, pos)
+    walk.last = pos
+    return used
 end
 
 --- Walk each spaced layer's centre line, placing an entity every `spacing` tiles.
@@ -390,10 +553,12 @@ local function stage_spaced(job, budget)
 
         local walk = job.walk
         if not walk then
-            try_place(job, layer, geometry.offset_point(frames[1], u_mid))
-            used = used + lib.COST.place
-            walk = { i = 2, travelled = 0, next_at = spacing }
+            if layer.wire_distance then
+                job.plan.chains[layer.idx] = { wires = layer.connect_with_circuit_wires == true, members = {} }
+            end
+            walk = { i = 2, travelled = 0, next_at = spacing, last = nil }
             job.walk = walk
+            used = used + place(job, layer, walk, geometry.offset_point(frames[1], u_mid), frames[1].t)
         end
         while walk.i <= #frames and used < budget do
             local a = geometry.offset_point(frames[walk.i - 1], u_mid)
@@ -401,8 +566,8 @@ local function stage_spaced(job, budget)
             local seg = vect.distance(a, b)
             while seg > 0 and walk.travelled + seg >= walk.next_at do
                 local k = (walk.next_at - walk.travelled) / seg
-                try_place(job, layer, vect.add(a, vect.scale(k, vect.sub(b, a))))
-                used = used + lib.COST.place
+                local direction = vect.scale(1 / seg, vect.sub(b, a))
+                used = used + place(job, layer, walk, vect.add(a, vect.scale(k, vect.sub(b, a))), direction)
                 walk.next_at = walk.next_at + spacing
             end
             walk.travelled = walk.travelled + seg
@@ -410,6 +575,14 @@ local function stage_spaced(job, budget)
             used = used + lib.COST.frame
         end
         if walk.i > #frames then
+            -- Close a pole loop: the last pole must reach the first.
+            local chain = job.plan.chains[layer.idx]
+            if job.closed and chain and #chain.members > 1 and walk.last then
+                local first = job.plan.entities[chain.members[1]].position
+                used = used + bridge(job, layer, walk.last, first, 0)
+                local last = job.plan.entities[chain.members[#chain.members]].position
+                if vect.distance(last, first) > layer.wire_distance then job.plan.gaps = job.plan.gaps + 1 end
+            end
             job.walk = nil
             job.spaced_cursor = job.spaced_cursor + 1
         end
@@ -426,6 +599,7 @@ local STAGES = {
     fill = stage_fill,
     normals = stage_normals,
     bands = stage_bands,
+    bends = stage_bends,
     rasterize = stage_rasterize,
     spaced = stage_spaced,
 }
@@ -446,6 +620,22 @@ function lib.step(job, budget, until_stage)
         job.frames, job.index, job.seen, job.occupied = {}, {}, {}, {}
     end
     return job.stage == "done", used
+end
+
+--- Rough share of the work done, 0..1, for progress display.
+--- @param job PlannerJob
+--- @return number
+function lib.progress(job)
+    local stage = job.stage
+    if stage == "done" then return 1 end
+    if stage == "sample" then return 0.02 end
+    local n = math.max(1, #job.frames)
+    if stage == "tangents" or stage == "fill" or stage == "normals" or stage == "bands" then return 0.05 end
+    if stage == "bends" then return 0.05 + 0.05 * job.cursor / n end
+    if stage == "rasterize" then return 0.1 + 0.7 * job.cursor / n end
+    local spaced = math.max(1, #job.spaced)
+    local within = job.walk and job.walk.i / n or 0
+    return 0.8 + 0.2 * ((job.spaced_cursor - 1) + within) / spaced
 end
 
 --- Plan in one go (tests, debugging).

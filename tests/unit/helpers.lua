@@ -58,7 +58,10 @@ end
 helpers.layer_makers = {
     function(r, i) return { idx = i, type = "wall", name = "wall", quality = "normal", radius = r.int(1, 3), checkerboard = 0, size = 1, offset = r.int(0, 2), priority = 100 } end,
     function(r, i) return { idx = i, type = "tile", name = "tile", quality = "normal", radius = r.int(1, 3), checkerboard = r.int(-2, 2), size = 1, offset = r.int(0, 2), priority = 100 } end,
-    function(r, i) return { idx = i, type = "electric-pole", name = "pole", quality = "normal", size = r.int(1, 2), offset = r.int(0, 2), priority = 10, spacing = r.int(3, 9) } end,
+    function(r, i)
+        local reach = r.int(5, 12)
+        return { idx = i, type = "electric-pole", name = "pole", quality = "normal", size = r.int(1, 2), offset = r.int(0, 2), priority = 10, spacing = r.int(3, reach), wire_distance = reach }
+    end,
     function(r, i) return { idx = i, type = "electric-turret", name = "turret", quality = "normal", size = 2, offset = r.int(0, 2), priority = 50, spacing = r.int(2, 6) } end,
     function(r, i) return { idx = i, type = "roboport", name = "roboport", quality = "normal", size = 4, offset = r.int(0, 2), priority = 20, spacing = r.int(4, 12) } end,
     function(r, i) return { idx = i, type = "straight-rail", name = "rail", quality = "normal", size = 2, offset = r.int(0, 2), priority = 1, direction_of_travel = 1, signal_spacing = 1 } end,
@@ -77,15 +80,17 @@ end
 --- Plan a build for control points + layers through the mod's current API.
 --- Keeping this adapter the only place that knows the API keeps the tests stable
 --- while the code is restructured.
---- @param points table<integer, {x: number, y: number}>
+--- @param points {x: number, y: number}[]
 --- @param layers table<integer, table>
 --- @param budget integer|nil  # work units per step; nil = run in one go
+--- @param closed boolean|nil
 --- @return table plan, integer steps
-function helpers.plan(points, layers, budget)
+function helpers.plan(points, layers, budget, closed)
     local curve = require("scripts.curve.curve")
     local planner = require("scripts.build.planner")
     local c = curve.new()
-    for i, p in pairs(points) do curve.set_point(c, i, p) end
+    for _, p in ipairs(points) do curve.append(c, p) end
+    c.closed = closed or false
     local job = planner.new_job(c, deepcopy(layers))
     local steps = 0
     while not planner.step(job, budget or math.huge) do
@@ -115,6 +120,7 @@ function helpers.canonical(plan)
     return "entities " .. #entities .. ": " .. table.concat(entities, " ") .. "\n"
         .. "tiles " .. #tiles .. ": " .. table.concat(tiles, " ") .. "\n"
         .. "skipped " .. plan.skipped .. " unsupported " .. table.concat(unsupported, ",")
+        .. " warnings " .. #plan.warnings .. string.format(" length %.2f", plan.length)
 end
 
 return helpers

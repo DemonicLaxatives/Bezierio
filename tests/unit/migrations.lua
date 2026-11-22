@@ -32,23 +32,36 @@ local function v2_storage()
     }
 end
 
--- 2 -> 3
+-- 2 -> 3 -> 4
 storage = v2_storage()
 state.ensure()
 local c = storage.controllers[1]
 check(storage.schema_version == state.SCHEMA_VERSION, "schema version bumped")
-check(c.ui.preset_index == 1 and c.ui.draw_curve == true and c.ui.active_control_point == 3, "ui state carried over")
+check(c.ui.preset_index == 1 and c.ui.draw_curve == true, "ui state carried over")
+check(c.ui.active_control_point == nil and c.ui.held_point == nil, "numbered pointer state dropped")
 check(c.state == nil and c.curve_cache == nil, "old fields gone")
-check(c.curve.kind == "bezier", "curve kind")
-check(c.curve.points[1].x == -30.3 and c.curve.points[3].y == 5, "control points carried over")
-check(c.curve.points[5].x == 7 and c.curve.points[5].y == nil, "half-entered point kept")
-check(c.curve.points[2] == nil, "unset slot stays unset")
+check(c.curve.kind == "catmull_rom" and c.curve.closed == false, "curve kind")
+check(#c.curve.points == 2, "complete points kept as a list, gaps and half points dropped")
+check(c.curve.points[1].x == -30.3 and c.curve.points[2].x == 30 and c.curve.points[2].y == 5, "point order kept")
 local layers = c.presets[1].layers
 check(layers[0].type == "wall" and layers[0].radius == 2 and layers[0].priority == nil, "wall layer kept, priority dropped")
 check(layers[1].type == "empty", "nil layer -> empty")
 check(type(c.revision) == "number" and c.redraw == true and type(c.work) == "table", "job fields added")
 check(next(storage.sprites) == nil, "stale sprite references dropped")
 check(storage.item_filter ~= nil, "item filter kept")
+
+-- 3 -> 4 on its own: sparse slots with a gap
+storage = { schema_version = 3, sprites = {}, controllers = { [2] = {
+    ui = { preset_index = 1, draw_curve = false, preview_build = true, active_control_point = 2 },
+    curve = { kind = "bezier", points = { [2] = { x = 1, y = 2 }, [7] = { x = 3, y = 4 }, [4] = { x = 9 } } },
+    presets = { { name = "Default", layers = { [0] = { idx = 0, type = "empty", size = 1, offset = 0 } } } },
+    revision = 5, redraw = false, work = {},
+} } }
+state.ensure()
+local c2 = storage.controllers[2]
+check(#c2.curve.points == 2 and c2.curve.points[1].y == 2 and c2.curve.points[2].x == 3, "3->4: slots in order")
+check(c2.revision == 6 and c2.redraw == true and c2.work.draw ~= nil, "3->4: replan and redraw")
+check(c2.ui.preview_build == true, "3->4: toggles kept")
 
 -- The migrated controller works with the current code.
 local planner = require("scripts.build.planner")

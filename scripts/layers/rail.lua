@@ -1,4 +1,5 @@
---- Rails: selectable and configurable, but the planner can't build them yet.
+--- Rails: not offered in the item picker yet (hidden = true) because the planner
+--- can't build them.
 --- Building them means fitting 2.0 rail pieces ("straight-rail", "half-diagonal-rail",
 --- "curved-rail-a", "curved-rail-b") to the curve.
 --- @type LayerType
@@ -6,6 +7,7 @@ return {
     name = "straight-rail",
     entity_types = { "straight-rail" },
     placement = "unsupported",
+    hidden = true,
     output = "entity",
     priority = 1,
     fields = {

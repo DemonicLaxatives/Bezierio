@@ -40,59 +40,69 @@ Plan output is unchanged: a snapshot of 27 cases taken before the refactor still
 matches. Unit tests (`tests/unit/run_all.sh`) cover the snapshot, sliced vs one-shot
 planning, random-curve properties and migrations.
 
-## Phase 1: refinement
+## Phase 1: refinement (done)
 
-- **Undo support.** Pass `undo_index` to `create_entity` (or use
-  `player.undo_redo_stack`) so Ctrl+Z removes a whole build. Without it, a bad
-  build is painful to clean up.
-- **Calibrate the work budget.** `jobs.BUDGET` and the `COST` tables are rough
-  guesses. Headless runs suggest ~7–9 ms of work per tick at the current budget,
-  which is too much next to the game's own 16.6 ms.
-  - Measure (e.g. with `--benchmark` on a save with a large curve) and tune.
-  - Consider a per-map setting.
-- **Restarts while editing.** The plan is now kept when only the view changes,
-  but every curve or layer edit restarts it. Dragging a slider restarts once per
-  step. Consider waiting a few ticks after the last edit before starting, and a
-  progress note for long plans and builds.
-- **Batch sprite deletion.** Clearing a full preview (up to 4000 render objects)
-  happens in one tick; spread it like the rest.
-- **Electric pole reach guarantee.** After grid snapping, check the distance to the
-  previous pole and insert an extra pole when it exceeds the wire reach. The
-  default spacing is reach − 1, which is usually but not always enough.
-- **The *Smart placement* and *Circuit wires* checkboxes** are stored but do
-  nothing. Implement circuit wires (connect consecutive pole ghosts) and hide smart
-  placement until it has a meaning.
-- **Rails:** hide them from the layer picker until they are buildable **(rec)**.
-  Today they can be chosen but are skipped with a message.
-- **Curves with many points (rec: piecewise cubic).** One Bézier of degree up to 8
-  is hard to steer: every point pulls on the whole curve. Recommended:
-  - treat points as a chain of cubic segments (Catmull-Rom or a uniform B-spline,
-    selectable);
-  - allow more than 9 points;
-  - offer "close loop" as a toggle instead of duplicating P1.
+- **Curves:** Catmull-Rom only (centripetal: passes through every point, no
+  cusps), any number of points, and a *Closed loop* toggle. Saves are migrated
+  (schema 4); existing curves change shape.
+- **Smart pointer:** one pointer (button or Alt+B).
+  - Click empty ground to append a point.
+  - Click a point to pick it up; click again to drop it.
+  - Right-click to remove a point, or to cancel a hold.
 
-  This is a new curve kind in `scripts/curve/` next to `bezier.lua`. The curve data
-  already allows any number of points; the GUI's 9 slots are the limit.
-- **Edit points directly in the world:** click near an existing point to pick it up
-  and drag it.
-- **Tight bends:** side layers split where the bend is tighter than their distance
-  from the curve. Show this in the preview (highlight where curvature radius <
-  outermost layer distance) rather than silently producing gaps.
-- **Spaced entities skipped on collision:** search a little further along the curve
-  (±1–2 tiles of arc) before giving up. The build message already counts skipped
-  entities.
-- **GUI layout.** Layer rows grow wide as sliders are added.
-  - Consider a compact layer list (index, item, thickness) plus a detail pane for
-    the selected layer.
-  - Colour each layer the same in the list and the preview.
-  - Show totals: curve length, item counts per layer (a bill of materials).
-- **Decide whether `python_scripts/` stays** in the repo (offline experiments, not
-  used by the mod).
-- **Multiplayer pass:**
-  - rendering is already per player and state is per player;
-  - check force/permission handling, e.g. whether a player may build at all
-    (`player.permission_group`);
-  - check behaviour when a player changes surface while the window is open.
+  The window lists all points with editable coordinates.
+- **Window:** a compact layer list (colour, item, width, move/delete) with a
+  detail pane for the selected layer. The preview uses the same colours. A status
+  line shows planning/building progress; a totals line shows length, items per
+  layer, bend warnings and pole gaps.
+- **Planner:**
+  - spaced entities search ±2 tiles along the curve before being skipped;
+  - pole chains stay within wire reach (extra poles are inserted), and gaps
+    without room are counted and reported;
+  - tight bends are detected and marked in the preview;
+  - 1×1 entities are no longer planned as 2×2 (sizes now come from the
+    prototype's tile footprint).
+- **Building:**
+  - copper wire, plus red and green when *Circuit wires* is on, for ghosts and
+    real poles;
+  - a whole build is one undo item;
+  - *Smart placement* removed;
+  - rails hidden from the picker until they can be built.
+- **Ticks:**
+  - the work budget is a map setting (default 1000 ≈ 2.5–3 ms/tick, measured
+    with the `bench` scenario);
+  - planning waits 10 ticks after the last edit;
+  - old render objects are destroyed over several ticks.
+- **Multiplayer:** builds respect the permission group; drawings follow a surface
+  change.
+- `python_scripts/` deleted.
+
+### Follow-ups found along the way
+
+- **Insert a point between two others.** The pointer only appends. Option:
+  click near the curve (not a point) to insert there.
+  - Yes let's do it, shift + click near the curve
+  - Also, let the user select the point not just by clicking on it in the world but also in the gui, don't deselect the point after it's been moved, let it be cleared by righ click in the world, just like it already is
+  - when a point has been selected, let the user shift + scroll to cycle the exising points
+  - add a button between closed loop and remove controlpoints, that swaps the point order - flipping the tangent direction.
+- **A real multiplayer test.** Everything is per player and in `storage`, but
+  nothing runs two players at once. A headless server plus a client isn't
+  possible in `--test-scenario`; this needs a manual session. 
+  - Let's put this off for later - pre-release.
+- **Bend warnings use grid units**, which underestimate distance on diagonals by
+  up to √2. Fine as a hint; refine if it misleads.
+  - Leave as is, just give a tooltip on the "N Tight bends" warning explaining the issue better, without going into detail on the underestimation, just explain what the warning means in general.
+- **Very sharp turns** still leave small stray pieces of wall (a few cells) at the
+  tip. They're cosmetic, and the property test tolerates pieces under 10 cells.
+  - That's fine, it's a tradeoff of trying to make sharp turns on a rectangular grid.
+- Bug, larger build preview jobs fail at some point, builds fine, just the drawing stops at some point.
+- Make it an option that tile bands don't offset entity bands, they have no collision with them, so it would be nice to have them under the entities.
+- Layer list should also become scrollable at some size
+- We need per player settings on the sprite colors, opacity, etc. accesible from the mod gui.
+- Build icons are offset to the upper right corner in their slots, further more shorten their tooltips to just "force build" and "super force build" these are ingame terms with an already defined meaning.
+- Build costs should be totalled and list qualities too, only in tooltips show the breakdown per layer.
+- Give a tooltip on why L0 can't be deleted.
+
 
 ## Phase 2: features
 
@@ -101,18 +111,34 @@ planning, random-curve properties and migrations.
    stamp/rotate/share it, and it works with any build mode the game supports.
 2. **Presets.** The data model already has `presets[]` but the GUI only uses #1.
    Add save/rename/switch, and export/import as a string.
-3. **More layer types**, prioritised by defence use:
-   - ammo turrets (with optional ammo request);
-   - land mines (scattered with a density);
-   - lamps (spacing);
-   - pipes and belts (directional: needs the tangent → direction mapping);
+3. **Pole smart placement.** Override spacing, placing the poles as far as possible from one another, 
+but when there's consumers along the way, ensure they're all powered. 
+Just like drag placing poles works in game.
+4. **More layer types**, prioritised by defence use:
+   - pipes and belts 
+      - directional: needs the tangent → direction mapping
+      - skip sharp kinks - ensure a continuos line;
+      - allow placing multiple parralel lines;
+      - avoiding cross connections, especially for pipes, as adjecent pipes will always connect;
+      - respect pipe extent limits, place pumps to account for them;
+      - Parameter to maximize underground placement where possible, like long straight stretches.
+   - All turret types:
+      - respect turrets attack parameters, importantly turn_range, so turrets with a limited turn range are facing outwards. 
+      - ammo turrets:
+          - optional ammo request;
+          - optional infeed belt with inserters - respect inserter pickup/placement locations, ignoring mods that let the user change them at  will, maybe worth considering it at a later stage, but not now.
+      - fluid turrets with:
+          - pipes
+   - land mines (scattered with a density, optional parameter to connect them up with circui wires);
+   - lamps (spacing, colors - monochrome, a cyclic color pallete takings samples from the curve lenght);
    - gates where a rail or belt crosses a wall.
-4. **Rails.** Fit 2.0 rail pieces (straight, half-diagonal, curved-a/b) to the
+5. **Rails.** Fit 2.0 rail pieces (straight, half-diagonal, curved-a/b) to the
    curve, plus signals at a spacing measured in wagons (fields already exist).
    This is the largest item: it needs a search over rail-piece sequences that stays
    within a tolerance of the curve. `scripts/layers/rail.lua` is the stub (it is
    `placement = "unsupported"` today).
-5. **Shape helpers:** circle/arc/ellipse generators (see
+
+6. **Shape helpers:** circle/arc/ellipse generators (see
    `python_scripts/generate_circles.py`), mirroring the layer stack, offsetting the
    whole curve.
 
@@ -129,9 +155,7 @@ planning, random-curve properties and migrations.
    - check that every `{"section.key"}` used in code exists in
      `locale/en/Bezierio.cfg` (a small script).
 3. **Game job:**
-   - download the Factorio headless server at a pinned version
-     (`https://factorio.com/get-download/<version>/headless/linux64`, no login
-     needed) and cache it;
+   - IMPORTANT: not part of the CI job, just a script to run by the dev on their own machine
    - run `tests/run.sh smoke` and `tests/run.sh gui-flow` with `FACTORIO=` pointing
      at it.
 

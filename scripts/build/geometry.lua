@@ -38,13 +38,22 @@ function lib.dist2(a, b)
 end
 
 --- Unit tangent at sample i from its neighbours (zero vector for repeated points).
+--- On a closed loop the first and last samples are the same point, so their
+--- neighbours wrap around.
 --- @param points Vector[]
 --- @param i integer
+--- @param closed boolean|nil
 --- @return Vector
-function lib.raw_tangent(points, i)
+function lib.raw_tangent(points, i, closed)
     local count = #points
-    local a = points[math.max(1, i - 1)]
-    local b = points[math.min(count, i + 1)]
+    local a, b
+    if closed and count > 2 then
+        a = points[i - 1] or points[count - 1]
+        b = points[i + 1] or points[2]
+    else
+        a = points[math.max(1, i - 1)]
+        b = points[math.min(count, i + 1)]
+    end
     return vect.normalize(vect.sub(b, a))
 end
 
@@ -111,8 +120,12 @@ function lib.nearest_frame(frames, index, c)
     end
 end
 
---- Signed grid-unit distance of `c` measured from frame j, or nil when `c` lies
---- beyond that end of the curve.
+--- Signed grid-unit distance of `c` measured from frame j, or nil when `c` isn't
+--- beside the curve at that frame: more than half a cell ahead of or behind it
+--- along the tangent. That cuts off the ends of open curves, and the spurs that
+--- would otherwise stick out past hairpin tips and cusps (where the nearest point
+--- is the tip, but the cell lies beyond it). On smooth stretches the nearest
+--- sample is always within ~0.125 tiles along the tangent, so it never applies.
 --- @param frames CurveFrame[]
 --- @param j integer
 --- @param c Vector
@@ -121,11 +134,8 @@ local function frame_u(frames, j, c)
     local f = frames[j]
     local rel = vect.sub(c, f.p)
     local along = vect.dot(rel, f.t)
-    if j == 1 or j == #frames then
-        local along_u = along / (math.abs(f.t.x) + math.abs(f.t.y))
-        if j == 1 and along_u < -0.5 then return nil, along end
-        if j == #frames and along_u >= 0.5 then return nil, along end
-    end
+    local along_u = along / (math.abs(f.t.x) + math.abs(f.t.y))
+    if along_u < -0.5 or along_u >= 0.5 then return nil, along end
     return vect.dot(rel, f.n) / f.w, along
 end
 
@@ -140,7 +150,7 @@ end
 --- @param index FrameIndex
 --- @param c Vector
 --- @return number|nil
-function lib.grid_distance(frames, index, c)
+function lib.grid_distance(frames, index, c, closed)
     local j0, d0 = lib.nearest_frame(frames, index, c)
     local best_u = frame_u(frames, j0, c)
 

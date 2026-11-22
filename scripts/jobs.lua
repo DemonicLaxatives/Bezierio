@@ -2,28 +2,44 @@
 ---
 --- GUI and input handlers never do this work themselves: they change data and call
 --- state.changed / request_redraw / request_build. Each tick, for each player:
----   1. curve or layers changed (revision) -> drop the plan, redraw from scratch;
----      only the view changed (redraw)    -> redraw from scratch
+---   0. destroy retired render objects
+---   1. curve or layers changed (revision) -> once edits have paused for a moment,
+---      drop the plan and redraw from scratch; only the view changed -> redraw
 ---   2. draw what the planner has produced so far (capped share of the budget)
 ---   3. advance the planner: up to the curve samples if only the curve is shown,
 ---      the whole plan if the preview is on or a build is waiting for it
 ---   4. start a waiting build once its plan is done, and advance a running build
+---   5. update the window's status and totals lines
 ---
 --- All job state lives in storage.controllers[i].work as plain data, so it survives
---- save/load and runs identically on every multiplayer peer.
+--- save/load and runs identically on every multiplayer peer. The map editor starts
+--- with ticks paused; nothing here runs until it is unpaused.
 local state = require("scripts.state")
 local draw = require("scripts.draw")
 local planner = require("scripts.build.planner")
 local executor = require("scripts.build.executor")
 local curve_lib = require("scripts.curve.curve")
+local window = require("scripts.gui.window")
 
 local lib = {}
 
---- Work units per player per tick (roughly: 1 unit ~ a few microseconds).
-lib.BUDGET = 3000
+--- Work units per player per tick when the setting can't be read. Measured with
+--- tests/bezierio-test/scenarios/bench: one unit is ~2-3 µs whatever the work, so
+--- 1000 units is ~2.5-3 ms per tick (planning, drawing and building alike).
+lib.DEFAULT_BUDGET = 1000
 
 --- Share of the budget drawing may use, so the preview keeps up with the planner.
 lib.DRAW_SHARE = 0.3
+
+--- Ticks to wait after the last curve/layer edit before planning again, so that
+--- dragging a slider doesn't restart the plan on every step.
+lib.SETTLE_TICKS = 10
+
+--- @return number
+function lib.budget()
+    local setting = settings.global["bezierio-work-budget"]
+    return setting and setting.value --[[@as number]] or lib.DEFAULT_BUDGET
+end
 
 --- @param controller Controller
 --- @return "plan"|"samples"|nil  # how far the planner needs to get
@@ -35,13 +51,84 @@ local function plan_needed(controller)
 end
 
 --- @param player LuaPlayer
---- @param result BuildResult
 --- @param job BuildJob
---- @param plan BuildPlan
-local function report_build(player, job, result, plan)
+local function report_build(player, job)
+    local result, plan = job.result, job.plan
     local message = job.output == "instant" and "bezierio-message.build-result-instant"
         or "bezierio-message.build-result"
     player.print({ message, tostring(result.placed), tostring(result.existing), tostring(result.blocked + plan.skipped) })
+    if plan.gaps > 0 then
+        player.print({ "bezierio-message.pole-gaps", tostring(plan.gaps) })
+    end
+end
+
+--- The status line: what's happening right now.
+--- @param controller Controller
+--- @return LocalisedString, string  # caption, and a key to detect changes
+local function status_of(controller)
+    local work = controller.work
+    if work.build then
+        local pct = math.floor(executor.progress(work.build) * 100)
+        return { "label.status-building", tostring(pct) }, "b" .. pct
+    end
+    local plan_job = work.plan
+    if (work.pending_build or controller.ui.preview_build) and plan_job and not plan_job.plan.done then
+        local pct = math.floor(planner.progress(plan_job) * 100)
+        return { "label.status-planning", tostring(pct) }, "p" .. pct
+    end
+    if work.revision ~= controller.revision and plan_needed(controller) then
+        return { "label.status-planning", "0" }, "p0"
+    end
+    return "", ""
+end
+
+--- The totals line: curve length, what each layer needs, warnings.
+--- @param controller Controller
+--- @param plan BuildPlan
+--- @return LocalisedString
+local function totals_of(controller, plan)
+    local layers = state.layers_of(controller)
+    local keys = {}
+    for idx in pairs(plan.counts) do table.insert(keys, idx) end
+    table.sort(keys, function(a, b) return a > b end)
+    local items = {}
+    for _, idx in ipairs(keys) do
+        local layer = layers[idx]
+        if layer and layer.placed_by then
+            table.insert(items, string.format("[item=%s]×%d", layer.placed_by, plan.counts[idx]))
+        end
+    end
+    local caption = { "", { "label.totals", string.format("%.0f", plan.length) } }
+    if #items > 0 then table.insert(caption, "  " .. table.concat(items, " ")) end
+    if #plan.warnings > 0 then table.insert(caption, { "label.totals-bends", tostring(#plan.warnings) }) end
+    if plan.gaps > 0 then table.insert(caption, { "label.totals-gaps", tostring(plan.gaps) }) end
+    return caption
+end
+
+--- @param player LuaPlayer
+--- @param controller Controller
+local function update_window(player, controller)
+    if not window.get(player) then return end
+    local work = controller.work
+    local caption, key = status_of(controller)
+    if key ~= work.status then
+        work.status = key
+        local label = window.find(player, "status")
+        if label then label.caption = caption end
+    end
+    local plan_job = work.plan
+    local totals = window.find(player, "totals")
+    if totals then
+        if plan_job and plan_job.plan.done and controller.ui.preview_build then
+            if work.totals_revision ~= work.revision then
+                work.totals_revision = work.revision
+                totals.caption = totals_of(controller, plan_job.plan)
+            end
+        elseif work.totals_revision then
+            work.totals_revision = nil
+            totals.caption = ""
+        end
+    end
 end
 
 --- Advance one player's jobs.
@@ -49,9 +136,12 @@ end
 --- @param controller Controller
 function lib.update(player, controller)
     local work = controller.work
-    local budget = lib.BUDGET
+    local budget = lib.budget()
 
-    if work.revision ~= controller.revision then
+    budget = budget - draw.step_trash(player.index, budget)
+
+    if work.revision ~= controller.revision
+        and game.tick - (controller.changed_tick or 0) >= lib.SETTLE_TICKS then
         work.revision = controller.revision
         work.plan = nil
         controller.redraw = true
@@ -61,13 +151,14 @@ function lib.update(player, controller)
         draw.reset(player, controller)
     end
 
+    local settled = work.revision == controller.revision
     local needed = plan_needed(controller)
-    if needed and not work.plan and curve_lib.is_drawable(controller.curve) then
+    if settled and needed and not work.plan and curve_lib.is_drawable(controller.curve) then
         work.plan = planner.new_job(controller.curve, state.layers_of(controller))
     end
 
     local plan_job = work.plan
-    if plan_job then
+    if plan_job and settled and budget > 0 then
         local used = draw.step(player, controller, plan_job, budget * lib.DRAW_SHARE)
         budget = budget - used
         if needed and budget > 0 then
@@ -76,7 +167,7 @@ function lib.update(player, controller)
         end
     end
 
-    if work.pending_build then
+    if work.pending_build and settled then
         if not curve_lib.is_drawable(controller.curve) then
             player.print({ "bezierio-message.need-two-points" })
             work.pending_build = nil
@@ -93,19 +184,24 @@ function lib.update(player, controller)
     if build and budget > 0 then
         local done = executor.step(build, budget)
         if done then
-            report_build(player, build, build.result, build.plan)
+            report_build(player, build)
             work.build = nil
         end
     end
+
+    update_window(player, controller)
 end
 
 --- Nothing left to do for this player (used by tests to wait for results).
+--- @param player_index integer
 --- @param controller Controller
 --- @return boolean
-function lib.is_idle(controller)
+function lib.is_idle(player_index, controller)
     local work = controller.work
     if controller.redraw or work.revision ~= controller.revision then return false end
     if work.pending_build or work.build then return false end
+    local sprites = storage.sprites and storage.sprites[player_index]
+    if sprites and sprites.trash and #sprites.trash > 0 then return false end
     local needed = plan_needed(controller)
     if not needed then return true end
     if not work.plan then return not curve_lib.is_drawable(controller.curve) end
@@ -113,15 +209,9 @@ function lib.is_idle(controller)
     if needed == "plan" and not plan_job.plan.done then return false end
     if needed == "samples" and plan_job.stage == "sample" then return false end
 
-    -- Drawing caught up?
     local progress = work.draw
     if controller.ui.draw_curve and not progress.curve_finished then return false end
-    if controller.ui.preview_build then
-        local plan = plan_job.plan
-        local all_drawn = progress.preview_count >= draw.MAX_PREVIEW_OBJECTS
-            or (progress.preview_tiles >= #plan.tiles and progress.preview_entities >= #plan.entities)
-        if not all_drawn then return false end
-    end
+    if controller.ui.preview_build and not draw.preview_complete(progress, plan_job.plan) then return false end
     return true
 end
 
