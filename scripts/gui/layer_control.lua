@@ -176,6 +176,40 @@ lib["toggle_preview"] = function(e)
     state.request_redraw(e.player_index)
 end
 
+--- A drop-down setting (e.g. turret facing, lamp colour).
+--- @param e EventData.on_gui_selection_state_changed
+lib["set_choice"] = function(e)
+    local field_name = e.element.tags.field --[[@as string]]
+    local idx = tonumber(e.element.tags.idx)
+    local layer = idx and state.layers(e.player_index)[idx]
+    local field = layer and registry.field(layer, field_name)
+    if not (field and field.widget == "choice") then return end
+    local value = field.options[e.element.selected_index]
+    if not value then return end
+    layer[field_name] = value
+    -- Other controls may depend on it (e.g. the rainbow length).
+    layers_changed(e.player_index)
+end
+
+--- An item setting (turret ammo). Items the layer can't use are refused.
+--- @param e EventData.on_gui_elem_changed
+lib["set_item"] = function(e)
+    local field_name = e.element.tags.field --[[@as string]]
+    local idx = tonumber(e.element.tags.idx)
+    local layer = idx and state.layers(e.player_index)[idx]
+    local field = layer and registry.field(layer, field_name)
+    if not (field and field.widget == "item") then return end
+    local value = e.element.elem_value --[[@as string?]]
+    if value and field.valid and not field.valid(layer, value) then
+        local player = game.get_player(e.player_index)
+        if player then player.print({ "bezierio-message.item-not-usable", "[item=" .. value .. "]", "[item=" .. layer.placed_by .. "]" }) end
+        e.element.elem_value = layer[field_name]
+        return
+    end
+    layer[field_name] = value
+    layers_changed(e.player_index)
+end
+
 --- @param e EventData.on_gui_checked_state_changed
 lib["set_flag"] = function(e)
     local element = e.element

@@ -1,3 +1,5 @@
+local common = require("scripts.layers.common")
+
 --- Electric poles along the middle of their band: every `spacing` tiles, or with
 --- `smart` placement as far apart as the wires reach, closer where powered entities
 --- in the plan need it (see build/smart_poles.lua).
@@ -18,7 +20,8 @@ return {
             disabled_by = "smart",
         },
         { name = "smart", widget = "checkbox", default = false },
-        { name = "connect_with_circuit_wires", widget = "checkbox", default = false },
+        common.red_wire,
+        common.green_wire,
     },
     --- @param layer Layer
     --- @param prototype LuaEntityPrototype

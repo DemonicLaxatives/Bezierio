@@ -26,9 +26,19 @@ return {
     end,
 
     create_entity = function(job, player, entity, undo_index)
-        return job.surface.create_entity {
+        local ghost = job.surface.create_entity {
             name = "entity-ghost", inner_name = entity.name, position = entity.position, quality = entity.quality,
+            direction = entity.direction, color = entity.color,
             force = job.force, player = player, raise_built = true, undo_index = undo_index,
         }
+        -- Ammo arrives with the robots that build it.
+        if ghost and entity.ammo then
+            local ammo = entity.ammo
+            ghost.insert_plan = { {
+                id = { name = ammo.name, quality = ammo.quality },
+                items = { in_inventory = { { inventory = defines.inventory[ammo.inventory], stack = 0, count = ammo.count } } },
+            } }
+        end
+        return ghost
     end,
 }

@@ -8,7 +8,12 @@ local lib = {}
 
 ---@class LayerField
 ---@field name string                                        # key in the layer table
----@field widget "slider"|"checkbox"
+---@field widget "slider"|"checkbox"|"choice"|"item"
+---@field options? string[]                              # choice: the values, in menu order (labels: label_prefix .. value)
+---@field label_prefix? string                           # choice: locale section for the option labels
+---@field item_filters? table                            # item: elem_filters for the picker
+---@field visible_if? fun(layer: Layer): boolean          # hide the control when false
+---@field valid? fun(layer: Layer, value: any): boolean    # item: whether the layer can use it
 ---@field min? integer|fun(layer: Layer): integer
 ---@field max? integer|fun(layer: Layer): integer
 ---@field default any|fun(layer: Layer): any
@@ -25,6 +30,8 @@ local lib = {}
 ---@field priority integer                  # higher priority layers claim contested cells first
 ---@field fields LayerField[]               # editable settings, in GUI order
 ---@field init? fun(layer: Layer, prototype: LuaEntityPrototype|LuaTilePrototype)  # derived values
+---@field keep? fun(layer: Layer, x: integer, y: integer): boolean  # band layers: whether a cell gets one (default: the checkerboard)
+---@field decorate? fun(layer: Layer, entity: PlannedEntity, info: PlacementInfo)  # spaced layers: direction, colour, ammo, ...
 ---@field thickness? fun(layer: Layer): number  # band width in grid units (default: footprint size)
 
 ---@class Layer
@@ -39,13 +46,23 @@ local lib = {}
 ---@field offset integer       # gap between this layer and the one closer to layer 0
 ---@field [string] any         # type-specific fields
 
+---@class PlacementInfo
+---@field outward Vector    # unit vector away from the curve on the layer's side (layer 0: layer 1's side)
+---@field arc number|nil    # distance along the curve where it was aimed
+
 local TYPE_FILES = {
     "scripts.layers.empty",
     "scripts.layers.wall",
     "scripts.layers.tile",
     "scripts.layers.electric_pole",
     "scripts.layers.electric_turret",
+    "scripts.layers.turret",
     "scripts.layers.roboport",
+    "scripts.layers.solar_panel",
+    "scripts.layers.accumulator",
+    "scripts.layers.radar",
+    "scripts.layers.lamp",
+    "scripts.layers.land_mine",
     "scripts.layers.rail",
 }
 
@@ -128,7 +145,15 @@ function lib.carry_over(layer, old)
     if type(old.offset) == "number" then layer.offset = old.offset end
     for _, field in ipairs(lib.type_of(layer).fields) do
         local value = old[field.name]
-        if value ~= nil and type(value) == type(layer[field.name]) then
+        if field.widget == "item" and value ~= nil and field.valid and not field.valid(layer, value) then
+            value = nil
+        end
+        if field.widget == "choice" and value ~= nil then
+            local valid = false
+            for _, option in ipairs(field.options) do if option == value then valid = true end end
+            if not valid then value = nil end
+        end
+        if value ~= nil and (type(value) == type(layer[field.name]) or (field.widget == "item" and type(value) == "string")) then
             if type(value) == "number" then
                 local min, max = resolve(layer, field, "min"), resolve(layer, field, "max")
                 if min then value = math.max(min, value) end

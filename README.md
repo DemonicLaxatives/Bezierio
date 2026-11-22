@@ -41,7 +41,8 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
    The curve passes through every point, in order. Tick **Closed loop** to join
    the last point back to the first; the ⇄ button reverses the curve's direction, leaving the points as they are
    (so the layers swap sides; for a circle, inside and outside). The point list in the
-   window shows each point's coordinates: click a point's name to select it, type
+   window shows each point's coordinates (the export / import buttons copy the
+   whole curve as a string, e.g. to share it or report a problem): click a point's name to select it, type
    new coordinates and press <kbd>Enter</kbd>, or remove a point with its ✕. The
    trash button removes all points.
 3. Toggle **Draw** to see the curve and its points.
@@ -61,10 +62,23 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
    - **Electric poles, electric turrets and roboports** are placed every
      *Spacing* tiles along the middle of their band. Poles stay within wire reach of
      each other (extra poles are added where needed), get copper wire, and red and
-     green wire too if you tick *Circuit wires*. With *Smart placement*, poles go as
+     red and/or green wire too if you tick *Red wire* / *Green wire*. With *Smart placement*, poles go as
      far apart as the wires reach, but closer where needed so that every powered
      entity in the build (turrets, roboports, ...) gets power, like dragging poles
      in the game.
+   - **Turrets** (gun, flamethrower, artillery, laser, ... and the Space Age ones),
+     **radars**, **solar panels**, **accumulators** and **lamps** are placed every
+     *Spacing* tiles too.
+     - Turrets that can't turn all the way round (flamethrower, railgun) face
+       *Outward* (away from the curve) or *Inward*, diagonally too.
+     - Ammo turrets can request *Ammo*: ghosts get it delivered with them; in the
+       map editor or cheat mode they're loaded straight away. The totals include it.
+     - Radar spacing defaults to a bit less than the area a radar keeps revealed.
+     - Lamps keep their own colour, take one colour, or a *Rainbow* that cycles
+       along the curve.
+   - **Land mines** cover their band (up to 63 tiles wide), *Scattered* (*Density*
+     is the share of cells that get one, the same cells every time) or on a
+     *Grid* (every *Spacing* tiles). *Red wire* / *Green wire* connect them.
    - The checkbox in front of a layer shows or hides it in the preview (it's
      built either way).
    - *Offset* leaves a gap between a layer and the one inside it. An empty layer

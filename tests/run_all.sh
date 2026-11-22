@@ -23,8 +23,9 @@ run() {
 }
 
 echo "== game"
-for s in smoke points layers build; do run "$s" "$DIR/run.sh" "$s"; done
+for s in smoke points layers build types; do run "$s" "$DIR/run.sh" "$s"; done
 run "build (space-age, quality, elevated-rails)" "$DIR/run.sh" build space-age quality elevated-rails
+run "types (space-age, quality, elevated-rails)" "$DIR/run.sh" types space-age quality elevated-rails
 run "migrate-save" "$DIR/migrate-save.sh"
 
 if [[ ${#failed[@]} -eq 0 ]]; then

@@ -130,6 +130,12 @@ local function items_of(controller, plan)
             local item, count = item_text(layer), plan.counts[idx]
             if not totals[item] then table.insert(order, item) end
             totals[item] = (totals[item] or 0) + count
+            -- Ammo the turrets request.
+            if layer.ammo and layer.ammo_inventory then
+                local ammo = string.format("[item=%s]", layer.ammo)
+                if not totals[ammo] then table.insert(order, ammo) end
+                totals[ammo] = (totals[ammo] or 0) + count * (layer.ammo_count or 0)
+            end
             -- A LocalisedString takes at most 20 parameters.
             if #rows <= 20 then
                 table.insert(rows, { "label.totals-layer", tostring(idx), item, tostring(count) })

@@ -8,10 +8,16 @@
 ---   line       the band's centre line as a polyline with arc lengths
 ---   consumers  the powered entities, each projected onto the line (arc length)
 ---   poles      the greedy walk: one pole per iteration
+---   refine     tidy up what greed left: drop poles nothing needs, then slide each
+---              pole towards the middle between its neighbours (the greedy walk puts
+---              a pole at full reach and then, when a powered entity can only be
+---              reached from a short stretch just past it, another one close by)
 local vect = require("scripts.vector_math")
 local geometry = require("scripts.build.geometry")
 
 local lib = {}
+
+local refine
 
 --- Distance (tiles) between the positions tried for one pole.
 lib.STEP = 0.5
@@ -114,6 +120,8 @@ end
 --- Commit a pole and mark the consumers it powers.
 local function put(job, walk, layer, h, pos, s)
     h.commit(job, layer, pos)
+    walk.pole_s = walk.pole_s or {}
+    table.insert(walk.pole_s, s)
     walk.last, walk.last_s = pos, s
     local r, consumers = layer.reach or 0, walk.consumers
     for idx = walk.k, #consumers do
@@ -190,6 +198,179 @@ local function next_pole(job, walk, layer, h)
     return used, false
 end
 
+-- Refine ------------------------------------------------------------------------
+
+--- Index of the first consumer with s >= `s` (consumers are sorted by s).
+local function lower_bound(consumers, s)
+    local lo, hi = 1, #consumers + 1
+    while lo < hi do
+        local mid = math.floor((lo + hi) / 2)
+        if consumers[mid].s < s then lo = mid + 1 else hi = mid end
+    end
+    return lo
+end
+
+--- Call fn(c) for every consumer a pole aimed between s1 and s2 could power.
+local function near(walk, s1, s2, fn)
+    local consumers, w = walk.consumers, walk.reach_window
+    for idx = lower_bound(consumers, math.min(s1, s2) - w), #consumers do
+        local c = consumers[idx]
+        if c.s > math.max(s1, s2) + w then break end
+        fn(c)
+    end
+end
+
+--- Neighbours of pole i that are still there.
+local function neighbours(walk, i, n)
+    local j, k = i - 1, i + 1
+    while j >= 1 and walk.removed[j] do j = j - 1 end
+    while k <= n and walk.removed[k] do k = k + 1 end
+    return j >= 1 and j or nil, k <= n and k or nil
+end
+
+--- Whether every consumer that only pole i powers is powered from `pos` too.
+local function keeps_sole(walk, s_old, s_new, old, pos, r)
+    local ok = true
+    near(walk, s_old, s_new, function(c)
+        if ok and c.cover == 1 and covers(old, c, r) and not covers(pos, c, r) then ok = false end
+    end)
+    return ok
+end
+
+--- Drop pole i if nothing needs it.
+local function try_remove(job, walk, layer, h, i, n, positions)
+    local r, wire = layer.reach or 0, layer.wire_distance
+    local j, k = neighbours(walk, i, n)
+    local p = positions[i]
+    if j and k then
+        if vect.distance(positions[j], positions[k]) > wire then return end
+    elseif job.closed or not (j or k) then
+        return
+    else
+        -- The first or last pole of an open line, with the next one close by.
+        if vect.distance(p, positions[j or k]) > wire / 3 then return end
+    end
+    local needed = false
+    near(walk, walk.pole_s[i], walk.pole_s[i], function(c)
+        if not needed and c.cover == 1 and covers(p, c, r) then needed = true end
+    end)
+    if needed then return end
+    near(walk, walk.pole_s[i], walk.pole_s[i], function(c)
+        if covers(p, c, r) then c.cover = c.cover - 1 end
+    end)
+    walk.removed[i] = true
+    h.set_cells(job, layer.size, p, false)
+end
+
+--- Slide pole i towards the middle between its neighbours, as far as reach and
+--- the consumers only it powers allow.
+--- @return number used
+local function try_slide(job, walk, layer, h, i, n, positions)
+    local j, k = neighbours(walk, i, n)
+    if not (j and k) then return 0 end
+    local r, wire = layer.reach or 0, layer.wire_distance
+    local s_old, old = walk.pole_s[i], positions[i]
+    local s_mid = (walk.pole_s[j] + walk.pole_s[k]) / 2
+    if math.abs(s_mid - s_old) < 1 then return 0 end
+    h.set_cells(job, layer.size, old, false)
+    local used, step = 0, (s_old > s_mid) and lib.STEP or -lib.STEP
+    local s = s_mid
+    while math.abs(s - s_old) >= 1 do
+        local pos = h.find_spot(job, layer.size, point_at(walk, s))
+        used = used + h.COST.place
+        if pos and vect.distance(positions[j], pos) <= wire and vect.distance(pos, positions[k]) <= wire
+            and keeps_sole(walk, s_old, s, old, pos, r) then
+            near(walk, s_old, s, function(c)
+                if covers(old, c, r) then c.cover = c.cover - 1 end
+                if covers(pos, c, r) then c.cover = c.cover + 1 end
+            end)
+            positions[i] = pos
+            walk.pole_s[i] = s
+            h.set_cells(job, layer.size, pos, true)
+            return used
+        end
+        s = s + step
+    end
+    h.set_cells(job, layer.size, old, true)
+    return used
+end
+
+--- Number of consecutive pairs out of wire reach.
+local function count_gaps(list, wire)
+    local gaps = 0
+    for i = 2, #list do
+        if vect.distance(list[i - 1], list[i]) > wire then gaps = gaps + 1 end
+    end
+    return gaps
+end
+
+--- The refine phase: removals, then slides, then the plan is rewritten.
+--- @return number used
+refine = function(job, walk, layer, h, budget)
+    local plan = job.plan
+    local chain = plan.chains[layer.idx]
+    local members = chain.members
+    local n = #members
+    if not walk.refine then
+        -- The line's poles are the last entities in the plan, in order; only then
+        -- can removed ones be taken out again.
+        local tail = n > 0 and members[n] == #plan.entities and members[1] == #plan.entities - n + 1
+        if not tail or #(walk.pole_s or {}) ~= n then
+            walk.phase = "count"
+            return 0
+        end
+        local positions = {}
+        for i, m in ipairs(members) do positions[i] = plan.entities[m].position end
+        for _, c in ipairs(walk.consumers) do c.cover = 0 end
+        for i = 1, n do
+            near(walk, walk.pole_s[i], walk.pole_s[i], function(c)
+                if covers(positions[i], c, layer.reach or 0) then c.cover = c.cover + 1 end
+            end)
+        end
+        walk.refine = { pass = "remove", i = 1, positions = positions, gaps = count_gaps(positions, layer.wire_distance) }
+        walk.removed = {}
+    end
+    local state, used = walk.refine, 0
+    while used < budget and state.pass ~= "write" do
+        if state.i > n then
+            state.pass, state.i = state.pass == "remove" and "slide" or "write", 1
+        elseif walk.removed[state.i] then
+            state.i = state.i + 1
+        elseif state.pass == "remove" then
+            try_remove(job, walk, layer, h, state.i, n, state.positions)
+            state.i = state.i + 1
+            used = used + 2
+        else
+            used = used + try_slide(job, walk, layer, h, state.i, n, state.positions) + 1
+            state.i = state.i + 1
+        end
+    end
+    if state.pass == "write" then
+        -- Put the kept poles back as the plan's last entities, in order.
+        local first = members[1]
+        local kept, kept_positions = {}, {}
+        for i, m in ipairs(members) do
+            if not walk.removed[i] then
+                local e = plan.entities[m]
+                e.position = state.positions[i]
+                table.insert(kept, e)
+                table.insert(kept_positions, e.position)
+            end
+        end
+        for idx = #plan.entities, first, -1 do plan.entities[idx] = nil end
+        chain.members = {}
+        for _, e in ipairs(kept) do
+            table.insert(plan.entities, e)
+            table.insert(chain.members, #plan.entities)
+        end
+        plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) - (n - #kept)
+        plan.gaps = plan.gaps - state.gaps + count_gaps(kept_positions, layer.wire_distance)
+        walk.last = kept_positions[#kept_positions]
+        walk.phase = "count"
+    end
+    return used
+end
+
 --- Advance smart placement for one pole layer.
 --- @param job PlannerJob
 --- @param walk SmartWalk
@@ -257,24 +438,30 @@ function lib.step(job, walk, band, budget, h)
             local u, finished = next_pole(job, walk, layer, h)
             used = used + u + 1
             if finished then
-                walk.phase = "done"
-                -- The ones given up on may have been powered by a later pole after all
-                -- (there are few, so checking every pole is fine).
-                local poles = job.plan.chains[layer.idx].members
-                local r = layer.reach or 0
-                for _, c in ipairs(walk.consumers) do
-                    if not c.powered then
-                        for _, m in ipairs(poles) do
-                            if covers(job.plan.entities[m].position, c, r) then
-                                c.powered = true
-                                break
-                            end
-                        end
-                        if not c.powered then job.plan.unpowered = job.plan.unpowered + 1 end
-                    end
-                end
+                walk.phase = "refine"
                 break
             end
+        end
+    end
+
+    if walk.phase == "refine" then
+        if lib.NO_REFINE then walk.phase = "count" else used = used + refine(job, walk, layer, h, budget - used) end
+    end
+
+    if walk.phase == "count" then
+        walk.phase = "done"
+        -- Count what no pole powers (checking every pole: few are left over).
+        local poles = job.plan.chains[layer.idx].members
+        local r = layer.reach or 0
+        for _, c in ipairs(walk.consumers) do
+            local powered = false
+            for _, m in ipairs(poles) do
+                if covers(job.plan.entities[m].position, c, r) then
+                    powered = true
+                    break
+                end
+            end
+            if not powered then job.plan.unpowered = job.plan.unpowered + 1 end
         end
     end
     return used, walk.phase == "done"

@@ -12,7 +12,7 @@ local function check(cond, msg)
 end
 
 local function wall(idx) return { idx = idx, type = "wall", name = "stone-wall", placed_by = "stone-wall", quality = "normal", size = 1, offset = 0, checkerboard = 0, radius = 1 } end
-local function pole(idx) return { idx = idx, type = "electric-pole", name = "small-electric-pole", placed_by = "small-electric-pole", quality = "rare", size = 1, offset = 0, wire_distance = 7, reach = 2, spacing = 6, connect_with_circuit_wires = false } end
+local function pole(idx) return { idx = idx, type = "electric-pole", name = "small-electric-pole", placed_by = "small-electric-pole", quality = "rare", size = 1, offset = 0, wire_distance = 7, reach = 2, spacing = 6, red_wire = false, green_wire = false } end
 
 --- What the GUI picker makes for an item (registry.new_layer without prototypes).
 local KNOWN = { ["stone-wall"] = wall, ["small-electric-pole"] = pole }
@@ -46,7 +46,7 @@ check(#c.presets == presets.MAX_PRESETS, "list capped")
 -- export data round trip
 local preset = { name = "Defence", layers = { [0] = wall(0), [1] = pole(1), [-1] = registry.new_empty(-1) } }
 preset.layers[0].radius, preset.layers[0].checkerboard = 3, -2
-preset.layers[1].spacing, preset.layers[1].offset, preset.layers[1].connect_with_circuit_wires = 5, 2, true
+preset.layers[1].spacing, preset.layers[1].offset, preset.layers[1].red_wire = 5, 2, true
 preset.layers[-1].offset = 1
 local data = presets.to_data(preset)
 check(data.format == "bezierio-preset" and data.version == 1 and #data.layers == 3 and data.layers[1].idx == -1, "export data")
@@ -77,6 +77,10 @@ check(back.name == "Imported", "bad name replaced")
 
 back = presets.from_data({ format = "bezierio-preset", version = 1, layers = { { idx = 2, item = "stone-wall" } } }, make_layer)
 check(back.layers[0] and back.layers[0].type == "empty", "layer 0 always exists")
+
+-- Strings from before red and green wire were separate
+local old = presets.from_data({ format = "bezierio-preset", version = 1, layers = { { idx = 0, item = "small-electric-pole", connect_with_circuit_wires = true } } }, make_layer)
+check(old.layers[0].red_wire == true and old.layers[0].green_wire == true, "old circuit wire setting becomes red and green")
 
 local _, err = presets.from_data({ hello = 1 }, make_layer)
 check(err == "not-a-preset", "not a preset")

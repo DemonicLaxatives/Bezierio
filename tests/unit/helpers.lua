@@ -136,7 +136,11 @@ end
 function helpers.canonical(plan)
     local entities, tiles = {}, {}
     for _, e in ipairs(plan.entities) do
-        entities[#entities + 1] = string.format("%s/%s@%g,%g:%d:L%d", e.name, e.quality or "-", e.position.x, e.position.y, e.size, e.layer)
+        local extra = ""
+        if e.direction then extra = extra .. ":d" .. e.direction end
+        if e.color then extra = extra .. string.format(":c%.2f,%.2f,%.2f", e.color.r, e.color.g, e.color.b) end
+        if e.ammo then extra = extra .. ":a" .. e.ammo.name .. "x" .. e.ammo.count end
+        entities[#entities + 1] = string.format("%s/%s@%g,%g:%d:L%d", e.name, e.quality or "-", e.position.x, e.position.y, e.size, e.layer) .. extra
     end
     for _, t in ipairs(plan.tiles) do
         tiles[#tiles + 1] = string.format("%s@%d,%d:L%d", t.name, t.x, t.y, t.layer)
@@ -150,6 +154,7 @@ function helpers.canonical(plan)
         .. "tiles " .. #tiles .. ": " .. table.concat(tiles, " ") .. "\n"
         .. "skipped " .. plan.skipped .. " unsupported " .. table.concat(unsupported, ",")
         .. " warnings " .. #plan.warnings .. string.format(" length %.2f", plan.length)
+        .. ((plan.links and #plan.links > 0) and (" links " .. #plan.links) or "")
 end
 
 --- Canonical text form of any plain table (sorted keys), to compare data.

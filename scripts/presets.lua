@@ -139,6 +139,10 @@ function lib.from_data(data, make_layer)
     for _, entry in ipairs(data.layers) do
         local idx = type(entry) == "table" and int(entry.idx)
         if idx and math.abs(idx) <= lib.MAX_LAYER and not layers[idx] then
+            -- Strings from before red and green wire were separate settings.
+            if entry.connect_with_circuit_wires ~= nil and entry.red_wire == nil then
+                entry.red_wire, entry.green_wire = entry.connect_with_circuit_wires, entry.connect_with_circuit_wires
+            end
             local layer
             if type(entry.item) == "string" then
                 layer = make_layer(idx, entry.item, type(entry.quality) == "string" and entry.quality or "normal")

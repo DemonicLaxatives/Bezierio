@@ -1,4 +1,7 @@
---- Electric turrets (laser, tesla), spaced along the middle of their band.
+local common = require("scripts.layers.common")
+
+--- Electric turrets (laser, tesla), spaced along the middle of their band. Ones
+--- that can't turn all the way round face outward or inward.
 --- @type LayerType
 return {
     name = "electric-turret",
@@ -13,5 +16,8 @@ return {
             max = function(layer) return math.max(layer.size, 10) end,
             default = function(layer) return layer.size end,
         },
+        common.facing,
     },
+    init = common.init_turret,
+    decorate = common.decorate_turret,
 }

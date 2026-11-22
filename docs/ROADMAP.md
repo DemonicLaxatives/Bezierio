@@ -154,6 +154,30 @@ Group b follow-ups (done):
 - Each layer in the list has a checkbox for showing it in the build preview (it's
   built either way), and the layer buttons show non-normal quality.
 
+Done (group c1):
+
+4. **More layer types**, first part:
+   - all turret types (ammo, fluid, artillery, electric): turrets that can't turn
+     all the way round face outward or inward (8 directions where the game allows
+     and the footprint is square); ammo turrets request ammo (insert plan on ghosts
+     and blueprints, loaded when building instantly), counted in the totals;
+   - radars (spacing scaled to the revealed area), solar panels, accumulators;
+   - lamps: own colour, one colour, or a rainbow along the curve;
+   - land mines scattered at a density or on a grid, up to 63 tiles wide,
+     optionally wired together.
+
+Group c1 follow-ups (done):
+
+- Diagonal turrets: the flamethrower faces all 8 ways (its diagonal footprint,
+  from a reference blueprint, is the 3x3 square minus two corners, centred like
+  the square); the railgun's fits its 5x5 square.
+- Land mines: a grid pattern next to scattered, and a much wider band.
+- Red and green wire are separate checkboxes, for poles and land mines.
+- Smart poles: a refine pass after the greedy walk drops poles nothing needs and
+  evens out spacing (the greedy walk left pairs a couple of tiles apart).
+- The curve can be exported and imported as a string (for sharing, and for bug
+  reports).
+
 To do:
 
 4. **More layer types**, prioritised by defence use:
@@ -164,19 +188,10 @@ To do:
       - avoiding cross connections, especially for pipes, as adjecent pipes will always connect;
       - respect pipe extent limits, place pumps to account for them;
       - Parameter to maximize underground placement where possible, like long straight stretches.
-   - All turret types:
-      - respect turrets attack parameters, importantly turn_range, so turrets with a limited turn range are facing outwards. 
-      - ammo turrets:
-          - optional ammo request;
-          - optional infeed belt with inserters - respect inserter pickup/placement locations, ignoring mods that let the user change them at  will, maybe worth considering it at a later stage, but not now.
-      - fluid turrets with:
-          - pipes
-   - land mines (scattered with a density, optional parameter to connect them up with circui wires);
-   - lamps (spacing, colors - monochrome, a cyclic color pallete takings samples from the curve lenght);
+   - turrets, still to do (after belts and pipes, group c3):
+      - ammo turrets: optional infeed belt with inserters - respect inserter pickup/placement locations, ignoring mods that let the user change them at  will, maybe worth considering it at a later stage, but not now.
+      - fluid turrets with pipes
    - gates where a rail or belt crosses a wall.
-   - solar pannels - spacing
-   - acumulators - spacing
-   - radars - spacing, autoscale the slider with their range
 5. **Rails.** Fit 2.0 rail pieces (straight, half-diagonal, curved-a/b) to the
    curve, plus signals at a spacing measured in wagons (fields already exist).
    This is the largest item: it needs a search over rail-piece sequences that stays
@@ -235,7 +250,18 @@ To do:
 
 ### Release hygiene for the first release (0.2.0)
 
-- GUI upgrades, make it more cohesive and nicer. Have the panels, and elements within them align to one another. Give the list entries alternating shaded backgrounds. The button for adding a layer should take the full width of the layer in gui, but also shorter in height. Give the user The option to hide some parts of the gui, like the point coordinates, layer controls, etc. and in the collapsed mode hide some of the buttons and controls.
+- GUI upgrades
+  - On top of the rest of the suggestions make it more cohesive and nicer. 
+  - Have the panels, and elements within them align to one another. 
+  - Give the list entries alternating shaded backgrounds. 
+  - The button for adding a layer should take the full width of the layer in gui, but also be shorter in height.
+  - Give the user the option to collapse some parts of the gui, like the point coordinates, layer controls, etc. and in the collapsed mode hide some of the buttons and controls. 
+  - Disable a layer's placement (plan for it).
+  - show the status of  the job, as well as the queued commands, like force build
+  - get rid of the layer mirroring button.
+  - In the turrets config panel give the user a way to set the targeting priorities
+  - Give tooltips to the turret facing paramater, so that it's clear what which direction means
+  - Add a button to add a new preset.
 - `debug.lua` `lib.debug = false` (enforced by the release check above).
 - New screenshots for the README and mod portal. The current ones show the 0.1
   curve projector.

@@ -19,7 +19,7 @@ local function tile(idx)
 end
 local function pole(idx, wire_distance)
     return { idx = idx, type = "electric-pole", name = "pole", placed_by = "pole", quality = "normal", size = 1, offset = 0,
-        wire_distance = wire_distance, reach = 2, spacing = wire_distance - 1, connect_with_circuit_wires = false }
+        wire_distance = wire_distance, reach = 2, spacing = wire_distance - 1, red_wire = false, green_wire = false }
 end
 
 -- Same item, another quality: everything kept
@@ -47,10 +47,10 @@ registry.carry_over(new, old)
 check(new.radius == 10, "out-of-range values clamped: " .. new.radius)
 
 -- Pole -> pole with a shorter reach: spacing clamped to the new wire distance; derived values not copied
-local p = pole(1, 9); p.spacing, p.connect_with_circuit_wires = 9, true
+local p = pole(1, 9); p.spacing, p.red_wire = 9, true
 new = pole(1, 7)
 registry.carry_over(new, p)
-check(new.spacing == 7 and new.wire_distance == 7 and new.connect_with_circuit_wires == true, "pole spacing clamped, wires kept")
+check(new.spacing == 7 and new.wire_distance == 7 and new.red_wire == true and new.green_wire == false, "pole spacing clamped, wires kept")
 
 -- Wall -> pole: nothing in common but the offset
 old = wall(1, "normal"); old.offset = 2

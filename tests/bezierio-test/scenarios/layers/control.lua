@@ -36,8 +36,9 @@ step("configure layers", function(player)
   dev("set_elem", P, "layer_type", { name = "small-electric-pole", quality = "normal" })
   check(layers()[1].size == 1, "small pole is 1x1, not 2x2: " .. layers()[1].size)
   check(not el(player, "smart_placement"), "smart placement checkbox gone")
-  dev("set_checked", P, "connect_with_circuit_wires", true)
-  check(layers()[1].connect_with_circuit_wires == true, "circuit wires on")
+  dev("set_checked", P, "red_wire", true)
+  check(layers()[1].red_wire == true and not layers()[1].green_wire, "red wire on, green off")
+  dev("set_checked", P, "green_wire", true)
 
   dev("click", P, "add_layer_below")
   dev("set_elem", P, "layer_type", { name = "stone-brick", quality = "normal" })
@@ -125,7 +126,7 @@ step("presets", function(player)
   check(#presets() == 3 and controller().ui.preset_index == 3 and presets()[3].name == "Default 2", "imported and selected")
   local a, b = presets()[1].layers, presets()[3].layers
   check(b[2].type == "electric-turret" and b[2].spacing == a[2].spacing and b[-1].radius == a[-1].radius
-    and b[1].connect_with_circuit_wires == true, "import matches the export")
+    and b[1].red_wire == true and b[1].green_wire == true, "import matches the export")
 
   dev("click", P, "preset_delete")
   dev("click", P, "preset_delete")

@@ -116,5 +116,21 @@ check(h[1].x == -5 and h[1].y == 0 and h[2].x == -5 and h[2].y == 10, "circle mo
 curve_lib.clear(k)
 check(#curve_lib.active(k) == 0 and #k.points == 3, "clear empties only the active kind")
 
+-- Export / import: every kind's points, the active kind, closed, directions
+local ex = curve_lib.new()
+curve_lib.append(ex, { x = 1, y = 2 }); curve_lib.append(ex, { x = 3.333, y = 4 }); curve_lib.append(ex, { x = 5, y = -6 })
+ex.closed = true
+curve_lib.reverse(ex)
+ex.kind = "arc"
+curve_lib.append(ex, { x = 0, y = 0 }); curve_lib.append(ex, { x = 10, y = 0 }); curve_lib.append(ex, { x = 0, y = 10 })
+local back = curve_lib.from_data(curve_lib.to_data(ex))
+check(back and back.kind == "arc" and back.closed and #back.points == 3 and back.points[2].x == 3.33, "spline points, kind and closed kept")
+check(back and #back.handles.arc == 3 and back.handles.arc[3].y == 10 and back.reversed.catmull_rom == true, "shape handles and directions kept")
+check(back and #curve_lib.samples(back, 0.25) == #curve_lib.samples(ex, 0.25), "samples the same")
+local junk = curve_lib.from_data({ format = "bezierio-curve", version = 1, kind = "spiral", points = { { x = 1, y = 1 }, { x = "a" }, "x", { x = 1e9, y = 0 }, { x = 2, y = 2 } },
+    handles = { circle = { { x = 0, y = 0 }, { x = 5, y = 0 }, { x = 9, y = 9 } } } })
+check(junk and junk.kind == "catmull_rom" and #junk.points == 2 and #junk.handles.circle == 2, "bad points dropped, extra handles cut, unknown kind ignored")
+check(curve_lib.from_data({ format = "bezierio-preset" }) == nil and select(2, curve_lib.from_data({ format = "bezierio-curve", version = 9 })) == "unknown-version", "wrong strings refused")
+
 print(string.format("%d/%d shape checks passed", checks - failures, checks))
 os.exit(failures == 0 and 0 or 1)

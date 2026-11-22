@@ -30,10 +30,16 @@ return {
     end,
 
     create_entity = function(job, player, entity, undo_index)
-        return job.surface.create_entity {
+        local built = job.surface.create_entity {
             name = entity.name, position = entity.position, quality = entity.quality,
+            direction = entity.direction, color = entity.color,
             force = job.force, player = player, raise_built = true, move_stuck_players = true,
             undo_index = undo_index,
         }
+        if built and entity.ammo then
+            local ammo = entity.ammo
+            built.insert { name = ammo.name, quality = ammo.quality, count = ammo.count }
+        end
+        return built
     end,
 }

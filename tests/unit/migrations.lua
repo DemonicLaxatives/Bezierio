@@ -136,6 +136,20 @@ load_save()
 local r5 = storage.controllers[5].curve.reversed
 check(r5.circle == true and r5.arc == true and r5.catmull_rom == nil, "7->8: shapes stay reversed, the spline doesn't")
 
+-- 8 -> 9: one circuit wire setting becomes red and green
+storage = { schema_version = 8, sprites = {}, controllers = { [6] = {
+    ui = { preset_index = 1, draw_curve = false, preview_build = false, selected_layer = 0 },
+    curve = { kind = "catmull_rom", points = {}, closed = false, handles = { circle = {}, ellipse = {}, arc = {} }, reversed = {} },
+    presets = { { name = "Default", layers = {
+        [0] = { idx = 0, type = "empty", size = 1, offset = 0 },
+        [1] = { idx = 1, type = "electric-pole", name = "small-electric-pole", placed_by = "small-electric-pole", quality = "normal", size = 1, offset = 0, spacing = 6, connect_with_circuit_wires = true },
+    } } },
+    revision = 2, redraw = false, work = {},
+} } }
+load_save()
+local pole6 = storage.controllers[6].presets[1].layers[1]
+check(pole6.red_wire == true and pole6.green_wire == true and pole6.connect_with_circuit_wires == nil, "8->9: circuit wires -> red and green")
+
 -- The migrated controller works with the current code.
 local planner = require("scripts.build.planner")
 storage = v2_storage()

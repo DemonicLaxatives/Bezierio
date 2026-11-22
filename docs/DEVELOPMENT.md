@@ -217,11 +217,29 @@ A layer type is one file in `scripts/layers/`, listed in `TYPE_FILES` in
   - `"none"`: builds nothing (empty);
 - `output` (`"entity"` or `"tile"`) and `priority` (higher claims contested cells
   first);
-- `fields`: editable settings with widget, min/max (number or function of the
-  layer), default and optional word labels. The GUI builds its controls from
-  these;
-- `init(layer, prototype)` for derived values (e.g. pole wire reach), and
-  `thickness(layer)` if the band width isn't the footprint size.
+- `fields`: editable settings. The GUI builds its controls from these:
+  - `widget`: `"slider"` (min/max as numbers or functions of the layer, optional
+    word labels), `"checkbox"`, `"choice"` (a drop-down of `options`, labels from
+    `label_prefix`) or `"item"` (an item picker with `item_filters`; `valid(layer,
+    value)` refuses items the layer can't use, e.g. the wrong ammo);
+  - `default`, `visible_if(layer)` (hide when irrelevant, e.g. facing for turrets
+    that turn all the way round), `disabled_by` (a checkbox that makes it moot);
+- `init(layer, prototype)` for derived values (e.g. pole wire reach, a turret's
+  turn range and ammo categories), and `thickness(layer)` if the band width isn't
+  the footprint size;
+- band layers: `keep(layer, x, y)` instead of the checkerboard (land mine density:
+  a fixed per-cell hash, exact in both integers and doubles);
+- spaced layers: `decorate(layer, entity, info)` adds `direction`, `color` or
+  `ammo` to a planned entity. `info.outward` is the normal on the layer's side
+  (layer 0: layer 1's side), `info.arc` the distance along the curve. Non-square
+  turrets keep to 4 directions and are shifted onto their own grid inside the
+  square the planner reserved.
+
+The outputs and the blueprint writer carry `direction` and `color` into the
+entity (a lamp ghost keeps a colour only when given at creation), and `ammo` as
+an insert plan (ghost, blueprint) or by inserting it (instant). `plan.links` holds
+wires that aren't pole chains (land mines: each to the nearest of the layer's last
+`LINK_WINDOW` mines within reach), wired after the chains.
 
 Layers are plain data. They name prototypes rather than holding them, so saves
 survive mods changing prototypes. `layer.preview == false` hides a layer in the
@@ -269,7 +287,13 @@ clamped to the new range, plus the offset.
      closed curves also close the chain.
    - Gaps that can't be bridged because there's no room are counted in
      `plan.gaps` and reported.
-   - **Smart pole layers** (`smart_poles.lua`) ignore the spacing. They build the
+   - **Smart pole layers** (`smart_poles.lua`) ignore the spacing. After the greedy
+     walk, a refine pass drops poles nothing needs (neighbours in reach, every
+     consumer they power powered by another pole too; an open line's end pole if
+     the next is within a third of the reach) and slides the rest towards the middle
+     between their neighbours as far as reach and the consumers only they power
+     allow. The greedy walk alone leaves a pole at full reach followed by one a
+     couple of tiles on when a consumer can only be powered from a short stretch. They build the
      band's centre line with arc lengths, project every powered entity in the
      plan onto it, then walk greedily. Each next pole is the farthest free spot
      (tried every 0.5 tiles back from the wire reach) that is in reach of the
@@ -308,8 +332,8 @@ The executor walks the plan's tiles, then its entities. For each placement it:
    entities.
 
 After the entities, the executor connects each pole chain's consecutive poles
-(ghosts or real) with copper wire, plus red and green wire when the layer has
-*Circuit wires* on.
+(ghosts or real) with copper wire, plus red and / or green wire as the layer's
+*Red wire* / *Green wire* say. Then it wires `plan.links` (land mines).
 
 Every action carries an `undo_index`, so a build spread over many ticks is still
 one undo item (`build/undo.lua`). Items are addressed from the top of the stack,
@@ -359,6 +383,7 @@ tests/run.sh smoke                                     # loads, runs 120 ticks w
 tests/run.sh points                                    # the pointer, point list, closed loops
 tests/run.sh layers                                    # layer list and detail pane, presets, view settings
 tests/run.sh build                                     # preview, totals, builds in all modes, blueprints
+tests/run.sh types                                     # turrets, lamps, mines, radars, solar panels, accumulators
 tests/run.sh build space-age quality elevated-rails    # same, with DLC mods enabled
 tests/migrate-save.sh                                  # the game applies migrations/ to a real save
 tests/run.sh bench                                     # timing (read the BENCH lines in the log)
@@ -375,6 +400,7 @@ tests/run.sh bench                                     # timing (read the BENCH 
 | `curve_edit.lua` | Inserting (including where a shift-click goes); reversing keeps the points and samples the curve backwards. |
 | `layers.lua` | Which layer settings survive picking another item (`registry.carry_over`). |
 | `presets.lua` | Preset list operations; export data round trip and import validation. |
+| `layer_types.lua` | Turret facing (both sides, inward) and non-square footprints, ammo, lamp colours and rainbow, radar spacing, land mine density, determinism and wires. |
 | `shapes.lua` | What the handles mean; samples exactly on circles, (rotated) ellipses and arcs; direction; editing shapes and moving curves. |
 | `migrations.lua` | The files in `migrations/`, run like the game does, on old and current data. |
 

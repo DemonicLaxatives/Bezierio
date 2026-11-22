@@ -114,12 +114,21 @@ local function step_entities(job, budget)
     while job.cursor <= #plan.entities and used < budget do
         local i = job.cursor
         local e = plan.entities[i]
-        job.entities[i] = {
+        local entry = {
             entity_number = i,
             name = e.name,
             position = { x = e.position.x - origin.x, y = e.position.y - origin.y },
             quality = (e.quality and e.quality ~= "normal") and e.quality or nil,
+            direction = (e.direction and e.direction ~= 0) and e.direction or nil,
+            color = e.color,
         }
+        if e.ammo then
+            entry.items = { {
+                id = { name = e.ammo.name, quality = e.ammo.quality },
+                items = { in_inventory = { { inventory = defines.inventory[e.ammo.inventory], stack = 0, count = e.ammo.count } } },
+            } }
+        end
+        job.entities[i] = entry
         job.cursor = i + 1
         used = used + lib.COST.entity
     end
@@ -160,10 +169,8 @@ local function step_wires(job, budget)
             local source = job.entities[a]
             source.wires = source.wires or {}
             table.insert(source.wires, { a, ids.pole_copper, b, ids.pole_copper })
-            if chain.wires then
-                table.insert(source.wires, { a, ids.circuit_red, b, ids.circuit_red })
-                table.insert(source.wires, { a, ids.circuit_green, b, ids.circuit_green })
-            end
+            if chain.red then table.insert(source.wires, { a, ids.circuit_red, b, ids.circuit_red }) end
+            if chain.green then table.insert(source.wires, { a, ids.circuit_green, b, ids.circuit_green }) end
             job.cursor = job.cursor + 1
             used = used + lib.COST.wire
         end
@@ -172,7 +179,16 @@ local function step_wires(job, budget)
             job.cursor = 1
         end
     end
-    if job.chain_cursor > #job.chain_keys then job.stage = "write" end
+    if job.chain_cursor > #job.chain_keys then
+        -- Other wires (land mines): red and / or green.
+        for _, link in ipairs(plan.links or {}) do
+            local source = job.entities[link.a]
+            source.wires = source.wires or {}
+            if link.red then table.insert(source.wires, { link.a, ids.circuit_red, link.b, ids.circuit_red }) end
+            if link.green then table.insert(source.wires, { link.a, ids.circuit_green, link.b, ids.circuit_green }) end
+        end
+        job.stage = "write"
+    end
     return used
 end
 

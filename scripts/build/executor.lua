@@ -175,10 +175,13 @@ local function build_entity(job, player, output, entity)
         return
     end
 
+    -- Obstacles: a square around the collision box, so rotated (and diagonal)
+    -- footprints are covered too.
     local box = prototype.collision_box
+    local half = math.max(-box.left_top.x, -box.left_top.y, box.right_bottom.x, box.right_bottom.y)
     local area = {
-        left_top = { x = position.x + box.left_top.x, y = position.y + box.left_top.y },
-        right_bottom = { x = position.x + box.right_bottom.x, y = position.y + box.right_bottom.y },
+        left_top = { x = position.x - half, y = position.y - half },
+        right_bottom = { x = position.x + half, y = position.y + half },
     }
 
     if job.mode == "superforced" then
@@ -197,7 +200,7 @@ local function build_entity(job, player, output, entity)
         -- engine's manual ghost check rejects free spots next to existing walls (2.1.24).
         -- With forced = true, trees and rocks don't block (they get cleared below).
         if not surface.can_place_entity {
-                name = entity.name, position = position, force = force,
+                name = entity.name, position = position, direction = entity.direction, force = force,
                 build_check_type = defines.build_check_type.manual_ghost, forced = true,
             } then
             result.blocked = result.blocked + 1
@@ -224,20 +227,17 @@ local function built_entity(surface, entity)
         or surface.find_entities_filtered { ghost_name = entity.name, position = entity.position, limit = 1 }[1]
 end
 
-local WIRES = {
-    copper = { defines.wire_connector_id.pole_copper },
-    circuit = { defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green },
-}
-
---- Connect two poles (or ghosts) with copper, and red/green wire if asked.
+--- Connect two entities (or ghosts): poles with copper, and red / green wire as asked.
 --- @param a LuaEntity
 --- @param b LuaEntity
---- @param circuit boolean
-local function connect(a, b, circuit)
-    local ids = { table.unpack(WIRES.copper) }
-    if circuit then
-        for _, id in ipairs(WIRES.circuit) do table.insert(ids, id) end
-    end
+--- @param copper boolean
+--- @param red boolean
+--- @param green boolean
+local function connect(a, b, copper, red, green)
+    local ids = {}
+    if copper then table.insert(ids, defines.wire_connector_id.pole_copper) end
+    if red then table.insert(ids, defines.wire_connector_id.circuit_red) end
+    if green then table.insert(ids, defines.wire_connector_id.circuit_green) end
     for _, id in ipairs(ids) do
         local from = a.get_wire_connector(id, true)
         local to = b.get_wire_connector(id, true)
@@ -245,12 +245,26 @@ local function connect(a, b, circuit)
     end
 end
 
---- Wire each pole chain in order along the curve.
+--- Wire each pole chain in order along the curve, then the other links (land mines).
 --- @param job BuildJob
 --- @param budget number
 --- @return number used
 local function step_wires(job, budget)
     local used, plan = 0, job.plan
+    if job.chain_cursor > #job.chain_keys then
+        local links = plan.links or {}
+        job.link_cursor = job.link_cursor or 1
+        while job.link_cursor <= #links and used < budget do
+            local link = links[job.link_cursor]
+            local a = built_entity(job.surface, plan.entities[link.a])
+            local b = built_entity(job.surface, plan.entities[link.b])
+            if a and b then connect(a, b, false, link.red, link.green) end
+            job.link_cursor = job.link_cursor + 1
+            used = used + lib.COST.wire
+        end
+        if job.link_cursor > #links then job.stage = "done" end
+        return used
+    end
     while job.chain_cursor <= #job.chain_keys and used < budget do
         local chain = plan.chains[job.chain_keys[job.chain_cursor]]
         local members = chain.members
@@ -259,7 +273,7 @@ local function step_wires(job, budget)
         while job.cursor <= pairs_total and used < budget do
             local a = built_entity(job.surface, plan.entities[members[job.cursor]])
             local b = built_entity(job.surface, plan.entities[members[job.cursor % count + 1]])
-            if a and b then connect(a, b, chain.wires) end
+            if a and b then connect(a, b, true, chain.red, chain.green) end
             job.cursor = job.cursor + 1
             used = used + lib.COST.wire
         end
@@ -268,7 +282,6 @@ local function step_wires(job, budget)
             job.cursor = 1
         end
     end
-    if job.chain_cursor > #job.chain_keys then job.stage = "done" end
     return used
 end
 

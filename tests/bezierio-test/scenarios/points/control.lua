@@ -171,6 +171,24 @@ step("shapes with the pointer", function(player)
   dev("click", P, "pointer_button")
 end, "idle")
 
+step("export and import the curve", function(player)
+  local before = helpers.table_to_json(controller().curve)
+  dev("click", P, "curve_export")
+  local text = el(player, "curve_string").text
+  check(#text > 20 and el(player, "curve_io").visible, "export string shown")
+  dev("click", P, "control_points_clear")
+  check(point_count() == 0, "cleared")
+  dev("click", P, "curve_import")
+  check(not el(player, "curve_string") and el(player, "curve_import_text"), "import box replaces the export")
+  el(player, "curve_import_text").text = "nonsense"
+  dev("click", P, "curve_import_confirm")
+  check(point_count() == 0, "bad string refused")
+  el(player, "curve_import_text").text = text
+  dev("click", P, "curve_import_confirm")
+  check(point_count() == 3 and not el(player, "curve_io").visible, "curve back, box closed")
+  check(helpers.table_to_json(controller().curve) == before, "exactly the same curve")
+end)
+
 step("clear points", function(player)
   dev("click", P, "control_points_clear")
   check(point_count() == 0, "cleared")

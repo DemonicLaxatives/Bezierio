@@ -108,7 +108,7 @@ end
 --- The game doesn't raise on_configuration_changed when it only applied
 --- migrations (2.1.24, mod version unchanged), so `rebuild_needed` makes the next
 --- access do what on_configuration_changed does (lib.ensure_rebuilt).
-lib.SCHEMA_VERSION = 8
+lib.SCHEMA_VERSION = 9
 
 --- Discard everything: a fresh, empty layout.
 local function reset()

@@ -22,5 +22,26 @@ for i = 1, cases do
         end
     end
 end
+-- The newer placements too: smart poles (with refining), turrets, lamps, wired mines.
+local special = {
+    [0] = { idx = 0, type = "wall", name = "wall", quality = "normal", radius = 1, checkerboard = 0, size = 1, offset = 0 },
+    [1] = { idx = 1, type = "electric-pole", name = "pole", quality = "normal", size = 1, offset = 0, spacing = 3, wire_distance = 9, reach = 2.5, smart = true },
+    [2] = { idx = 2, type = "electric-turret", name = "turret", quality = "normal", size = 2, offset = 1, spacing = 7, needs_power = true },
+    [-1] = { idx = -1, type = "land-mine", name = "mine", quality = "normal", size = 1, offset = 0, radius = 3, density = 20, red_wire = true, circuit_distance = 9 },
+    [-2] = { idx = -2, type = "lamp", name = "lamp", quality = "normal", size = 1, offset = 0, spacing = 5, color = "rainbow", rainbow_length = 30 },
+}
+local extra = 0
+for i = 1, 8 do
+    local points = helpers.random_points(r)
+    local expected = helpers.canonical(helpers.plan(points, special))
+    for _, budget in ipairs(budgets) do
+        extra = extra + 1
+        if helpers.canonical(helpers.plan(points, special, budget)) ~= expected then
+            failures = failures + 1
+            print(string.format("FAIL special case %d: budget %d gives a different plan", i, budget))
+        end
+    end
+end
+cases = cases + extra / #budgets
 print(string.format("%d/%d sliced plans match", cases * #budgets - failures, cases * #budgets))
 os.exit(failures == 0 and 0 or 1)

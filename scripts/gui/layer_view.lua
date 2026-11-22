@@ -104,6 +104,50 @@ local function add_checkbox_field(flow, layer, field)
     }
 end
 
+--- A captioned drop-down. Name: <field> (the drop-down).
+--- @param flow LuaGuiElement
+--- @param layer Layer
+--- @param field LayerField
+local function add_choice_field(flow, layer, field)
+    local key = locale_key(field.name)
+    local frame = flow.add { type = "flow", name = field.name .. "_frame", direction = "horizontal" }
+    frame.style.vertical_align = "center"
+    local label = frame.add { type = "label", caption = { "slider-caption." .. key }, tooltip = { "tooltip." .. key } }
+    label.style.width = 110
+    local items, selected = {}, 1
+    for i, option in ipairs(field.options) do
+        items[i] = { field.label_prefix .. "." .. option }
+        if option == layer[field.name] then selected = i end
+    end
+    frame.add {
+        type = "drop-down",
+        name = field.name,
+        items = items,
+        selected_index = selected,
+        tags = { group = "layer", action = "set_choice", field = field.name, idx = layer.idx },
+    }
+end
+
+--- A captioned item picker (e.g. ammo). Name: <field> (the picker).
+--- @param flow LuaGuiElement
+--- @param layer Layer
+--- @param field LayerField
+local function add_item_field(flow, layer, field)
+    local key = locale_key(field.name)
+    local frame = flow.add { type = "flow", name = field.name .. "_frame", direction = "horizontal" }
+    frame.style.vertical_align = "center"
+    local label = frame.add { type = "label", caption = { "slider-caption." .. key }, tooltip = { "tooltip." .. key } }
+    label.style.width = 110
+    local picker = frame.add {
+        type = "choose-elem-button",
+        name = field.name,
+        elem_type = "item",
+        elem_filters = field.item_filters,
+        tags = { group = "layer", action = "set_item", field = field.name, idx = layer.idx },
+    }
+    picker.elem_value = layer[field.name]
+end
+
 --- @param detail LuaGuiElement
 --- @param layer Layer
 local function fill_detail(detail, layer)
@@ -131,10 +175,16 @@ local function fill_detail(detail, layer)
         lib.add_slider_field(detail, layer, registry.offset_field)
     end
     for _, field in ipairs(registry.type_of(layer).fields) do
-        if field.widget == "slider" then
+        if field.visible_if and not field.visible_if(layer) then
+            -- not relevant for this entity (e.g. facing for turrets that turn all the way)
+        elseif field.widget == "slider" then
             lib.add_slider_field(detail, layer, field)
         elseif field.widget == "checkbox" then
             add_checkbox_field(detail, layer, field)
+        elseif field.widget == "choice" then
+            add_choice_field(detail, layer, field)
+        elseif field.widget == "item" then
+            add_item_field(detail, layer, field)
         end
     end
 end

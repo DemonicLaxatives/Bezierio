@@ -42,6 +42,9 @@ lib.COST = {
 --- @field size integer
 --- @field layer integer
 --- @field frame integer|nil   # spaced entities: the curve sample they were placed at
+--- @field direction integer|nil  # defines.direction (0..15), if not north
+--- @field color Color|nil        # lamps
+--- @field ammo {name: string, quality: string, count: integer, inventory: string}|nil  # turrets: ammo to request
 
 --- @class PlannedTile
 --- @field name string
@@ -50,7 +53,8 @@ lib.COST = {
 --- @field layer integer
 
 --- @class PlanChain
---- @field wires boolean        # connect consecutive members with red and green wire
+--- @field red boolean          # connect consecutive members with red wire too
+--- @field green boolean        # ... and green
 --- @field members integer[]    # indices into plan.entities, in order along the curve
 
 --- @class BuildPlan
@@ -61,6 +65,7 @@ lib.COST = {
 --- @field length number           # curve length in tiles
 --- @field counts table<integer, integer>   # placements per layer index
 --- @field chains table<integer, PlanChain> # pole layers: poles in order, for wiring
+--- @field links {a: integer, b: integer, red: boolean, green: boolean}[]  # other wires (indices into entities): land mines
 --- @field gaps integer           # consecutive poles out of wire reach (no room for a pole between)
 --- @field unpowered integer      # powered entities no smart pole line could reach
 --- @field warnings Vector[]       # where a bend is tighter than the layers on its inside
@@ -138,7 +143,7 @@ function lib.new_job(curve, layers)
         last_warning = nil,
         plan = {
             entities = {}, tiles = {}, unsupported = {}, skipped = 0,
-            length = 0, counts = {}, chains = {}, gaps = 0, unpowered = 0, warnings = {},
+            length = 0, counts = {}, chains = {}, links = {}, gaps = 0, unpowered = 0, warnings = {},
             closed = curve_lib.is_closed(curve),
             done = sampler == nil,
         },
@@ -360,6 +365,37 @@ local function stage_bends(job, budget)
     return used
 end
 
+local link_to_nearby
+
+--- How many of a layer's latest band entities a new one looks at for a wire partner.
+lib.LINK_WINDOW = 40
+
+--- Band layers with wires (land mines): connect a new entity to the nearest of the
+--- layer's recent ones within wire reach. Cells come in order along the curve, so
+--- the recent ones are the near ones; the wires form one tree per stretch that is
+--- dense enough to reach across.
+--- @param job PlannerJob
+--- @param layer Layer
+--- @param index integer  # in plan.entities
+link_to_nearby = function(job, layer, index)
+    local plan = job.plan
+    job.recent = job.recent or {}
+    local recent = job.recent[layer.idx]
+    if not recent then
+        recent = {}
+        job.recent[layer.idx] = recent
+    end
+    local pos = plan.entities[index].position
+    local best, best_d = nil, layer.circuit_distance
+    for _, other in ipairs(recent) do
+        local d = vect.distance(plan.entities[other].position, pos)
+        if d <= best_d then best, best_d = other, d end
+    end
+    if best then table.insert(plan.links, { a = best, b = index, red = layer.red_wire == true, green = layer.green_wire == true }) end
+    table.insert(recent, index)
+    if #recent > lib.LINK_WINDOW then table.remove(recent, 1) end
+end
+
 --- Place a band layer's tile or entity in a cell (if its checkerboard keeps it).
 --- @param job PlannerJob
 --- @param layer Layer
@@ -369,7 +405,12 @@ end
 --- @return boolean  # whether a tile was placed
 local function emit_cell(job, layer, x, y, key)
     local def = registry.type_of(layer)
-    if def.placement ~= "band" or not checkerboard_keep(x, y, layer.checkerboard) then return false end
+    if def.placement ~= "band" then return false end
+    if def.keep then
+        if not def.keep(layer, x, y) then return false end
+    elseif not checkerboard_keep(x, y, layer.checkerboard) then
+        return false
+    end
     local plan = job.plan
     plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
     if def.output == "tile" then
@@ -381,6 +422,7 @@ local function emit_cell(job, layer, x, y, key)
         name = layer.name, quality = layer.quality,
         position = { x = x + 0.5, y = y + 0.5 }, size = 1, layer = layer.idx,
     })
+    if (layer.red_wire or layer.green_wire) and layer.circuit_distance then link_to_nearby(job, layer, #plan.entities) end
     return false
 end
 
@@ -516,7 +558,8 @@ end
 --- @param layer Layer
 --- @param pos Vector
 --- @param frame integer|nil  # the curve sample it was placed at
-local function commit(job, layer, pos, frame)
+--- @param arc number|nil      # distance along the curve it was aimed at
+local function commit(job, layer, pos, frame, arc)
     local size = layer.size
     local x0, y0 = footprint_origin(pos, size)
     for dx = 0, size - 1 do
@@ -525,9 +568,16 @@ local function commit(job, layer, pos, frame)
         end
     end
     local plan = job.plan
-    table.insert(plan.entities, {
+    local entity = {
         name = layer.name, quality = layer.quality, position = pos, size = size, layer = layer.idx, frame = frame,
-    })
+    }
+    local def = registry.type_of(layer)
+    if def.decorate then
+        local n = frame and job.frames[frame] and job.frames[frame].n or { x = 0, y = -1 }
+        local side = layer.idx < 0 and -1 or 1
+        def.decorate(layer, entity, { outward = { x = side * n.x, y = side * n.y }, arc = arc })
+    end
+    table.insert(plan.entities, entity)
     plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
     local chain = plan.chains[layer.idx]
     if chain then
@@ -590,13 +640,27 @@ local function place(job, layer, walk, target, direction)
             return used
         end
     end
-    commit(job, layer, pos, walk.i and math.min(walk.i, #job.frames) or nil)
+    commit(job, layer, pos, walk.i and math.min(walk.i, #job.frames) or nil, walk.aim)
     walk.last = pos
     return used
 end
 
 --- What smart pole placement needs from here.
-local SMART_HELPERS = { find_spot = find_spot, search_spot = search_spot, commit = commit, COST = lib.COST }
+--- Free or take the cells of an entity of `size` at `pos`.
+--- @param job PlannerJob
+--- @param size integer
+--- @param pos Vector
+--- @param taken boolean
+local function set_cells(job, size, pos, taken)
+    local x0, y0 = footprint_origin(pos, size)
+    for dx = 0, size - 1 do
+        for dy = 0, size - 1 do
+            job.occupied[cell_key(x0 + dx, y0 + dy)] = taken or nil
+        end
+    end
+end
+
+local SMART_HELPERS = { find_spot = find_spot, search_spot = search_spot, commit = commit, set_cells = set_cells, COST = lib.COST }
 
 --- Walk each spaced layer's centre line, placing an entity every `spacing` tiles
 --- (or, for poles with smart placement, see smart_poles.lua).
@@ -613,7 +677,7 @@ local function stage_spaced(job, budget)
         local walk = job.walk
         if not walk then
             if layer.wire_distance then
-                job.plan.chains[layer.idx] = { wires = layer.connect_with_circuit_wires == true, members = {} }
+                job.plan.chains[layer.idx] = { red = layer.red_wire == true, green = layer.green_wire == true, members = {} }
             end
             if layer.smart and layer.wire_distance then
                 walk = smart_poles.new_walk()
@@ -621,6 +685,7 @@ local function stage_spaced(job, budget)
             else
                 walk = { i = 2, travelled = 0, next_at = spacing, last = nil }
                 job.walk = walk
+                walk.aim = 0
                 used = used + place(job, layer, walk, geometry.offset_point(frames[1], u_mid), frames[1].t)
             end
         end
@@ -637,6 +702,7 @@ local function stage_spaced(job, budget)
             while seg > 0 and walk.travelled + seg >= walk.next_at do
                 local k = (walk.next_at - walk.travelled) / seg
                 local direction = vect.scale(1 / seg, vect.sub(b, a))
+                walk.aim = walk.next_at
                 used = used + place(job, layer, walk, vect.add(a, vect.scale(k, vect.sub(b, a))), direction)
                 walk.next_at = walk.next_at + spacing
             end

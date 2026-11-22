@@ -322,6 +322,66 @@ function lib.step(sampler, out, budget)
     return used
 end
 
+-- Export / import ------------------------------------------------------------------
+
+lib.FORMAT = "bezierio-curve"
+lib.VERSION = 1
+--- Most points an imported list may have.
+lib.MAX_IMPORT_POINTS = 1000
+
+--- Plain data for an export string: every kind's points, the active kind, the
+--- closed flag and the directions.
+--- @param curve Curve
+--- @return table
+function lib.to_data(curve)
+    local function copy(list)
+        local out = {}
+        for i, p in ipairs(list or {}) do out[i] = { x = p.x, y = p.y } end
+        return out
+    end
+    local handles = {}
+    for kind, list in pairs(curve.handles or {}) do handles[kind] = copy(list) end
+    local reversed = {}
+    for kind, flag in pairs(type(curve.reversed) == "table" and curve.reversed or {}) do reversed[kind] = flag end
+    return {
+        format = lib.FORMAT, version = lib.VERSION, kind = curve.kind,
+        points = copy(curve.points), closed = curve.closed == true, handles = handles, reversed = reversed,
+    }
+end
+
+--- A curve from export data, or nil and an error key.
+--- @param data any
+--- @return Curve|nil, string|nil
+function lib.from_data(data)
+    if type(data) ~= "table" or data.format ~= lib.FORMAT then return nil, "not-a-curve" end
+    if data.version ~= lib.VERSION then return nil, "unknown-version" end
+    local function points(list, max)
+        local out = {}
+        if type(list) ~= "table" then return out end
+        for _, p in ipairs(list) do
+            if #out >= max then break end
+            local x, y = type(p) == "table" and tonumber(p.x), type(p) == "table" and tonumber(p.y)
+            if x and y and x == x and y == y and math.abs(x) < 1e7 and math.abs(y) < 1e7 then
+                out[#out + 1] = rounded({ x = x, y = y })
+            end
+        end
+        return out
+    end
+    local curve = lib.new()
+    curve.points = points(data.points, lib.MAX_IMPORT_POINTS)
+    curve.closed = data.closed == true
+    for _, kind in ipairs(lib.KINDS) do
+        if shapes.HANDLES[kind] then
+            curve.handles[kind] = points(type(data.handles) == "table" and data.handles[kind], #shapes.HANDLES[kind])
+        end
+        if type(data.reversed) == "table" and data.reversed[kind] == true then curve.reversed[kind] = true end
+    end
+    for _, kind in ipairs(lib.KINDS) do
+        if data.kind == kind then curve.kind = kind end
+    end
+    return curve
+end
+
 --- All samples at once (small curves, tests).
 --- @param curve Curve
 --- @param max_step number

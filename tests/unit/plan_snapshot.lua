@@ -85,6 +85,20 @@ cases[#cases + 1] = { name = "circle reversed", curve = helpers.shape_curve("cir
 cases[#cases + 1] = { name = "rotated ellipse", curve = helpers.shape_curve("ellipse", { { x = 0, y = 0 }, { x = 30, y = 20 }, { x = -4, y = 9 } }), layers = { [0] = wall(0, 2) } }
 cases[#cases + 1] = { name = "arc", curve = helpers.shape_curve("arc", { { x = 0, y = 0 }, { x = -30, y = 0 }, { x = 10, y = 10 } }), layers = ring_layers }
 
+-- Turrets facing outward with ammo, lamps in a rainbow, scattered wired mines, solar panels
+cases[#cases + 1] = {
+    name = "defence line",
+    points = { { x = 0, y = 0 }, { x = 40, y = -25 }, { x = 90, y = 5 } },
+    layers = {
+        [0] = wall(0, 1),
+        [1] = { idx = 1, type = "turret", name = "flamer", quality = "normal", size = 3, offset = 0, priority = 50, spacing = 8, turn_limited = true, directions = 4, tile_w = 2, tile_h = 3, facing = "outward" },
+        [2] = { idx = 2, type = "land-mine", name = "mine", quality = "normal", size = 1, offset = 1, priority = 100, radius = 4, density = 10, red_wire = true, green_wire = true, circuit_distance = 9 },
+        [-1] = { idx = -1, type = "turret", name = "gun", quality = "normal", size = 2, offset = 0, priority = 50, spacing = 5, ammo_inventory = "turret_ammo", ammo = "magazine", ammo_count = 20 },
+        [-2] = { idx = -2, type = "lamp", name = "lamp", quality = "normal", size = 1, offset = 0, priority = 30, spacing = 6, color = "rainbow", rainbow_length = 48 },
+        [-3] = { idx = -3, type = "solar-panel", name = "solar", quality = "normal", size = 3, offset = 1, priority = 30, spacing = 3 },
+    },
+}
+
 local lines = {}
 for _, case in ipairs(cases) do
     lines[#lines + 1] = "## " .. case.name

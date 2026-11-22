@@ -166,6 +166,18 @@ function lib.add(parent, player)
         sprite = "utility/trash",
         style = "tool_button",
     }
+    for _, io in ipairs({ "export", "import" }) do
+        header.add {
+            type = "sprite-button",
+            name = "curve_" .. io,
+            tags = { group = "curve", action = "toggle_" .. io },
+            tooltip = { "tooltip.curve-" .. io },
+            sprite = "utility/" .. io,
+            auto_toggle = true,
+            style = "tool_button",
+        }
+    end
+    frame.add { type = "flow", name = "curve_io", direction = "vertical", visible = false }
 
     local pane = frame.add {
         type = "scroll-pane",
@@ -176,6 +188,83 @@ function lib.add(parent, player)
     pane.style.maximal_height = 300
     fill_points(pane, player.index)
     return frame
+end
+
+--- Show the export string, the import box, or neither.
+--- @param player LuaPlayer
+--- @param mode "export"|"import"|nil
+local function show_io(player, mode)
+    local io = window.find(player, "curve_io")
+    if not io then return end
+    io.clear()
+    io.visible = mode ~= nil
+    for _, other in ipairs({ "export", "import" }) do
+        local button = window.find(player, "curve_" .. other)
+        if button then button.toggled = other == mode end
+    end
+    if not mode then return end
+    io.add { type = "label", caption = { "label.curve-" .. mode } }
+    local box = io.add {
+        type = "text-box",
+        name = mode == "export" and "curve_string" or "curve_import_text",
+        text = mode == "export" and helpers.encode_string(helpers.table_to_json(curve_lib.to_data(state.curve(player.index)))) or "",
+    }
+    box.word_wrap = true
+    box.style.width = 300
+    box.style.height = 80
+    box.focus()
+    if mode == "export" then
+        box.select_all()
+    else
+        io.add {
+            type = "button", name = "curve_import_confirm", caption = { "button.curve-import" },
+            tooltip = { "tooltip.curve-import-confirm" }, tags = { group = "curve", action = "import" },
+        }
+    end
+end
+
+--- @param e EventData.on_gui_click
+lib["toggle_export"] = function(e)
+    local player = game.get_player(e.player_index)
+    if player then show_io(player, e.element.toggled and "export" or nil) end
+end
+
+--- @param e EventData.on_gui_click
+lib["toggle_import"] = function(e)
+    local player = game.get_player(e.player_index)
+    if player then show_io(player, e.element.toggled and "import" or nil) end
+end
+
+--- Replace the whole curve (every kind's points) with the pasted one.
+--- @param e EventData.on_gui_click
+lib["import"] = function(e)
+    local player = game.get_player(e.player_index)
+    local box = player and window.find(player, "curve_import_text")
+    if not (player and box) then return end
+    local text = box.text:gsub("%s", "")
+    local json = text ~= "" and helpers.decode_string(text)
+    local curve, err = curve_lib.from_data(json and helpers.json_to_table(json))
+    if not curve then
+        player.print({ "bezierio-message.curve-" .. (err or "not-a-curve") })
+        return
+    end
+    local controller = state.get(player.index)
+    controller.curve = curve
+    controller.ui.selected_point = nil
+    show_io(player, nil)
+    local kind = window.find(player, "curve_kind")
+    if kind then
+        for i, k in ipairs(curve_lib.KINDS) do if k == curve.kind then kind.selected_index = i end end
+    end
+    local closed = window.find(player, "closed_loop")
+    if closed then
+        closed.state = curve.closed
+        closed.visible = curve_lib.is_spline(curve)
+    end
+    local reverse = window.find(player, "reverse_points")
+    if reverse then reverse.toggled = curve_lib.is_reversed(curve) end
+    state.request_point_redraw(player.index)
+    lib.points_changed(player)
 end
 
 --- Rebuild the point list (after points were added, moved or removed).
