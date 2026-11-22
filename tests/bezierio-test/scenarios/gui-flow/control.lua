@@ -65,7 +65,17 @@ local function wall_components(walls)
 end
 
 local steps = {}
+-- wait: ticks to wait after the step, or "idle" = until the mod's planning, drawing
+-- and building have caught up (they run spread over ticks).
 local function step(name, fn, wait) table.insert(steps, { name = name, fn = fn, wait = wait or 1 }) end
+
+local function point_count()
+  local n = 0
+  for _, p in pairs(controller().curve.points) do
+    if p.x and p.y then n = n + 1 end
+  end
+  return n
+end
 
 step("setup + open window", function(player)
   prepare_ground(player.surface)
@@ -85,7 +95,7 @@ step("place P1, P2 with pointer", function(player)
   -- a click over a GUI with the pointer in hand must not move the point
   dev("pointer", P, { x = 99, y = 99 }, path("button_flow", "cp_table", "cp_x_1"))
   dev("pointer", P, { x = 98, y = 98 }, true) -- over a GUI, no element reported (slider)
-  local p2 = controller().curve_cache[0].raw_control_points[2]
+  local p2 = controller().curve.points[2]
   check(p2.x == 0 and p2.y == -40, "pointer click over GUI ignored")
 end)
 
@@ -94,12 +104,12 @@ step("pointer buttons follow cursor; P3 via textfields", function(player)
   check(cp.cp_button_2.toggled and not cp.cp_button_1.toggled,
     "only P2 toggled (1=" ..
     tostring(cp.cp_button_1.toggled) ..
-    " 2=" .. tostring(cp.cp_button_2.toggled) .. " active=" .. tostring(controller().state.active_control_point) .. ")")
+    " 2=" .. tostring(cp.cp_button_2.toggled) .. " active=" .. tostring(controller().ui.active_control_point) .. ")")
   check(cp.cp_x_1.text == "-30.3", "P1 x textfield = " .. cp.cp_x_1.text)
   dev("set_text", P, path("button_flow", "cp_table", "cp_x_3"), "30")
-  check(controller().curve_cache[0].degree == 1, "half-entered P3 is ignored")
+  check(point_count() == 2, "half-entered P3 is ignored")
   dev("set_text", P, path("button_flow", "cp_table", "cp_y_3"), "5")
-  check(controller().curve_cache[0].degree == 2, "degree 2 after P3")
+  check(point_count() == 3, "3 points after P3")
   dev("set_text", P, path("button_flow", "cp_table", "cp_y_3"), "abc")
   check(cp.cp_y_3.text == "5", "invalid input reverted")
   player.cursor_stack.clear()
@@ -107,8 +117,8 @@ end)
 
 step("draw curve", function(player)
   dev("click", P, path("control_flow", "draw_curve"))
-  check(controller().state.draw_curve, "draw toggled on")
-end, 10)
+  check(controller().ui.draw_curve, "draw toggled on")
+end, "idle")
 
 step("curve rendered", function(player)
   check(dev("render_count") > 10, "curve sprites drawn: " .. dev("render_count"))
@@ -121,7 +131,7 @@ step("configure layers", function(player)
   local picker = player.gui.screen.bezierio_window.main.layer_flow.layer_0.layer_type
   dev("click", P, picker)
   check(picker.valid, "item picker survives being clicked")
-  check(controller().presets[1].layers[0].type == "nil", "click alone changes nothing")
+  check(controller().presets[1].layers[0].type == "empty", "click alone changes nothing")
   dev("set_elem", P, L(0, "layer_type"), { name = "stone-wall", quality = "normal" })
   -- clicks on sliders / number boxes are not value changes either
   local radius_box = player.gui.screen.bezierio_window.main.layer_flow.layer_0.radius_frame.radius_labels.slider_indicator
@@ -164,10 +174,9 @@ step("configure layers", function(player)
 end)
 
 step("preview", function(player)
-  local before = dev("render_count")
+  storage.before = dev("render_count")
   dev("click", P, path("control_flow", "preview_build"))
-  storage.before = before
-end, 10)
+end, "idle")
 
 step("preview rendered", function(player)
   check(dev("render_count") > storage.before + 50, "preview drawn: " .. dev("render_count"))
@@ -191,56 +200,62 @@ step("preview rendered", function(player)
   log("plan: " .. #plan.entities .. " entities, " .. #plan.tiles .. " tiles, skipped " .. plan.skipped)
 end)
 
-step("force build", function(player)
-  local s = player.surface
-  -- obstacles: a tree and one of our own chests on wall spots
-  local plan = dev("plan", P)
-  local wall_spots = {}
-  for _, e in pairs(plan.entities) do if e.name == "stone-wall" then table.insert(wall_spots, e.position) end end
-  storage.tree = s.create_entity { name = "tree-01", position = wall_spots[5] }
-  storage.chest = s.create_entity { name = "wooden-chest", position = wall_spots[10], force = player.force }
-  check(storage.tree and storage.chest, "obstacles placed")
-
-  dev("click", P, path("control_flow", "build"))
-  local walls = ghosts(s, "stone-wall")
-  storage.wall_count = #walls
-  check(#walls == #wall_spots - 1, "all walls but the chest spot: " .. #walls .. "/" .. #wall_spots)
-  check(storage.tree.to_be_deconstructed(), "tree marked for deconstruction")
-  check(not storage.chest.to_be_deconstructed(), "chest left alone by forced build")
-  check(#ghosts(s, "small-electric-pole") > 5, "poles placed")
-  check(#ghosts(s, "laser-turret") > 3, "turrets placed")
-  check(#s.find_entities_filtered { type = "tile-ghost" } == #plan.tiles,
-    "every planned tile ghost placed: " .. #s.find_entities_filtered { type = "tile-ghost" } .. "/" .. #plan.tiles)
-  local poles, turrets = 0, 0
-  for _, e in pairs(plan.entities) do
-    if e.name == "small-electric-pole" then poles = poles + 1 elseif e.name == "laser-turret" then turrets = turrets + 1 end
-  end
-  check(#ghosts(s, "small-electric-pole") == poles, "every planned pole placed")
-  check(#ghosts(s, "laser-turret") == turrets, "every planned turret placed")
-
-  dev("click", P, path("control_flow", "build"))
-  check(#ghosts(s, "stone-wall") == storage.wall_count, "second build adds nothing")
-end)
-
-step("superforced build", function(player)
-  dev("click", P, path("control_flow", "super_build"))
-  check(storage.chest.to_be_deconstructed(), "chest marked for deconstruction")
-  check(#ghosts(player.surface, "stone-wall") == storage.wall_count + 1, "wall ghost over chest")
-  check(wall_components(ghosts(player.surface, "stone-wall")) == 1, "wall ghosts form one 4-connected line")
-end)
-
 local function count_planned(plan)
   local n = {}
   for _, e in pairs(plan.entities) do n[e.name] = (n[e.name] or 0) + 1 end
   return n
 end
 
+local function wall_spots(plan)
+  local spots = {}
+  for _, e in pairs(plan.entities) do if e.name == "stone-wall" then table.insert(spots, e.position) end end
+  return spots
+end
+
+step("force build", function(player)
+  local s = player.surface
+  -- obstacles: a tree and one of our own chests on wall spots
+  local spots = wall_spots(dev("plan", P))
+  storage.tree = s.create_entity { name = "tree-01", position = spots[5] }
+  storage.chest = s.create_entity { name = "wooden-chest", position = spots[10], force = player.force }
+  check(storage.tree and storage.chest, "obstacles placed")
+  dev("click", P, path("control_flow", "build"))
+  check(#ghosts(s, "stone-wall") == 0, "nothing built inside the click handler")
+end, "idle")
+
+step("force build placed ghosts", function(player)
+  local s = player.surface
+  local plan = dev("plan", P)
+  local planned = count_planned(plan)
+  local walls = ghosts(s, "stone-wall")
+  storage.wall_count = #walls
+  check(#walls == planned["stone-wall"] - 1, "all walls but the chest spot: " .. #walls .. "/" .. planned["stone-wall"])
+  check(storage.tree.to_be_deconstructed(), "tree marked for deconstruction")
+  check(not storage.chest.to_be_deconstructed(), "chest left alone by forced build")
+  check(#s.find_entities_filtered { type = "tile-ghost" } == #plan.tiles,
+    "every planned tile ghost placed: " .. #s.find_entities_filtered { type = "tile-ghost" } .. "/" .. #plan.tiles)
+  check(#ghosts(s, "small-electric-pole") == planned["small-electric-pole"], "every planned pole placed")
+  check(#ghosts(s, "laser-turret") == planned["laser-turret"], "every planned turret placed")
+  dev("click", P, path("control_flow", "build"))
+end, "idle")
+
+step("second build adds nothing", function(player)
+  check(#ghosts(player.surface, "stone-wall") == storage.wall_count, "second build adds nothing")
+  dev("click", P, path("control_flow", "super_build"))
+end, "idle")
+
+step("superforced build", function(player)
+  check(storage.chest.to_be_deconstructed(), "chest marked for deconstruction")
+  check(#ghosts(player.surface, "stone-wall") == storage.wall_count + 1, "wall ghost over chest")
+  check(wall_components(ghosts(player.surface, "stone-wall")) == 1, "wall ghosts form one 4-connected line")
+end)
+
 local function clear_build(s)
-  for _, e in pairs(s.find_entities_filtered{area = {{-60, -60}, {60, 60}}, type = {"entity-ghost", "tile-ghost"}}) do e.destroy() end
-  for _, e in pairs(s.find_entities_filtered{area = {{-60, -60}, {60, 60}}, name = {"stone-wall", "small-electric-pole", "laser-turret"}}) do e.destroy() end
+  for _, e in pairs(s.find_entities_filtered { area = { { -60, -60 }, { 60, 60 } }, type = { "entity-ghost", "tile-ghost" } }) do e.destroy() end
+  for _, e in pairs(s.find_entities_filtered { area = { { -60, -60 }, { 60, 60 } }, name = { "stone-wall", "small-electric-pole", "laser-turret" } }) do e.destroy() end
   local tiles = {}
-  for _, t in pairs(s.find_tiles_filtered{area = {{-60, -60}, {60, 60}}, name = "stone-path"}) do
-    table.insert(tiles, {name = "grass-1", position = t.position})
+  for _, t in pairs(s.find_tiles_filtered { area = { { -60, -60 }, { 60, 60 } }, name = "stone-path" }) do
+    table.insert(tiles, { name = "grass-1", position = t.position })
   end
   s.set_tiles(tiles)
 end
@@ -248,28 +263,35 @@ end
 step("instant build in cheat mode", function(player)
   local s = player.surface
   clear_build(s)
-  local plan = dev("plan", P)
-  local planned = count_planned(plan)
-  local wall_spots = {}
-  for _, e in pairs(plan.entities) do if e.name == "stone-wall" then table.insert(wall_spots, e.position) end end
-  storage.tree2 = s.create_entity{name = "tree-01", position = wall_spots[20]}
-  storage.chest2 = s.create_entity{name = "wooden-chest", position = wall_spots[30], force = player.force}
-
+  local spots = wall_spots(dev("plan", P))
+  storage.tree2 = s.create_entity { name = "tree-01", position = spots[20] }
+  storage.chest2 = s.create_entity { name = "wooden-chest", position = spots[30], force = player.force }
   player.cheat_mode = true
   dev("click", P, path("control_flow", "build"))
-  check(#s.find_entities_filtered{type = {"entity-ghost", "tile-ghost"}} == 0, "no ghosts in cheat mode")
-  check(s.count_entities_filtered{name = "stone-wall"} == planned["stone-wall"] - 1, "real walls except the chest spot: "
-    .. s.count_entities_filtered{name = "stone-wall"} .. "/" .. planned["stone-wall"])
-  check(s.count_entities_filtered{name = "small-electric-pole"} == planned["small-electric-pole"], "real poles")
-  check(s.count_entities_filtered{name = "laser-turret"} == planned["laser-turret"], "real turrets")
-  check(s.count_tiles_filtered{name = "stone-path"} == #plan.tiles, "tiles set: " .. s.count_tiles_filtered{name = "stone-path"} .. "/" .. #plan.tiles)
+end, "idle")
+
+step("cheat mode built real entities", function(player)
+  local s = player.surface
+  local plan = dev("plan", P)
+  local planned = count_planned(plan)
+  check(#s.find_entities_filtered { type = { "entity-ghost", "tile-ghost" } } == 0, "no ghosts in cheat mode")
+  check(s.count_entities_filtered { name = "stone-wall" } == planned["stone-wall"] - 1, "real walls except the chest spot: "
+    .. s.count_entities_filtered { name = "stone-wall" } .. "/" .. planned["stone-wall"])
+  check(s.count_entities_filtered { name = "small-electric-pole" } == planned["small-electric-pole"], "real poles")
+  check(s.count_entities_filtered { name = "laser-turret" } == planned["laser-turret"], "real turrets")
+  check(s.count_tiles_filtered { name = "stone-path" } == #plan.tiles,
+    "tiles set: " .. s.count_tiles_filtered { name = "stone-path" } .. "/" .. #plan.tiles)
   check(not storage.tree2.valid, "tree removed, not marked")
   check(storage.chest2.valid, "chest kept by forced build")
-
   dev("click", P, path("control_flow", "super_build"))
+end, "idle")
+
+step("cheat mode superforced", function(player)
+  local s = player.surface
+  local planned = count_planned(dev("plan", P))
   check(not storage.chest2.valid, "chest removed by superforced build")
-  check(s.count_entities_filtered{name = "stone-wall"} == planned["stone-wall"], "wall built where the chest was")
-  check(wall_components(s.find_entities_filtered{name = "stone-wall"}) == 1, "built walls are one 4-connected line")
+  check(s.count_entities_filtered { name = "stone-wall" } == planned["stone-wall"], "wall built where the chest was")
+  check(wall_components(s.find_entities_filtered { name = "stone-wall" }) == 1, "built walls are one 4-connected line")
   player.cheat_mode = false
 end)
 
@@ -277,21 +299,25 @@ step("instant build in map editor", function(player)
   local s = player.surface
   clear_build(s)
   -- a ghost from an earlier build gets revived instead of skipped
-  local plan = dev("plan", P)
-  local planned = count_planned(plan)
-  for _, e in pairs(plan.entities) do
+  for _, e in pairs(dev("plan", P).entities) do
     if e.name == "stone-wall" then
-      s.create_entity{name = "entity-ghost", inner_name = "stone-wall", position = e.position, force = player.force}
+      s.create_entity { name = "entity-ghost", inner_name = "stone-wall", position = e.position, force = player.force }
       break
     end
   end
   player.toggle_map_editor()
   check(player.controller_type == defines.controllers.editor, "in map editor")
+  game.tick_paused = false -- builds run in the tick loop
   dev("click", P, path("control_flow", "build"))
-  local walls = s.count_entities_filtered{name = "stone-wall"}
+end, "idle")
+
+step("map editor built real entities", function(player)
+  local s = player.surface
+  local planned = count_planned(dev("plan", P))
+  local walls = s.count_entities_filtered { name = "stone-wall" }
   player.toggle_map_editor()
   check(walls == planned["stone-wall"], "real walls in editor (incl. revived ghost): " .. walls .. "/" .. planned["stone-wall"])
-  check(#s.find_entities_filtered{type = "entity-ghost"} == 0, "no ghosts left in editor build")
+  check(#s.find_entities_filtered { type = "entity-ghost" } == 0, "no ghosts left in editor build")
   check(player.controller_type ~= defines.controllers.editor, "left map editor")
 end)
 
@@ -304,13 +330,13 @@ end)
 
 step("remove points, clear", function(player)
   dev("click", P, path("button_flow", "cp_table", "cp_button_4"), defines.mouse_button_type.right)
-  check(controller().curve_cache[0].degree == 2, "right click removed P4")
+  check(point_count() == 3, "right click removed P4")
   check(not player.gui.screen.bezierio_window.main.button_flow.cp_table.cp_button_4.toggled, "P4 button not toggled")
   dev("click", P, path("button_flow", "control_point_flow", "control_points_clear"))
-  check(controller().curve_cache[0].degree == -1, "cleared")
-end, 10)
+  check(point_count() == 0, "cleared")
+end, "idle")
 
-step("cleared curve leaves only nothing rendered", function(player)
+step("cleared curve leaves nothing rendered", function(player)
   check(dev("render_count") == 0, "no sprites after clear: " .. dev("render_count"))
 end)
 
@@ -333,8 +359,21 @@ step("close and reopen keeps state", function(player)
   check(main.layer_flow.layer_0.layer_type.elem_value.name == "stone-wall", "layer type restored")
 end)
 
-local current, wait_until = 1, 30
+local IDLE_TIMEOUT = 1200
+local current, wait_until, waiting_idle_since = 1, 30, nil
 script.on_event(defines.events.on_tick, function(e)
+  if waiting_idle_since then
+    if dev("idle", P) then
+      waiting_idle_since = nil
+    elseif e.tick - waiting_idle_since > IDLE_TIMEOUT then
+      log("TEST FAIL: still busy " .. IDLE_TIMEOUT .. " ticks after step '" .. steps[current - 1].name .. "'")
+      script.finish_test(false)
+      waiting_idle_since, wait_until = nil, math.huge
+      return
+    else
+      return
+    end
+  end
   if e.tick < wait_until then return end
   local s = steps[current]
   if not s then
@@ -352,5 +391,10 @@ script.on_event(defines.events.on_tick, function(e)
   end
   log("step ok: " .. s.name)
   current = current + 1
-  wait_until = e.tick + s.wait
+  if s.wait == "idle" then
+    waiting_idle_since = e.tick
+    wait_until = e.tick + 1
+  else
+    wait_until = e.tick + s.wait
+  end
 end)

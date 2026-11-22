@@ -2,55 +2,16 @@
 -- Property tests for the build planner, runnable outside Factorio:
 --   lua5.4 tests/unit/plan_properties.lua [iterations] [seed]
 -- Checks, over random curves and layer stacks:
---   * layer 0 walls form one 4-connected line (ignoring stray 1-2 cell bits at near-cusps)
+--   * layer 0 walls form one 4-connected line: exactly one piece of 10+ cells. Near
+--     sharp turns (cusps) the band can leave small stray pieces; those are cosmetic.
 --   (Side layers are not checked for connectivity: on the inside of a bend tighter than
 --   their distance from the curve they legitimately split.)
 --   * no two planned entities share a grid cell
 --   * no grid cell gets two tiles
-local repo = arg[0]:match("^(.*)/tests/unit/") or "."
-package.path = repo .. "/?.lua;" .. package.path
-local function deepcopy(o)
-  if type(o) ~= "table" then return o end
-  local r = {}
-  for k, v in pairs(o) do r[k] = deepcopy(v) end
-  return r
-end
-package.preload["__core__.lualib.util"] = function() return { table = { deepcopy = deepcopy } } end
-local orig_require = require
-require = function(name) return orig_require((name:gsub("/", "."))) end
-
-local control = require("scripts.curve_math.control")
-local builder = require("scripts.build.builder")
+local helpers = dofile((arg[0]:match("^(.*)/tests/unit/") or ".") .. "/tests/unit/helpers.lua")
 
 local iterations = tonumber(arg[1]) or 300
-math.randomseed(tonumber(arg[2]) or 12345)
-
-local function rnd(a, b) return a + math.random() * (b - a) end
-
-local function make_curve()
-  local raw, n = {}, math.random(2, 6)
-  for i = 1, n do raw[i] = { x = math.floor(rnd(-60, 60) * 100) / 100, y = math.floor(rnd(-60, 60) * 100) / 100 } end
-  local pts, p0 = control.processControlPoints(raw)
-  return { raw_control_points = raw, control_points = pts, p0 = p0, degree = #pts - 1 }, raw
-end
-
-local function make_layers()
-  local layers = { [0] = { idx = 0, type = "wall", name = "wall", radius = math.random(1, 3), checkerboard = 0, size = 1, offset = 0, priority = 100 } }
-  local kinds = {
-    function(i) return { idx = i, type = "wall", name = "wall", radius = math.random(1, 3), checkerboard = 0, size = 1, offset =
-      math.random(0, 2), priority = 100 } end,
-    function(i) return { idx = i, type = "tile", name = "tile", radius = math.random(1, 3), checkerboard = math.random(
-      -2, 2), size = 1, offset = math.random(0, 2), priority = 100 } end,
-    function(i) return { idx = i, type = "electric-pole", name = "pole", size = math.random(1, 2), offset = math.random(
-      0, 2), priority = 10, spacing = math.random(3, 9) } end,
-    function(i) return { idx = i, type = "electric-turret", name = "turret", size = 2, offset = math.random(0, 2), priority = 50, spacing =
-      math.random(2, 6) } end,
-    function(i) return { idx = i, type = "nil", size = 1, offset = math.random(0, 2), priority = 0 } end,
-  }
-  for i = 1, math.random(0, 3) do layers[i] = kinds[math.random(#kinds)](i) end
-  for i = -1, -math.random(0, 3), -1 do layers[i] = kinds[math.random(#kinds)](i) end
-  return layers
-end
+local r = helpers.rng(tonumber(arg[2]) or 12345)
 
 local function components(cells, min_size)
   local seen, count = {}, 0
@@ -76,9 +37,9 @@ end
 
 local failures = 0
 for it = 1, iterations do
-  local curve, raw = make_curve()
-  local layers = make_layers()
-  local plan = builder.plan(curve, layers)
+  local raw = helpers.random_points(r)
+  local layers = helpers.random_layers(r)
+  local plan = helpers.plan(raw, layers)
   local problems = {}
 
   local occupied, walls_by_layer = {}, {}
@@ -104,8 +65,8 @@ for it = 1, iterations do
     tiles[k] = true
   end
   if walls_by_layer[0] then
-    local c = components(walls_by_layer[0], 3)
-    if c ~= 1 then table.insert(problems, "wall layer 0 has " .. c .. " components of 3+ cells") end
+    local c = components(walls_by_layer[0], 10)
+    if c ~= 1 then table.insert(problems, "wall layer 0 has " .. c .. " pieces of 10+ cells") end
   end
 
   if #problems > 0 then

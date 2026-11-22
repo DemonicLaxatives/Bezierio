@@ -1,4 +1,3 @@
-local calc = require("scripts.curve_math.control")
 local gui = require("scripts.gui.curve_control")
 local state = require("scripts.state")
 
@@ -35,10 +34,10 @@ function lib.on_pointer(e)
     -- not reported for every part of a widget (e.g. slider clicks), `in_gui` covers those.
     if e.in_gui or e.element then return end
 
-    calc.updateControlPoint(player, control_point, e.cursor_position)
+    gui.set_point(player.index, control_point, e.cursor_position --[[@as Vector]])
     local flow = cp_table(player)
     if flow then
-        gui.updateControlPointTextfields(control_point, state.curve(player.index).raw_control_points[control_point], flow)
+        gui.update_point_fields(flow, control_point, state.curve(player.index).points[control_point])
     end
 end
 
@@ -73,8 +72,8 @@ function lib.on_cursor_changed(e)
 end
 
 script.on_event("bezierio-pointer", lib.on_pointer)
-script.on_event("bezierio-pointer-up", function(e) lib.on_pointer_cycle(e, 1) end)
-script.on_event("bezierio-pointer-down", function(e) lib.on_pointer_cycle(e, -1) end)
+script.on_event("bezierio-pointer-up", function(e) lib.on_pointer_cycle(e --[[@as EventData.CustomInputEvent]], 1) end)
+script.on_event("bezierio-pointer-down", function(e) lib.on_pointer_cycle(e --[[@as EventData.CustomInputEvent]], -1) end)
 script.on_event(defines.events.on_player_cursor_stack_changed, lib.on_cursor_changed)
 
 return lib

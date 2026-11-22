@@ -1,5 +1,5 @@
 require("scripts.init")
-require("scripts.draw")
-require("scripts.gui.gui")
-require("scripts.custom-input")
+require("scripts.jobs")
+require("scripts.gui.interactions")
+require("scripts.custom_input")
 require("scripts.dev")

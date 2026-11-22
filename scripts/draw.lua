@@ -1,12 +1,21 @@
+--- All rendering: control points, the curve, and the build preview.
+---
+--- Drawing follows the planner job (see jobs.lua): curve segments are drawn as
+--- samples appear and the preview fills in as placements are found, a budgeted
+--- amount per tick.
 local vect = require("scripts.vector_math")
 local state = require("scripts.state")
-local curve_control = require("scripts.curve_math.control")
-local builder = require("scripts.build.builder")
 
-local draw = {}
+local lib = {}
 
 --- Don't flood the renderer when previewing huge builds.
-draw.MAX_PREVIEW_OBJECTS = 4000
+lib.MAX_PREVIEW_OBJECTS = 4000
+
+--- Curve segments are at least this long (samples are denser than needed for drawing).
+lib.CURVE_SEGMENT = 0.5
+
+--- Work units per render object, for budgeting.
+lib.COST = { line = 2, rectangle = 2 }
 
 local CURVE_COLOR = { r = 0.1, g = 0.3, b = 0.7, a = 1 }
 local POINT_COLOR = { r = 0.5, g = 0, b = 0.2, a = 1 }
@@ -16,7 +25,7 @@ local PREVIEW_TILE_COLOR = { r = 0, g = 0.35, b = 0.15, a = 0.2 }
 
 --- @param player LuaPlayer
 --- @param key "curve"|"control_points"|"preview"|nil  # nil clears everything
-function draw.delete_sprites(player, key)
+function lib.delete_sprites(player, key)
     local sprites = state.sprites(player.index)
     for cache_key, cache in pairs(sprites) do
         if key == nil or key == cache_key then
@@ -33,24 +42,10 @@ local function base_params(player)
     return { surface = player.surface, players = { player.index }, visible = true }
 end
 
---- @param player LuaPlayer
---- @param points Vector[]
-function draw.curve(player, points)
-    local sprites = state.sprites(player.index).curve
-    local line = base_params(player)
-    line.color = CURVE_COLOR
-    line.width = 5
-    for i = 1, #points - 1 do
-        line.from = points[i]
-        line.to = points[i + 1]
-        table.insert(sprites, rendering.draw_line(line))
-    end
-end
-
 --- Control point markers and the control polygon.
 --- @param player LuaPlayer
-function draw.control_points(player)
-    local curve = state.curve(player.index)
+--- @param curve Curve
+local function draw_control_points(player, curve)
     local sprites = state.sprites(player.index).control_points
 
     local circle = base_params(player)
@@ -64,14 +59,17 @@ function draw.control_points(player)
     label.scale = 3
 
     local defined = {}
-    for i = 1, state.MAX_CONTROL_POINTS do
-        local point = curve.raw_control_points[i]
-        if point and point.x and point.y then
+    local indices = {}
+    for idx in pairs(curve.points) do table.insert(indices, idx) end
+    table.sort(indices)
+    for _, idx in ipairs(indices) do
+        local point = curve.points[idx]
+        if point.x and point.y then
             table.insert(defined, point)
             circle.target = point
             table.insert(sprites, rendering.draw_circle(circle))
             label.target = point
-            label.text = "P" .. i
+            label.text = "P" .. idx
             table.insert(sprites, rendering.draw_text(label))
         end
     end
@@ -88,72 +86,111 @@ function draw.control_points(player)
     end
 end
 
---- Outline everything the current layers would place.
+--- Start over: clear everything and draw what doesn't depend on the planner.
 --- @param player LuaPlayer
+--- @param controller Controller
+function lib.reset(player, controller)
+    lib.delete_sprites(player)
+    controller.work.draw = state.new_draw_progress()
+    if controller.ui.draw_curve then
+        draw_control_points(player, controller.curve)
+    end
+end
+
+--- @param player LuaPlayer
+--- @param progress DrawProgress
+--- @param points Vector[]
+--- @param sampling_done boolean
+--- @param budget number
+--- @return number used, boolean caught_up
+local function step_curve(player, progress, points, sampling_done, budget)
+    local used = 0
+    local sprites = state.sprites(player.index).curve
+    local line = base_params(player)
+    line.color = CURVE_COLOR
+    line.width = 5
+    while progress.curve_cursor <= #points and used < budget do
+        local p = points[progress.curve_cursor]
+        local last = progress.curve_last
+        if not last then
+            progress.curve_last = p
+        elseif vect.distance(last, p) >= lib.CURVE_SEGMENT then
+            line.from, line.to = last, p
+            table.insert(sprites, rendering.draw_line(line))
+            progress.curve_last = p
+            used = used + lib.COST.line
+        end
+        progress.curve_cursor = progress.curve_cursor + 1
+    end
+    if sampling_done and progress.curve_cursor > #points and not progress.curve_finished then
+        local last, p = progress.curve_last, points[#points]
+        if last and p and (last.x ~= p.x or last.y ~= p.y) then
+            line.from, line.to = last, p
+            table.insert(sprites, rendering.draw_line(line))
+            used = used + lib.COST.line
+        end
+        progress.curve_finished = true
+    end
+    return used, progress.curve_finished
+end
+
+--- @param player LuaPlayer
+--- @param progress DrawProgress
 --- @param plan BuildPlan
-function draw.preview(player, plan)
+--- @param budget number
+--- @return number used, boolean caught_up
+local function step_preview(player, progress, plan, budget)
+    local used = 0
     local sprites = state.sprites(player.index).preview
     local rect = base_params(player)
     rect.filled = true
     rect.draw_on_ground = true
 
-    local count = 0
-    rect.color = PREVIEW_TILE_COLOR
-    for _, tile in ipairs(plan.tiles) do
-        if count >= draw.MAX_PREVIEW_OBJECTS then return end
-        rect.left_top = { x = tile.x + 0.05, y = tile.y + 0.05 }
-        rect.right_bottom = { x = tile.x + 0.95, y = tile.y + 0.95 }
+    while used < budget and progress.preview_count < lib.MAX_PREVIEW_OBJECTS do
+        if progress.preview_tiles < #plan.tiles then
+            local tile = plan.tiles[progress.preview_tiles + 1]
+            rect.color = PREVIEW_TILE_COLOR
+            rect.left_top = { x = tile.x + 0.05, y = tile.y + 0.05 }
+            rect.right_bottom = { x = tile.x + 0.95, y = tile.y + 0.95 }
+            progress.preview_tiles = progress.preview_tiles + 1
+        elseif progress.preview_entities < #plan.entities then
+            local entity = plan.entities[progress.preview_entities + 1]
+            local half = entity.size / 2 - 0.05
+            rect.color = PREVIEW_ENTITY_COLOR
+            rect.left_top = vect.sub(entity.position, { x = half, y = half })
+            rect.right_bottom = vect.add(entity.position, { x = half, y = half })
+            progress.preview_entities = progress.preview_entities + 1
+        else
+            break
+        end
         table.insert(sprites, rendering.draw_rectangle(rect))
-        count = count + 1
+        progress.preview_count = progress.preview_count + 1
+        used = used + lib.COST.rectangle
     end
-
-    rect.color = PREVIEW_ENTITY_COLOR
-    for _, entity in ipairs(plan.entities) do
-        if count >= draw.MAX_PREVIEW_OBJECTS then return end
-        local half = entity.size / 2 - 0.05
-        rect.left_top = vect.sub(entity.position, { x = half, y = half })
-        rect.right_bottom = vect.add(entity.position, { x = half, y = half })
-        table.insert(sprites, rendering.draw_rectangle(rect))
-        count = count + 1
-    end
+    local all_drawn = progress.preview_count >= lib.MAX_PREVIEW_OBJECTS
+        or (progress.preview_tiles >= #plan.tiles and progress.preview_entities >= #plan.entities)
+    return used, plan.done and all_drawn
 end
 
---- Redraw everything for one player according to their toggles.
+--- Draw whatever the planner has produced since last time.
 --- @param player LuaPlayer
-function draw.refresh(player)
-    draw.delete_sprites(player)
-    local ui = state.ui(player.index)
-    local curve = state.curve(player.index)
-
+--- @param controller Controller
+--- @param plan_job PlannerJob|nil
+--- @param budget number
+--- @return number used, boolean caught_up
+function lib.step(player, controller, plan_job, budget)
+    local ui, progress = controller.ui, controller.work.draw
+    if not plan_job then return 0, true end
+    local used, caught_up = 0, true
     if ui.draw_curve then
-        draw.control_points(player)
-        draw.curve(player, curve_control.worldSamples(curve, curve.resolution))
+        local u, done = step_curve(player, progress, plan_job.points, plan_job.stage ~= "sample", budget)
+        used, caught_up = used + u, caught_up and done
     end
     if ui.preview_build then
-        draw.preview(player, builder.plan(curve, state.layers(player.index)))
+        local u, done = step_preview(player, progress, plan_job.plan, budget - used)
+        used, caught_up = used + u, caught_up and done
     end
+    return used, caught_up
 end
 
---- Redraw one player if something changed since the last draw.
---- @param player_index integer
-function draw.redraw_if_dirty(player_index)
-    local controller = storage.controllers[player_index]
-    if not (controller and controller.state.dirty) then return end
-    controller.state.dirty = false
-    controller.curve_cache[0].parameters_changed = false
-    local player = game.get_player(player_index)
-    if player and player.valid then
-        draw.refresh(player)
-    end
-end
-
--- All drawing happens here, never inside GUI/input events: heavy work stays in the
--- tick loop, where it can be spread over ticks.
-script.on_nth_tick(5, function()
-    state.ensure()
-    for player_index in pairs(storage.controllers) do
-        draw.redraw_if_dirty(player_index)
-    end
-end)
-
-return draw
+return lib

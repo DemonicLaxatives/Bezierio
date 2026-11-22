@@ -14,15 +14,48 @@ Throughout: play-test in the real client as features land. Headless tests can't
 judge feel: pointer handling, map view, preview readability. Every bug found by hand
 should get a scenario in `tests/` so it stays fixed.
 
+## Phase 0: groundwork refactor (done)
+
+The code is reshaped so later phases mostly add files (see `docs/DEVELOPMENT.md`):
+
+- **Layer types:** one file each in `scripts/layers/`, read by the planner, GUI and
+  item picker through `registry.lua`.
+- **Curves:** `scripts/curve/`, a curve kind plus control points behind a
+  resumable sampler.
+- **Builder split up:**
+  - `geometry.lua` and `planner.lua`, the planner being a resumable job;
+  - `executor.lua`, also a resumable job;
+  - output modules (`ghost`, `instant`), with blueprint output to come as another
+    one.
+- **Tick-spread jobs:** planning, drawing and building run in `jobs.lua`, a
+  budgeted amount per player per tick, with state in `storage`.
+  - The 850-tile / 11-wide example plans and previews in ~100 ticks and builds
+    instantly in ~20 ticks.
+  - Nothing heavy runs in an event handler.
+- **Storage migrations:** `state.lua` upgrades v2 saves to v3 instead of wiping
+  them.
+- **Cleanup:** dead code removed, snake_case throughout.
+
+Plan output is unchanged: a snapshot of 27 cases taken before the refactor still
+matches. Unit tests (`tests/unit/run_all.sh`) cover the snapshot, sliced vs one-shot
+planning, random-curve properties and migrations.
+
 ## Phase 1: refinement
 
 - **Undo support.** Pass `undo_index` to `create_entity` (or use
   `player.undo_redo_stack`) so Ctrl+Z removes a whole build. Without it, a bad
   build is painful to clean up.
-- **Plan caching.** Preview and build both replan from scratch. An 850-tile curve
-  with an 11-wide wall band takes ~0.35 s in Lua, which makes dragging a slider
-  hitch. Cache the plan on the controller and invalidate it on `dirty`. Also
-  consider debouncing slider events.
+- **Calibrate the work budget.** `jobs.BUDGET` and the `COST` tables are rough
+  guesses. Headless runs suggest ~7–9 ms of work per tick at the current budget,
+  which is too much next to the game's own 16.6 ms.
+  - Measure (e.g. with `--benchmark` on a save with a large curve) and tune.
+  - Consider a per-map setting.
+- **Restarts while editing.** The plan is now kept when only the view changes,
+  but every curve or layer edit restarts it. Dragging a slider restarts once per
+  step. Consider waiting a few ticks after the last edit before starting, and a
+  progress note for long plans and builds.
+- **Batch sprite deletion.** Clearing a full preview (up to 4000 render objects)
+  happens in one tick; spread it like the rest.
 - **Electric pole reach guarantee.** After grid snapping, check the distance to the
   previous pole and insert an extra pole when it exceeds the wire reach. The
   default spacing is reach − 1, which is usually but not always enough.
@@ -31,11 +64,6 @@ should get a scenario in `tests/` so it stays fixed.
   placement until it has a meaning.
 - **Rails:** hide them from the layer picker until they are buildable **(rec)**.
   Today they can be chosen but are skipped with a message.
-- **Spread work over ticks (priority).** No heavy calculation should run in a single
-  tick. Spread both planning (sampling, rasterizing, placing spaced entities) and
-  building (e.g. 500 ghosts per tick) over ticks as resumable jobs, with a progress
-  note. The preview should fill in as the plan progresses. A new change restarts
-  the job. This also covers the slider hitch noted under plan caching.
 - **Curves with many points (rec: piecewise cubic).** One Bézier of degree up to 8
   is hard to steer: every point pulls on the whole curve. Recommended:
   - treat points as a chain of cubic segments (Catmull-Rom or a uniform B-spline,
@@ -43,8 +71,8 @@ should get a scenario in `tests/` so it stays fixed.
   - allow more than 9 points;
   - offer "close loop" as a toggle instead of duplicating P1.
 
-  The sampler and builder already work on any polyline, so only
-  `curve_math/control.lua` changes.
+  This is a new curve kind in `scripts/curve/` next to `bezier.lua`. The curve data
+  already allows any number of points; the GUI's 9 slots are the limit.
 - **Edit points directly in the world:** click near an existing point to pick it up
   and drag it.
 - **Tight bends:** side layers split where the bend is tighter than their distance
@@ -58,10 +86,8 @@ should get a scenario in `tests/` so it stays fixed.
     the selected layer.
   - Colour each layer the same in the list and the preview.
   - Show totals: curve length, item counts per layer (a bill of materials).
-- **Clean up dead code:**
-  - `calc.offsetBezierCurve` and `calc.curveRound` are unused;
-  - leftover fields from the old storage layout;
-  - decide whether `python_scripts/` stays in the repo.
+- **Decide whether `python_scripts/` stays** in the repo (offline experiments, not
+  used by the mod).
 - **Multiplayer pass:**
   - rendering is already per player and state is per player;
   - check force/permission handling, e.g. whether a player may build at all
@@ -84,7 +110,8 @@ should get a scenario in `tests/` so it stays fixed.
 4. **Rails.** Fit 2.0 rail pieces (straight, half-diagonal, curved-a/b) to the
    curve, plus signals at a spacing measured in wagons (fields already exist).
    This is the largest item: it needs a search over rail-piece sequences that stays
-   within a tolerance of the curve. `constants/rails.lua` is the stub.
+   within a tolerance of the curve. `scripts/layers/rail.lua` is the stub (it is
+   `placement = "unsupported"` today).
 5. **Shape helpers:** circle/arc/ellipse generators (see
    `python_scripts/generate_circles.py`), mirroring the layer stack, offsetting the
    whole curve.
@@ -93,8 +120,8 @@ should get a scenario in `tests/` so it stays fixed.
 
 ### CI (GitHub Actions, on every push and PR)
 
-1. **Unit job:** install `lua5.4` and run `tests/unit/plan_properties.lua` with a
-   few fixed seeds. It finishes in seconds and needs no game.
+1. **Unit job:** install `lua5.4` and run `tests/unit/run_all.sh`. It finishes in
+   seconds and needs no game.
 2. **Lint job:**
    - run the Lua language server in check mode (`lua-language-server --check`)
      with the Factorio API stubs, so API misuse fails the build like it shows in
@@ -153,4 +180,5 @@ should get a scenario in `tests/` so it stays fixed.
 
 - A scenario per new layer type (ghost counts match the plan, no overlaps).
 - A scenario for every bug found by hand.
-- Run `tests/unit/plan_properties.lua` with a few seeds after touching the builder.
+- Run `tests/unit/run_all.sh` after touching the planner; update the snapshot only
+  for intended changes.

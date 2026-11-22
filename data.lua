@@ -1,2 +1,2 @@
-require("prototypes.custom-input")
+require("prototypes.custom_input")
 require("prototypes.items")

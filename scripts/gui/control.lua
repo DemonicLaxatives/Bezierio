@@ -1,5 +1,5 @@
 local state = require("scripts.state")
-local builder = require("scripts.build.builder")
+local curve_lib = require("scripts.curve.curve")
 
 local lib = {}
 
@@ -50,45 +50,37 @@ end
 
 --- @param e EventData.on_gui_click
 lib["draw_curve"] = function(e)
-    local ui = state.ui(e.player_index)
-    ui.draw_curve = e.element.toggled
-    state.mark_dirty(e.player_index)
+    state.ui(e.player_index).draw_curve = e.element.toggled
+    state.request_redraw(e.player_index)
 end
 
 --- @param e EventData.on_gui_click
 lib["preview_build"] = function(e)
-    local ui = state.ui(e.player_index)
-    ui.preview_build = e.element.toggled
-    state.mark_dirty(e.player_index)
+    state.ui(e.player_index).preview_build = e.element.toggled
+    state.request_redraw(e.player_index)
 end
 
---- @param player LuaPlayer
+--- Building happens in the tick loop (jobs.lua) once the plan is ready.
+--- @param player_index integer
 --- @param mode BezierioBuildMode
-local function build(player, mode)
-    local curve = state.curve(player.index)
-    if curve.degree < 1 then
+local function request_build(player_index, mode)
+    local player = game.get_player(player_index)
+    if not player then return end
+    if not curve_lib.is_drawable(state.curve(player_index)) then
         player.print({ "bezierio-message.need-two-points" })
         return
     end
-    local plan = builder.plan(curve, state.layers(player.index))
-    for _, idx in ipairs(plan.unsupported) do
-        player.print({ "bezierio-message.unsupported-layer", idx })
-    end
-    local result = builder.execute(player, plan, mode)
-    local message = result.instant and "bezierio-message.build-result-instant" or "bezierio-message.build-result"
-    player.print({ message, result.placed, result.existing, result.blocked + plan.skipped })
+    state.request_build(player_index, mode)
 end
 
 --- @param e EventData.on_gui_click
 lib["build"] = function(e)
-    local player = game.get_player(e.player_index)
-    if player then build(player, "forced") end
+    request_build(e.player_index, "forced")
 end
 
 --- @param e EventData.on_gui_click
 lib["super_build"] = function(e)
-    local player = game.get_player(e.player_index)
-    if player then build(player, "superforced") end
+    request_build(e.player_index, "superforced")
 end
 
 return lib

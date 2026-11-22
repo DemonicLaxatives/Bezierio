@@ -1,4 +1,4 @@
-local buildable_layers = require("scripts.gui.buildable_layers")
+local layer_rows = require("scripts.gui.layer_rows")
 local curve_control = require("scripts.gui.curve_control")
 local control = require("scripts.gui.control")
 
@@ -45,7 +45,7 @@ end
 function lib.add_controls(frame)
     control.add_control_flow(frame)
     curve_control.add_curve_control_flow(frame)
-    buildable_layers.add_layer_controls(frame)
+    layer_rows.add_layer_rows(frame)
 end
 
 function lib.create_main_window(player)

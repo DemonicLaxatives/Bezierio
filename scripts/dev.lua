@@ -8,9 +8,10 @@
 if not script.active_mods["bezierio-test"] then return end
 
 local interactions = require("scripts.gui.interactions")
-local custom_input = require("scripts.custom-input")
+local custom_input = require("scripts.custom_input")
 local state = require("scripts.state")
-local builder = require("scripts.build.builder")
+local planner = require("scripts.build.planner")
+local jobs = require("scripts.jobs")
 
 --- @param player_index integer
 --- @param path string[]|LuaGuiElement  # element names, starting from player.gui
@@ -76,8 +77,13 @@ remote.add_interface("bezierio-dev", {
     controller = function(player_index)
         return state.get(player_index)
     end,
+    --- The plan for the current curve and layers, computed in one go.
     plan = function(player_index)
-        return builder.plan(state.curve(player_index), state.layers(player_index))
+        return planner.plan(state.curve(player_index), state.layers(player_index))
+    end,
+    --- True when this player's planning, drawing and building have caught up.
+    idle = function(player_index)
+        return jobs.is_idle(state.get(player_index))
     end,
     item_filter = function()
         return state.item_filter()
