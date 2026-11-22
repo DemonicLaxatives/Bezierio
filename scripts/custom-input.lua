@@ -1,5 +1,6 @@
 local draw = require("scripts.draw")
-local cp = require("scripts.gui.control_points")
+local calc = require("scripts.curve_math.control")
+local gui = require("scripts.gui.curve_control")
 
 script.on_event("bezierio-pointer",
 --- @param e EventData.CustomInputEvent
@@ -22,7 +23,11 @@ function(e)
             error("Active control point does not match cursor stack")
         end
 
-        cp.updateControlPoint(player, control_point, e.cursor_position)
+        calc.updateControlPoint(player, control_point, e.cursor_position)
+        if player.gui.screen.bezierio_window then
+            local flow = player.gui.screen.bezierio_window.main.button_flow.cp_table
+            gui.updateControlPointTextfields(control_point, e.cursor_position, flow)
+        end
         draw.control_points(player)
     end
 end)

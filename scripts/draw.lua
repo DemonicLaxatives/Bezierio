@@ -1,5 +1,5 @@
 local vect = require("scripts.vector_math")
-local calc = require("scripts.calc")
+local calc = require("scripts.curve_math.calc")
 
 local draw = {}
 
@@ -88,7 +88,7 @@ end
 --- @param player LuaPlayer
 function draw.points(player)
     local state = storage.controllers[player.index].state
-    local curve_params = storage.controllers[player.index].curve_params
+    local curve_params = state.curve_parameters
     if curve_params.degree < 0 then return end
     local control_points = curve_params.raw_control_points
 
@@ -131,7 +131,7 @@ end
 --- @param player LuaPlayer
 function draw.lines(player)
     local state = storage.controllers[player.index].state
-    local curve_params = storage.controllers[player.index].curve_params
+    local curve_params = state.curve_parameters
     if curve_params.degree < 1 then return end
     local p0 = curve_params.p0
     if not p0 then
@@ -173,8 +173,8 @@ script.on_nth_tick(5, function()
     for _, player in pairs(game.players) do
         if not storage.controllers[player.index] then return end
         local state = storage.controllers[player.index].state
+        local curve_params = state.curve_parameters
 
-        local curve_params = storage.controllers[player.index].curve_params
         if curve_params.parameters_changed then
             draw.control_points(player)
         end
@@ -186,11 +186,11 @@ script.on_nth_tick(5, function()
                 for i = 1, #curve_points do
                     curve_points[i] = vect.add(curve_points[i], curve_params.p0)
                 end
-                local raser_curve_points = calc.curveRound(curve_points, state.build_spacing)
+                -- local raser_curve_points = calc.curveRound(curve_points, 1)
                 -- local raser_curve_points = calc.betterCurveRound(curve_points, state.build_spacing, true, state.build_spacing+1)
 
-                draw.curve(player, raser_curve_points, { r = 0.5, g = 0.1, b = 0.2, a = 0.7 }, 15, false, state.build_spacing)
-                draw.curve(player, curve_points , { r = 0.1, g = 0.3, b = 0.7, a = 1 }, 5, true)
+                -- draw.curve(player, raser_curve_points, { r = 0.5, g = 0.1, b = 0.2, a = 0.7 }, 15, false, state.build_spacing)
+                draw.curve(player, curve_points , { r = 0.1, g = 0.3, b = 0.7, a = 1 }, 5)
             else
                 draw.delete_sprites(player, "curve")
             end

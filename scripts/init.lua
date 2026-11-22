@@ -1,72 +1,87 @@
-local util = require('__core__/lualib/util')
-local calc = require('scripts.calc')
-local draw = require('scripts.draw')
-local build = require('scripts.builder')
+local buildable_types = require('scripts.build.buildable_types')
+
 local mod_gui = require("mod-gui")
+require("scripts.build.buildable_types")
 
---- @class QualityItem
---- @field name string
---- @field quality string
+--- @class InterfaceState
+--- @field draw_curve boolean
+--- @field preview_build boolean
+--- @field active_control_point integer|nil
+--- @field preset_indx integer
 
---- @class CurveParameters
+--- @class BezierCurve
 --- @field raw_control_points table<integer, Vector|nil>
 --- @field p0 Vector|nil
 --- @field control_points table<integer, Vector>|nil
 --- @field degree integer
 --- @field parameters_changed boolean
+--- @field layer_refrence_counter integer
+--- @field resolution number
+--- @field points Vector[]|nil
+--- @field render_cache LuaRenderObject[]|nil
+--- @field cp_render_cache LuaRenderObject[]|nil
 
---- @class InterfaceState
---- @field draw_curve boolean
---- @field buildable QualityItem|nil
---- @field build_thickness integer
---- @field build_spacing integer
---- @field active_control_point integer|nil
+--- @class BuildState
+--- @field ocupancy table<integer, table<integer, table<integer, integer>>>|nil
+--- @field build_cache table<integer, LuaEntity>
+
+--- @class Preset
+--- @field name string
+--- @field layers table<integer, Buildable>
 
 --- @class BezierioController
---- @field state InterfaceState
---- @field curve_params CurveParameters
-
---- @class SpriteCache
---- @field curve LuaRenderObject[]
---- @field control_points LuaRenderObject[]
+--- @field state InterfaceState                    # player -> state
+--- @field curve_cache table<integer, BezierCurve> # layer -> curve
+--- @field presets table<integer, Preset>          # preset_indx -> Preset
+--- @field build_cache BuildState                  # layer -> build_cache
 
 local function initilize_global(player)
     if not player then return end 
     if not storage.controllers[player.index] then
-
-        --- @type InterfaceState
-        local InterfaceState = {
+        
+        --- @class InterfaceState
+        local state = {
+            preset_indx = 1,
             draw_curve = false,
-            buildable = nil,
-            build_thickness = 1,
-            build_spacing = 1,
+            preview_build = false,
             active_control_point = nil,
-            parameters_changed = false,
         }
 
-        --- @type CurveParameters
-        local CurveParameters = {
+        --- @class BezierCurve
+        local curve_0 = {
             raw_control_points = {},
             p0 = nil,
             control_points = {},
             degree = -1,
             parameters_changed = false,
+            layer_refrence_counter = 1,
+            resolution = 0.5,
         }
-    
-        --- @type BezierioController
+
+        --- @class BuildState
+        local build_cache = {
+            preset_indx = 1,
+            ocupancy = nil,
+            build_cache = {}
+        }
+
+        --- @class Preset
+        local preset = {
+            name = "Default",
+            layers = {buildable_types.contructNilBuildable(1)}
+        }
+
+        --- @class BezierioController
         local controller = {
-            state = InterfaceState,
-            curve_params = CurveParameters,
+            state = state,
+            curve_cache = {[0] = curve_0},
+            presets = {preset},
+            build_cache = build_cache
         }
 
         storage.controllers[player.index] = controller
-    end 
-    if not storage.sprites[player.index] then
-        storage.sprites[player.index] = {
-            curve = {},
-            control_points = {},
-        }
     end
+
 end
 
 local function create_button(player)
@@ -76,8 +91,9 @@ local function create_button(player)
         button_flow.add{
             type = "sprite-button",
             name = "bezierio_button",
+            tags = {group = "main", action = "toggle"},
             sprite = "utility/check_mark",
-            tooltip = {"tooltips.bezierio-open-gui"},
+            tooltip = {"tooltip.bezierio-open-gui"},
             style=mod_gui.button_style
         }
     end
@@ -87,11 +103,10 @@ end
 --- @field filter string
 --- @field name string[]
 
-script.on_init(function()
+script.on_init(
+function()
     --- @type table<integer, BezierioController>
     storage.controllers = {}
-    --- @type table<integer, SpriteCache>
-    storage.sprites = {}
 
     for _, player in pairs(game.players) do
         initilize_global(player)
@@ -103,6 +118,7 @@ script.on_init(function()
 end)
 
 script.on_event(defines.events.on_player_created,
+--- @param e EventData.on_player_created
 function(e)
     local player = game.get_player(e.player_index)
     initilize_global(player)
@@ -110,6 +126,7 @@ function(e)
 end)
 
 script.on_event(defines.events.on_player_removed,
+--- @param e EventData.on_player_removed
 function(e)
     storage.controllers[e.player_index] = nil
 end)

@@ -95,6 +95,12 @@ end
 
 --- @param vect Vector
 --- @return Vector
+function lib.perpendicular(vect)
+  return {x = -vect.y, y = vect.x}
+end
+
+--- @param vect Vector
+--- @return Vector
 function lib.sign(vect)
   return {x = lib.D1.sign(vect.x), y = lib.D1.sign(vect.y)}
 end
@@ -117,6 +123,30 @@ end
 --- @return Vector
 function lib.round(vect, n)
   return {x = lib.D1.round(vect.x, n), y = lib.D1.round(vect.y, n)}
+end
+
+--- @param vect Vector
+--- @return Vector
+function lib.floor(vect)
+  return {x = math.floor(vect.x), y = math.floor(vect.y)}
+end
+
+--- @param vect Vector
+--- @return Vector
+function lib.ceil(vect)
+  return {x = math.ceil(vect.x), y = math.ceil(vect.y)}
+end
+
+--- @param vect Vector
+--- @return number
+function lib.max(vect)
+  return math.max(vect.x, vect.y)
+end
+
+--- @param vect Vector
+--- @return number
+function lib.min(vect)
+  return math.min(vect.x, vect.y)
 end
 
 return lib

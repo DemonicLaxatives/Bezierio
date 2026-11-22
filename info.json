@@ -3,7 +3,9 @@
   "version": "0.1.1",
   "title": "Bézierio",
   "author": "DemonicLaxatives",
-  "factorio_version": "2.0",
-  "dependencies": ["base >= 2.0"],
+  "factorio_version": "2.1",
+  "dependencies": [
+    "base >= 2.1"
+  ],
   "description": "Build entities and tiles along a curve."
 }

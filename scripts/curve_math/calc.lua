@@ -53,6 +53,35 @@ function lib.sampleBezierCurve(controlPoints, maxDistance)
     return result
 end
 
+--- @param controlPoints Vector[]
+--- @param offset integer
+--- @return Vector[]
+function lib.offsetBezierCurve(controlPoints, offset)
+    local offsetPoints = {}
+    for i = 1, #controlPoints do
+        local p1 = controlPoints[i - 1]
+        local p2 = controlPoints[i]
+        local p3 = controlPoints[i + 1]
+        if not p2 then
+            break
+        end
+        if not p1 then
+            p1 = p2
+        end
+        if not p3 then
+            p3 = p2
+        end
+
+        local v1 = vect.perpendicular(vect.normalize(vect.sub(p2, p1)))
+        local v2 = vect.perpendicular(vect.normalize(vect.sub(p2, p1)))
+        local v3 = vect.perpendicular(vect.normalize(vect.add(v1, v2)))
+        v3 = vect.normalize(v3)
+
+        offsetPoints[i] = vect.add(p2, vect.scale(offset, v3))
+    end
+    return offsetPoints
+end
+
 --- Round a curve to a grid
 --- @param curve_points Vector[]
 --- @param size integer

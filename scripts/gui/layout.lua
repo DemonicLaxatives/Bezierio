@@ -1,3 +1,7 @@
+local buildable_layers = require("scripts.gui.buildable_layers")
+local curve_control = require("scripts.gui.curve_control")
+local control = require("scripts.gui.control")
+
 local lib = {}
 
 --- @param frame LuaGuiElement
@@ -30,126 +34,18 @@ function lib.add_title_bar(frame)
     title_bar.add{
         type = "sprite-button",
         name = "main_close_button",
+        tags = {group = "main", action = "close"},
         sprite = "utility/close",
         style = "frame_action_button",
         mouse_button_filter = {"left"}
     }
 end
 
-
---- @param frame LuaGuiElement
-function lib.add_slider_flow(frame)
-    local player_index = frame.player_index
-    local state = storage.controllers[player_index].state
-
-    local flow = frame.add{
-        type = "flow",
-        name = "slider_flow",
-        direction = "vertical"
-    }
-
-    flow.add{
-        type = "choose-elem-button",
-        name = "buildable",
-        elem_type = "item-with-quality" ,
-        item_with_quality = state.buildable,
-        elem_filters = storage.item_filter,
-    }
-
-    flow.add{
-        type = "slider",
-        name = "build_thickness",
-        minimum_value = 1,
-        maximum_value = 10,
-        value = state.build_thickness
-    }
-
-    flow.add{
-        type = "slider",
-        name = "build_spacing",
-        minimum_value = 1,
-        maximum_value = 10,
-        value = state.build_spacing
-    }
-end
-
---- @param frame LuaGuiElement
-function lib.add_control_point_buttons(frame)
-    local player_index = frame.player_index
-    local controller = storage.controllers[player_index]
-    local state = controller.state
-    local curve_params = controller.curve_params
-
-    local flow = frame.add{
-        type = "flow",
-        name = "button_flow",
-        direction = "vertical"
-    }
-
-    local control_point_flow = flow.add{
-        type = "flow",
-        name = "control_point_flow",
-        direction = "horizontal"
-    }
-
-    control_point_flow.add{
-        type = "sprite-button",
-        name = "control_points_clear",
-        sprite = "utility/refresh",
-        style = "tool_button"
-    }
-
-    local table = flow.add{
-        type = "table",
-        name = "cp_table",
-        column_count = 3
-    }
-
-    for i = 1, 9 do
-        table.add{
-            type = "button",
-            name = "cp_button_"..i,
-            caption = i,
-            auto_toggle = true,
-            style = "tool_button",
-            toggled = state.active_control_point == i
-        }
-        local x = ""
-        local y = ""
-        if curve_params.raw_control_points[i] then
-            x = tostring(curve_params.raw_control_points[i].x)
-            y = tostring(curve_params.raw_control_points[i].y)
-        end
-        local x_box = table.add{
-            type = "textfield",
-            name = "cp_x_"..i,
-            text = x
-        }
-        x_box.style.width = 60
-        local y_box = table.add{
-            type = "textfield",
-            name = "cp_y_"..i,
-            text = y
-        }
-        y_box.style.width = 60
-    end
-end
-
 --- @param frame LuaGuiElement
 function lib.add_controls(frame)
-    local player_index = frame.player_index
-    local state = storage.controllers[player_index].state
-
-    frame.add{
-        type = "button",
-        name = "draw_curve",
-        caption = {"button.draw-curve"},
-        auto_toggle = true,
-        toggled = state.draw_curve
-    }
-
-    lib.add_slider_flow(frame)
-    lib.add_control_point_buttons(frame)
+    control.add_control_flow(frame)
+    curve_control.add_curve_control_flow(frame)
+    buildable_layers.add_layer_controls(frame)
 end
 
 function lib.create_main_window(player)
@@ -169,6 +65,27 @@ function lib.create_main_window(player)
         direction = "horizontal"
     }
     lib.add_controls(frame.main)
+end
+
+--- @param e EventData.on_gui_click|EventData.on_gui_closed
+lib["close"] = function (e)
+    local player = game.get_player(e.player_index)
+    if not player then return end
+
+    if player.gui.screen.bezierio_window then
+        player.gui.screen.bezierio_window.destroy()
+    end
+end
+
+--- @param e EventData.on_gui_click
+lib["toggle"] = function (e)
+    local player = game.get_player(e.player_index)
+    if not player then return end
+    if player.gui.screen.bezierio_window then
+            lib["close"](e)
+    else
+        lib.create_main_window(player)
+    end
 end
 
 return lib
