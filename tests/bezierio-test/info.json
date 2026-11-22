@@ -1,0 +1,12 @@
+{
+  "name": "bezierio-test",
+  "version": "0.0.1",
+  "title": "Bézierio test scenarios",
+  "author": "DemonicLaxatives",
+  "factorio_version": "2.1",
+  "dependencies": [
+    "base",
+    "Bezierio"
+  ],
+  "description": "Headless test scenarios for Bézierio. Not for release."
+}

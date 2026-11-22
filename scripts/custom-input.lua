@@ -1,109 +1,80 @@
-local draw = require("scripts.draw")
 local calc = require("scripts.curve_math.control")
 local gui = require("scripts.gui.curve_control")
+local state = require("scripts.state")
 
-script.on_event("bezierio-pointer",
---- @param e EventData.CustomInputEvent
-function(e)
-    local player = game.get_player(e.player_index)
-    if not player then return end
+local lib = {}
+
+--- Control point index of the pointer item in the player's cursor, if any.
+--- @param player LuaPlayer
+--- @return integer|nil
+local function cursor_control_point(player)
     local cursor = player.cursor_stack
-    if not cursor then return end
-    if not cursor.valid_for_read then return end
+    if not (cursor and cursor.valid_for_read) then return nil end
+    local idx = string.match(cursor.name, "^bezierio%-pointer%-(%d)$")
+    return idx and tonumber(idx) or nil
+end
+lib.cursor_control_point = cursor_control_point
 
-    if string.find(cursor.name, "bezierio") then
-        local control_point = tonumber(string.sub(cursor.name, -1))
-        if not control_point then
-            error("Invalid control point name")
-        end
-
-        local state = storage.controllers[e.player_index].state
-        local active_control_point = state.active_control_point
-        if active_control_point ~= control_point then
-            error("Active control point does not match cursor stack")
-        end
-
-        calc.updateControlPoint(player, control_point, e.cursor_position)
-        if player.gui.screen.bezierio_window then
-            local flow = player.gui.screen.bezierio_window.main.button_flow.cp_table
-            gui.updateControlPointTextfields(control_point, e.cursor_position, flow)
-        end
-        draw.control_points(player)
-    end
-end)
-
-script.on_event("bezierio-pointer-up",
---- @param e EventData.CustomInputEvent
-function(e)
-    local player = game.get_player(e.player_index)
-    if not player then return end
-    local cursor = player.cursor_stack
-    if not cursor then return end
-    if not cursor.valid_for_read then return end
-
-    if string.find(cursor.name, "bezierio") then
-        local control_point = tonumber(string.sub(cursor.name, -1))
-        if not control_point then
-            error("Invalid control point name")
-        end
-
-        local new_pointer = (control_point % 9) + 1
-        player.cursor_stack.set_stack{name = "bezierio-pointer-"..new_pointer, count = 1}
-    end
-end)
-
-script.on_event("bezierio-pointer-down",
---- @param e EventData.CustomInputEvent
-function(e)
-    local player = game.get_player(e.player_index)
-    if not player then return end
-    local cursor = player.cursor_stack
-    if not cursor then return end
-    if not cursor.valid_for_read then return end
-
-    if string.find(cursor.name, "bezierio") then
-        local control_point = tonumber(string.sub(cursor.name, -1))
-        if not control_point then
-            error("Invalid control point name")
-        end
-
-        local new_pointer = (control_point - 2) % 9 + 1
-        player.cursor_stack.set_stack{name = "bezierio-pointer-"..new_pointer, count = 1}
-    end
-end)
-
---- @param e EventData.on_player_cursor_stack_changed
-script.on_event(defines.events.on_player_cursor_stack_changed, function(e)
-    local player = game.get_player(e.player_index)
-    if not player then return end
-
-    local state = storage.controllers[e.player_index].state
-    local prev_cp = state.active_control_point
-
-    local cursor = player.cursor_stack
-    local current_cp = nil
-    if cursor then
-        if cursor.valid_for_read then
-            if string.find(cursor.name, "bezierio") then 
-                current_cp = tonumber(string.sub(cursor.name, -1))
-                if not current_cp then
-                    error("Invalid control point name")
-                end
-            end
-        end
-    end
-
-    if not prev_cp and not current_cp then return end
-    state.active_control_point = current_cp
-
+--- @param player LuaPlayer
+--- @return LuaGuiElement|nil
+local function cp_table(player)
     local window = player.gui.screen.bezierio_window
-    if not window then return end
-    local flow = window.main.button_flow.cp_table
-    
-    if prev_cp then 
-        flow["cp_button_"..prev_cp].toggled = false
+    if not window then return nil end
+    return window.main.button_flow.cp_table
+end
+
+--- Left click with a pointer in hand: move that control point there.
+--- @param e EventData.CustomInputEvent
+function lib.on_pointer(e)
+    local player = game.get_player(e.player_index)
+    if not player then return end
+    local control_point = cursor_control_point(player)
+    if not control_point then return end
+
+    -- A click on a GUI is not meant as a world position. Check both: `element` is
+    -- not reported for every part of a widget (e.g. slider clicks), `in_gui` covers those.
+    if e.in_gui or e.element then return end
+
+    calc.updateControlPoint(player, control_point, e.cursor_position)
+    local flow = cp_table(player)
+    if flow then
+        gui.updateControlPointTextfields(control_point, state.curve(player.index).raw_control_points[control_point], flow)
     end
-    if current_cp then
-        flow["cp_button_"..current_cp].toggled = true
+end
+
+--- Alt + scroll: cycle through pointers 1..9.
+--- @param e EventData.CustomInputEvent
+--- @param step integer
+function lib.on_pointer_cycle(e, step)
+    local player = game.get_player(e.player_index)
+    if not player then return end
+    local control_point = cursor_control_point(player)
+    if not control_point then return end
+    local new_pointer = (control_point - 1 + step) % state.MAX_CONTROL_POINTS + 1
+    player.cursor_stack.set_stack { name = "bezierio-pointer-" .. new_pointer, count = 1 }
+end
+
+--- Keep the GUI's point buttons in sync with the pointer in the cursor.
+--- (This event arrives later in the same tick, so sync from the cursor itself
+--- rather than from what changed.)
+--- @param e EventData.on_player_cursor_stack_changed
+function lib.on_cursor_changed(e)
+    local player = game.get_player(e.player_index)
+    if not player then return end
+
+    local current_cp = cursor_control_point(player)
+    state.ui(e.player_index).active_control_point = current_cp
+
+    local flow = cp_table(player)
+    if not flow then return end
+    for i = 1, state.MAX_CONTROL_POINTS do
+        flow["cp_button_" .. i].toggled = (i == current_cp)
     end
-end)
+end
+
+script.on_event("bezierio-pointer", lib.on_pointer)
+script.on_event("bezierio-pointer-up", function(e) lib.on_pointer_cycle(e, 1) end)
+script.on_event("bezierio-pointer-down", function(e) lib.on_pointer_cycle(e, -1) end)
+script.on_event(defines.events.on_player_cursor_stack_changed, lib.on_cursor_changed)
+
+return lib

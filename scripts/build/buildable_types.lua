@@ -1,8 +1,11 @@
 local build_utils = require("scripts.build.utils")
 
+--- Buildables are plain data stored in `storage`. They reference prototypes by
+--- name only, so a save survives other mods removing/renaming prototypes.
 local lib = {}
 
 ---@alias BuildableType
+---| "nil"
 ---| "wall"
 ---| "tile"
 ---| "electric-pole"
@@ -11,32 +14,35 @@ local lib = {}
 ---| "roboport"
 
 ---@class BaseBuildable
----@field idx integer
----@field priority integer
----@field placed_by string
----@field prototype LuaEntityPrototype|LuaTilePrototype
----@field quality LuaQualityPrototype
----@field size integer
----@field offset integer
+---@field idx integer          # layer index: 0 is centred on the curve, >0 one side, <0 the other
+---@field priority integer     # higher priority layers claim contested grid cells first
+---@field placed_by string|nil # item name
+---@field name string|nil      # entity or tile prototype name
+---@field quality string|nil   # quality name
+---@field size integer         # footprint in tiles, also the layer's thickness for spaced entities
+---@field offset integer       # gap (in tiles) between this layer and the one closer to layer 0
 ---@field type BuildableType
 
----@param params table<string, any>
+---@class BuildableParams
+---@field idx integer
+---@field placed_by string
+---@field prototype LuaEntityPrototype|LuaTilePrototype
+---@field quality string|nil
+---@field offset integer|nil
+
+---@param params BuildableParams
 ---@return BaseBuildable
 function lib.constructBaseBuildable(params)
-    local params_copy = {}
-    params_copy.idx = params.idx
-    params_copy.priority = 0
-    params_copy.placed_by = params.placed_by
-    params_copy.prototype = params.prototype
-    params_copy.quality = params.quality
-    params_copy.size = build_utils.getPrototypeSize(params_copy.prototype)
-    if params.offset then
-        params_copy.offset = params.offset
-    else
-        params_copy.offset = 0
-    end
-    params_copy.type = params.type
-    return params_copy
+    return {
+        idx = params.idx,
+        priority = 0,
+        placed_by = params.placed_by,
+        name = params.prototype.name,
+        quality = params.quality or "normal",
+        size = build_utils.getPrototypeSize(params.prototype),
+        offset = params.offset or 0,
+        type = params.prototype.type,
+    }
 end
 
 ---@class NilBuildable : BaseBuildable
@@ -46,15 +52,15 @@ end
 ---@return NilBuildable
 function lib.contructNilBuildable(layer)
     return {
-    idx = layer,
-    priority = 0,
-    placed_by = nil,
-    prototype = nil,
-    quality = nil,
-    size = 1,
-    offset = 0,
-    type = "nil",
-}
+        idx = layer,
+        priority = 0,
+        placed_by = nil,
+        name = nil,
+        quality = nil,
+        size = 1,
+        offset = 0,
+        type = "nil",
+    }
 end
 
 ---@class Wall : BaseBuildable
@@ -62,10 +68,10 @@ end
 ---@field checkerboard integer
 ---@field radius integer
 
----@param params table<string, any>
+---@param params BuildableParams
 ---@return Wall
 function lib.constructWall(params)
-    ---@class Wall : BaseBuildable
+    ---@class Wall
     local self = lib.constructBaseBuildable(params)
     self.priority = 100
     self.checkerboard = 0
@@ -78,10 +84,10 @@ end
 ---@field checkerboard integer
 ---@field radius integer
 
----@param params table<string, any>
+---@param params BuildableParams
 ---@return Tile
 function lib.constructTile(params)
-    ---@class Tile : BaseBuildable
+    ---@class Tile
     local self = lib.constructBaseBuildable(params)
     self.priority = 100
     self.checkerboard = 0
@@ -97,17 +103,18 @@ end
 ---@field connect_with_circuit_wires boolean
 ---@field reach integer
 
----@param params table<string, any>
+---@param params BuildableParams
 ---@return ElectricPole
 function lib.constructElectricPole(params)
-    ---@class ElectricPole : BaseBuildable
+    ---@class ElectricPole
     local self = lib.constructBaseBuildable(params)
     self.priority = 10
-    self.wire_distance = self.prototype.get_max_circuit_wire_distance(self.quality)
-    self.spacing = self.wire_distance
+    self.wire_distance = math.floor(params.prototype.get_max_wire_distance(self.quality))
+    -- Leave a tile of slack: positions get snapped to the grid after spacing.
+    self.spacing = math.max(self.size, self.wire_distance - 1)
     self.smart_placement = false
     self.connect_with_circuit_wires = false
-    self.reach = self.prototype.get_supply_area_distance(self.quality)
+    self.reach = math.floor(params.prototype.get_supply_area_distance(self.quality) or 0)
     return self
 end
 
@@ -115,10 +122,10 @@ end
 ---@field type "electric-turret"
 ---@field spacing integer
 
----@param params table<string, any>
+---@param params BuildableParams
 ---@return ElectricTurret
 function lib.constructElectricTurret(params)
-    ---@class ElectricTurret : BaseBuildable
+    ---@class ElectricTurret
     local self = lib.constructBaseBuildable(params)
     self.priority = 50
     self.spacing = self.size
@@ -130,10 +137,10 @@ end
 ---@field direction_of_travel integer
 ---@field signal_spacing integer
 
----@param params table<string, any>
+---@param params BuildableParams
 ---@return Rail
 function lib.constructRail(params)
-    ---@class Rail : BaseBuildable
+    ---@class Rail
     local self = lib.constructBaseBuildable(params)
     self.priority = 1
     self.direction_of_travel = 1
@@ -146,39 +153,55 @@ end
 ---@field spacing integer
 ---@field logistic_radius integer
 
----@param params table<string, any>
+---@param params BuildableParams
 ---@return Roboport
 function lib.constructRoboport(params)
-    ---@class Roboport : BaseBuildable
+    ---@class Roboport
     local self = lib.constructBaseBuildable(params)
     self.priority = 20
-    self.logistic_radius = self.prototype.logistic_radius
-    self.spacing = self.logistic_radius
+    self.logistic_radius = math.floor(params.prototype.logistic_radius or self.size)
+    self.spacing = math.max(self.size, self.logistic_radius)
     return self
 end
 
 ---@alias Buildable Wall|Tile|ElectricPole|ElectricTurret|Rail|Roboport|NilBuildable
 
----@param params table<string, any>
+local constructors = {
+    ["wall"] = lib.constructWall,
+    ["tile"] = lib.constructTile,
+    ["electric-pole"] = lib.constructElectricPole,
+    ["electric-turret"] = lib.constructElectricTurret,
+    ["straight-rail"] = lib.constructRail,
+    ["roboport"] = lib.constructRoboport,
+}
+
+---@param params BuildableParams
 ---@return Buildable
 function lib.constructBuildable(params)
-    local type = params.prototype.type
-    if type == "wall" then
-        return lib.constructWall(params)
-    elseif type == "tile" then
-        ---@diagnostic disable-next-line
-        return lib.constructTile(params)
-    elseif type == "electric-pole" then
-        return lib.constructElectricPole(params)
-    elseif type == "electric-turret" then
-        return lib.constructElectricTurret(params)
-    elseif type == "straight-rail" then
-        return lib.constructRail(params)
-    elseif type == "roboport" then
-        return lib.constructRoboport(params)
-    else
-        error("Unsupported entity type: "..type)
+    local constructor = constructors[params.prototype.type]
+    if not constructor then
+        error("Unsupported entity type: " .. params.prototype.type)
     end
+    return constructor(params)
+end
+
+--- Numeric fields the GUI is allowed to edit, with their valid range for a buildable.
+--- @param buildable Buildable
+--- @param field string
+--- @return integer|nil min, integer|nil max
+function lib.fieldRange(buildable, field)
+    if field == "offset" then return 0, 10 end
+    if field == "checkerboard" then return -10, 10 end
+    if field == "radius" then return 1, 10 end
+    if field == "direction_of_travel" then return -1, 1 end
+    if field == "signal_spacing" then return 0, 6 end
+    if field == "spacing" then
+        if buildable.type == "electric-pole" then return buildable.size, buildable.wire_distance end
+        if buildable.type == "roboport" then return buildable.size,
+                math.max(buildable.size, 2 * buildable.logistic_radius) end
+        return buildable.size, math.max(buildable.size, 10)
+    end
+    return nil, nil
 end
 
 return lib

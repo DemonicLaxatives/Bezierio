@@ -34,7 +34,7 @@ end
 --- @return number
 function lib.D1.round(x, n)
   n = n or 0
-  local m = 10^n
+  local m = 10 ^ n
   return math.floor(x * m + 0.5) / m
 end
 
@@ -42,21 +42,21 @@ end
 --- @param p2 Vector
 --- @return Vector
 function lib.add(p1, p2)
-  return {x = p1.x + p2.x, y = p1.y + p2.y}
+  return { x = p1.x + p2.x, y = p1.y + p2.y }
 end
 
 --- @param p1 Vector
 --- @param p2 Vector
 --- @return Vector
 function lib.sub(p1, p2)
-  return {x = p1.x - p2.x, y = p1.y - p2.y}
+  return { x = p1.x - p2.x, y = p1.y - p2.y }
 end
 
 --- @param k number
 --- @param p1 Vector
 --- @return Vector
 function lib.scale(k, p1)
-  return {x = k * p1.x, y = k * p1.y}
+  return { x = k * p1.x, y = k * p1.y }
 end
 
 --- @param p1 Vector
@@ -76,7 +76,7 @@ end
 --- @param vect Vector
 --- @return number
 function lib.norm(vect)
-  return math.sqrt(vect.x*vect.x + vect.y*vect.y)
+  return math.sqrt(vect.x * vect.x + vect.y * vect.y)
 end
 
 --- @param p1 Vector
@@ -90,51 +90,52 @@ end
 --- @return Vector
 function lib.normalize(vect)
   local abs = lib.norm(vect)
-  return lib.scale(1/abs, vect)
+  if abs == 0 then return { x = 0, y = 0 } end
+  return lib.scale(1 / abs, vect)
 end
 
 --- @param vect Vector
 --- @return Vector
 function lib.perpendicular(vect)
-  return {x = -vect.y, y = vect.x}
+  return { x = -vect.y, y = vect.x }
 end
 
 --- @param vect Vector
 --- @return Vector
 function lib.sign(vect)
-  return {x = lib.D1.sign(vect.x), y = lib.D1.sign(vect.y)}
+  return { x = lib.D1.sign(vect.x), y = lib.D1.sign(vect.y) }
 end
 
 --- @param vect Vector
 --- @return Vector
 function lib.abs(vect)
-  return {x = math.abs(vect.x), y = math.abs(vect.y)}
+  return { x = math.abs(vect.x), y = math.abs(vect.y) }
 end
 
 --- @param vect Vector
 --- @param cell_center boolean
 --- @return Vector
 function lib.cc_round(vect, cell_center)
-  return {x = lib.D1.cc_round(vect.x, cell_center), y = lib.D1.cc_round(vect.y, cell_center)}
+  return { x = lib.D1.cc_round(vect.x, cell_center), y = lib.D1.cc_round(vect.y, cell_center) }
 end
 
 --- @param vect Vector
 --- @param n integer|nil
 --- @return Vector
 function lib.round(vect, n)
-  return {x = lib.D1.round(vect.x, n), y = lib.D1.round(vect.y, n)}
+  return { x = lib.D1.round(vect.x, n), y = lib.D1.round(vect.y, n) }
 end
 
 --- @param vect Vector
 --- @return Vector
 function lib.floor(vect)
-  return {x = math.floor(vect.x), y = math.floor(vect.y)}
+  return { x = math.floor(vect.x), y = math.floor(vect.y) }
 end
 
 --- @param vect Vector
 --- @return Vector
 function lib.ceil(vect)
-  return {x = math.ceil(vect.x), y = math.ceil(vect.y)}
+  return { x = math.ceil(vect.x), y = math.ceil(vect.y) }
 end
 
 --- @param vect Vector
@@ -150,4 +151,3 @@ function lib.min(vect)
 end
 
 return lib
-

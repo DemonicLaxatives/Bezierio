@@ -1,190 +1,154 @@
+--- GUI actions for the layer list (group = "layer").
 local debug = require("scripts.debug")
-local build = {}
+local state = require("scripts.state")
 local buildable_layers = require("scripts.gui.buildable_layers")
 local buildable_types = require("scripts.build.buildable_types")
 local buildable_utils = require("scripts.build.utils")
-local util = require("__core__.lualib.util")
 
 local lib = {}
 
 --- @param data table<integer, any>
 --- @return integer, integer
 function lib.key_bounds(data)
-    local min_key = math.huge
-    local max_key = -math.huge
-
+    local min_key, max_key = 0, 0
     for k, _ in pairs(data) do
-        if k > max_key then
-            max_key = k
-        end
-        if k < min_key then
-            min_key = k
-        end
+        if k > max_key then max_key = k end
+        if k < min_key then min_key = k end
     end
-
     return min_key, max_key
 end
 
---- @param e EventData.on_gui_click
-lib["new_layer"] = function (e)
-    local player = game.get_player(e.player_index)
+--- Rebuild the layer list and request a preview redraw.
+--- @param player_index integer
+local function layers_changed(player_index)
+    state.mark_dirty(player_index)
+    local player = game.get_player(player_index)
     if not player then return end
-    local element = e.element
-    local frame = player.gui.screen.bezierio_window.main
-
-    local layers = storage.controllers[player.index].state.layers
-    local direction = tonumber(element.tags.direction)
-    if not direction then
-        debug.print("Could not determine direction from element tags")
-        return
+    local window = player.gui.screen.bezierio_window
+    if window then
+        buildable_layers.add_layer_controls(window.main)
     end
+end
+
+--- @param e EventData.on_gui_click
+lib["new_layer"] = function(e)
+    local layers = state.layers(e.player_index)
+    local direction = tonumber(e.element.tags.direction)
+    if not direction then return end
 
     local min_key, max_key = lib.key_bounds(layers)
-
-    local key = 0
-    if direction == 1 then
-        key = max_key + 1
-    else
-        key = min_key - 1
-    end
-
+    local key = direction == 1 and max_key + 1 or min_key - 1
     layers[key] = buildable_types.contructNilBuildable(key)
-    buildable_layers.add_layer_controls(frame)
+    layers_changed(e.player_index)
 end
 
+--- Swap a layer with its neighbour.
 --- @param e EventData.on_gui_click
-lib["move"] = function (e)
-    local player = game.get_player(e.player_index)
-    if not player then return end
-    local element = e.element
-    local frame = player.gui.screen.bezierio_window.main
-
-    local layers = storage.controllers[player.index].state.layers
-    local layer = tonumber(element.tags.idx)
-    if not layer then
-        debug.print("Could not determine layer number from element tags")
-        return
-    end
-
-    local direction = element.tags.direction
-    if not direction then
-        debug.print("Could not determine direction from element tags")
-        return
-    end
-
-    local buildable_a = util.table.deepcopy(layers[layer])
-    local buildable_b = util.table.deepcopy(layers[layer + direction])
-
-    if not buildable_b then
-        debug.print("Could not find buildable for layer "..layer + direction)
-        return
-    end
-
-    buildable_a.idx = layer + direction
-    buildable_b.idx = layer
-
-    layers[layer] = buildable_b
-    layers[layer + direction] = buildable_a
-
-    buildable_layers.add_layer_controls(frame)
-end
-
---- @param e EventData.on_gui_click
-lib["delete"]= function(e)
-    local player = game.get_player(e.player_index)
-    if not player then return end
-    local element = e.element
-    local frame = player.gui.screen.bezierio_window.main
-
-    local layers = storage.controllers[player.index].state.layers
-    local layer = tonumber(element.tags.idx)
-    if not layer then
-        debug.print("Could not determine layer number from element tags")
-        return
-    end
-
+lib["move"] = function(e)
+    local layers = state.layers(e.player_index)
     local layer = tonumber(e.element.tags.idx)
-    if not layer and (layer ~= 0)then
-        debug.print("Could not determine layer number from element tags")
-        return
-    end
+    local direction = tonumber(e.element.tags.direction)
+    if not layer or not direction then return end
 
-    if layer == 0 then
-        debug.print("Cannot delete layer 0")
-        return
-    end
+    local other = layer + direction
+    local buildable_a = layers[layer]
+    local buildable_b = layers[other]
+    if not buildable_a or not buildable_b then return end
 
-    local min_key = 0
-    local max_key = 0
+    buildable_a.idx = other
+    buildable_b.idx = layer
+    layers[layer] = buildable_b
+    layers[other] = buildable_a
+    layers_changed(e.player_index)
+end
 
-    for k, _ in pairs(layers) do
-        if k > max_key then
-            max_key = k
-        end
-        if k < min_key then
-            min_key = k
-        end
-    end
+--- Remove a layer; the layers further out move one step inward.
+--- @param e EventData.on_gui_click
+lib["delete"] = function(e)
+    local layers = state.layers(e.player_index)
+    local layer = tonumber(e.element.tags.idx)
+    if not layer or layer == 0 then return end
 
-    local tmp_layer = nil
+    local min_key, max_key = lib.key_bounds(layers)
     if layer > 0 then
-
         for k = layer, max_key - 1 do
-            tmp_layer = util.table.deepcopy(layers[k + 1])
-            tmp_layer.idx = k
-            layers[k] = tmp_layer
+            layers[k] = layers[k + 1]
+            layers[k].idx = k
         end
         layers[max_key] = nil
     else
         for k = layer, min_key + 1, -1 do
-            tmp_layer = util.table.deepcopy(layers[k - 1])
-            tmp_layer.idx = k
-            layers[k] = tmp_layer
+            layers[k] = layers[k - 1]
+            layers[k].idx = k
         end
         layers[min_key] = nil
     end
-
-    buildable_layers.add_layer_controls(frame)
+    layers_changed(e.player_index)
 end
 
+--- The item picker changed: replace the layer with a fresh buildable of that type.
 --- @param e EventData.on_gui_elem_changed
 lib["type"] = function(e)
-    local player = game.get_player(e.player_index)
-    if not player then return end
-    local element = e.element
-    local frame = player.gui.screen.bezierio_window.main
-
-    local layers = storage.controllers[player.index].state.layers
-    local layer = tonumber(element.tags.idx)
-    if not layer then
-        debug.print("Could not determine layer number from element tags")
-        return
-    end
-
+    local layers = state.layers(e.player_index)
     local layer = tonumber(e.element.tags.idx)
-    if not layer then
-        debug.print("Could not determine layer number from element tags")
-        return
-    end
+    if not layer then return end
 
-    local value = element.elem_value
+    local value = e.element.elem_value --[[@as ItemIDAndQualityIDPair?]]
+    ---@type Buildable
     local buildable = buildable_types.contructNilBuildable(layer)
     if value then
-        local prototype = buildable_utils.getBuildablePrototypeByName(value.name)
-        local quality = buildable_utils.getQualityPrototypeByName(value.quality)
-        local parms = {
+        local item_name = (type(value.name) == "string" and value.name or value.name.name) --[[@as string]]
+        local quality = value.quality
+        local quality_name = type(quality) == "string" and quality or (quality and quality.name) or "normal"
+        buildable = buildable_types.constructBuildable {
             idx = layer,
-            name = value.name,
-            prototype = prototype,
-            quality = quality
+            placed_by = item_name,
+            prototype = buildable_utils.getBuildablePrototypeByName(item_name),
+            quality = buildable_utils.getQualityPrototypeByName(quality_name).name,
+            offset = layers[layer] and layers[layer].offset,
         }
-        buildable = buildable_types.constructBuildable(layer, value.name, prototype, quality)
+    end
+    layers[layer] = buildable
+    layers_changed(e.player_index)
+end
+
+--- A slider moved or its number box was confirmed.
+--- @param e EventData.on_gui_value_changed|EventData.on_gui_confirmed
+lib["set_value"] = function(e)
+    local element = e.element
+    local field = element.tags.field --[[@as string]]
+    local idx = tonumber(element.tags.idx)
+    local layer = idx and state.layers(e.player_index)[idx]
+    if not layer or type(layer[field]) ~= "number" then
+        debug.print("Cannot set " .. tostring(field) .. " on layer " .. tostring(idx))
+        return
     end
 
-    layers[layer] = buildable
+    local value
+    if element.type == "slider" then
+        value = element.slider_value
+    else
+        value = tonumber(element.text) or layer[field]
+    end
+    local min, max = buildable_types.fieldRange(layer, field)
+    value = math.floor(value + 0.5)
+    if min then value = math.max(min, value) end
+    if max then value = math.min(max, value) end
 
-    buildable_layers.add_layer_controls(frame)
+    layer[field] = value
+    buildable_layers.syncValue(element, field, value)
+    state.mark_dirty(e.player_index)
+end
 
+--- @param e EventData.on_gui_checked_state_changed
+lib["set_flag"] = function(e)
+    local element = e.element
+    local field = element.tags.field --[[@as string]]
+    local idx = tonumber(element.tags.idx)
+    local layer = idx and state.layers(e.player_index)[idx]
+    if not layer or type(layer[field]) ~= "boolean" then return end
+    layer[field] = element.state
+    state.mark_dirty(e.player_index)
 end
 
 return lib
