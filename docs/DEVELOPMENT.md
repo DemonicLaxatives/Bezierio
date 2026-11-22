@@ -24,6 +24,7 @@ scripts/
   curve/
     curve.lua            curve data ({points, closed}), editing, resumable sampling
     catmull_rom.lua      centripetal Catmull-Rom spline through the points
+    shapes.lua           circles, ellipses and arcs from handles, sampled exactly
   layers/
     registry.lua         layer types: lookup, fields, new layers, item picker filter
     common.lua           pieces shared by layer types
@@ -33,6 +34,7 @@ scripts/
     planner.lua          curve + layers -> BuildPlan, as a resumable job
     executor.lua         BuildPlan -> world, as a resumable job (incl. wiring)
     blueprint.lua        BuildPlan -> blueprint in the cursor, as a resumable job
+    smart_poles.lua      pole lines as far apart as reach allows, powering what needs it
     undo.lua             keeps a whole build in one undo item
     outputs/ghost.lua    ... as ghosts
     outputs/instant.lua  ... as real entities (map editor, cheat mode)
@@ -110,7 +112,7 @@ storage.schema_version
 storage.controllers[player_index]
     ui        preset_index, draw_curve, preview_build, selected_point, selected_layer
     view      colours (names from palette.NAMED), curve_width, preview_opacity
-    curve     {kind = "catmull_rom", points = {{x, y}, ...}, closed}
+    curve     {kind, points = {{x, y}, ...}, closed, handles = {circle, ellipse, arc}, reversed = {[kind] = true}}
     presets   {{name, layers = {[k] = Layer}}}             (layer k: … -1, 0, 1 …)
     revision  bumped on curve/layer changes (changed_tick: when)
     redraw    view needs redrawing (redraw_points: only the point markers)
@@ -182,8 +184,25 @@ The pointer (`custom_input.lua`) edits the list. One point can be selected
 - shift + mouse wheel selects the next / previous point.
 
 Changing the selection only redraws the point markers, not the preview. The
-reverse button reverses the list, so the curve runs the other way and the layers
-swap sides.
+reverse button flips the active kind's direction (see Curve kinds); the
+points stay as they are.
+
+**Curve kinds.** `curve.kind` is `"catmull_rom"` (the spline through
+`curve.points`) or a shape: `"circle"`, `"ellipse"` or `"arc"`, defined by the
+handles in `curve.handles[kind]` (see `curve/shapes.lua` for what each handle
+means). Each kind keeps its own points. The editing functions in `curve.lua`
+(append, set_point, remove, point_near, ...) and the pointer work on the active
+kind's list (`curve_lib.active`). Shapes cap their handle count, and moving a
+shape's centre moves the whole shape. Shapes are sampled exactly from their
+parameters, so no control-point approximation is involved. Loops end on exactly
+their first sample, as the planner expects. `shapes.construction` gives what the drawing shows about how the handles are
+used: the ellipse's axes, and where its width handle (projected onto the
+perpendicular axis) and the arc's end handle (its direction, at the start's
+radius) actually land. `curve.reversed[kind]` makes that kind run
+the other way, for the spline too: its points keep their order and numbers, and
+it is sampled backwards (a loop keeps its seam at P1). Move
+mode (`ui.pointer_mode = "move"`) makes clicks move `curve_lib.center` to the
+click: a shape's centre, or the middle of the spline's bounding box.
 
 ## Layer types
 
@@ -205,7 +224,9 @@ A layer type is one file in `scripts/layers/`, listed in `TYPE_FILES` in
   `thickness(layer)` if the band width isn't the footprint size.
 
 Layers are plain data. They name prototypes rather than holding them, so saves
-survive mods changing prototypes. Picking another item for a layer makes a fresh layer and then
+survive mods changing prototypes. `layer.preview == false` hides a layer in the
+preview only (a view flag: toggling it redraws without replanning, and presets
+don't export it). Picking another item for a layer makes a fresh layer and then
 `registry.carry_over` keeps every setting the new type also has (same field name),
 clamped to the new range, plus the offset.
 
@@ -248,6 +269,22 @@ clamped to the new range, plus the offset.
      closed curves also close the chain.
    - Gaps that can't be bridged because there's no room are counted in
      `plan.gaps` and reported.
+   - **Smart pole layers** (`smart_poles.lua`) ignore the spacing. They build the
+     band's centre line with arc lengths, project every powered entity in the
+     plan onto it, then walk greedily. Each next pole is the farthest free spot
+     (tried every 0.5 tiles back from the wire reach) that is in reach of the
+     previous pole and powers the first unpowered entity plus every unpowered one
+     before the spot. If no spot can, that entity is given up on. At the end,
+     entities still outside every pole's supply area are counted in
+     `plan.unpowered`. Spaced entities record the sample they were placed at
+     (`frame`), so projection doesn't jump to another stretch where the curve
+     crosses itself. Pole layers run last (lowest priority), so every consumer is
+     already planned.
+
+Values a layer derives from its prototype (size, wire reach, supply area,
+`needs_power` = has an electric energy source) are set by `registry.refresh`, for new
+layers and again on every configuration change; layers whose prototype is gone
+become empty.
 
 Entity sizes come from the prototype's `tile_width`/`tile_height`. The collision
 box is smaller than the footprint; rounding it outward made 1×1 entities 2×2.
@@ -334,10 +371,11 @@ tests/run.sh bench                                     # timing (read the BENCH 
 |---|---|
 | `plan_snapshot.lua` | Planner output for 30 fixed cases matches `snapshots/plans.txt`. Run with `--update` only for an intended change, and review the diff. |
 | `planner_jobs.lua` | Running the planner in tiny slices gives exactly the one-shot plan. |
-| `plan_properties.lua` | Random curves and loops: no overlaps, an unbroken layer 0 wall line (a ring through the seam for loops), poles in reach except counted gaps, and bend warnings where they belong. Adding an underlay anywhere never moves an entity or a tile. |
-| `curve_edit.lua` | Inserting (including where a shift-click goes) and reversing points. |
+| `plan_properties.lua` | Random curves and loops: no overlaps, an unbroken layer 0 wall line (a ring through the seam for loops), poles in reach except counted gaps, and bend warnings where they belong. Adding an underlay anywhere never moves an entity or a tile. Smart poles: every powered entity is covered or counted in `plan.unpowered` (exactly), and without consumers the poles are about a wire reach apart. Circles and ellipses make an unbroken 1-wide wall ring; arcs are one piece. |
+| `curve_edit.lua` | Inserting (including where a shift-click goes); reversing keeps the points and samples the curve backwards. |
 | `layers.lua` | Which layer settings survive picking another item (`registry.carry_over`). |
 | `presets.lua` | Preset list operations; export data round trip and import validation. |
+| `shapes.lua` | What the handles mean; samples exactly on circles, (rotated) ellipses and arcs; direction; editing shapes and moving curves. |
 | `migrations.lua` | The files in `migrations/`, run like the game does, on old and current data. |
 
 `helpers.plan` is the only place the tests touch the planner API.

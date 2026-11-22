@@ -19,10 +19,15 @@ rendering = { clear = function() cleared = cleared + 1 end }
 game = { players = { { gui = { screen = { bezierio_window = { destroy = function() destroyed = destroyed + 1 end } } } } } }
 prototypes = {
     entity = {
-        ["stone-wall"] = { tile_width = 1, tile_height = 1 },
-        ["small-electric-pole"] = { tile_width = 1, tile_height = 1 },
-        ["laser-turret"] = { tile_width = 2, tile_height = 2 },
+        ["stone-wall"] = { type = "wall", tile_width = 1, tile_height = 1 },
+        ["small-electric-pole"] = {
+            type = "electric-pole", tile_width = 1, tile_height = 1,
+            get_max_wire_distance = function() return 7.5 end,
+            get_supply_area_distance = function() return 2.5 end,
+        },
+        ["laser-turret"] = { type = "electric-turret", tile_width = 2, tile_height = 2, electric_energy_source_prototype = {} },
     },
+    tile = {},
     get_item_filtered = function() return { ["stone-wall"] = true } end,
 }
 
@@ -82,6 +87,7 @@ check(c.ui.active_control_point == nil and c.ui.held_point == nil and c.ui.selec
 check(c.view and c.view.curve_color == "blue" and c.view.preview_opacity == 30, "view settings added")
 check(c.state == nil and c.curve_cache == nil, "old fields gone")
 check(c.curve.kind == "catmull_rom" and c.curve.closed == false, "curve kind")
+check(c.curve.handles and c.curve.handles.circle and type(c.curve.reversed) == "table" and next(c.curve.reversed) == nil, "shape handles and direction flags added")
 check(#c.curve.points == 2, "complete points kept as a list, gaps and half points dropped")
 check(c.curve.points[1].x == -30.3 and c.curve.points[2].x == 30 and c.curve.points[2].y == 5, "point order kept")
 local layers = c.presets[1].layers
@@ -91,6 +97,8 @@ check(layers[2].size == 1 and layers[2].spacing == 1, "small pole resized to 1x1
 check(type(c.revision) == "number" and c.redraw == true and type(c.work) == "table" and c.work.draw, "jobs rebuilt")
 check(next(storage.sprites) == nil, "stale sprite references dropped")
 check(storage.item_filter[1].name[1] == "stone-wall", "item filter rebuilt")
+check(layers[2].wire_distance == 7 and layers[2].reach == 2.5 and layers[2].needs_power == nil, "pole values derived from its prototype")
+check(layers[0].needs_power == nil, "walls need no power")
 
 -- 3 -> 4 on its own: sparse slots with a gap
 storage = { schema_version = 3, sprites = {}, controllers = { [2] = {
@@ -116,6 +124,17 @@ load_save()
 local c3 = storage.controllers[3]
 check(c3.ui.selected_point == 2 and c3.ui.held_point == nil, "4->5: held point selected")
 check(c3.view.selected_color == "amber" and c3.redraw == true, "4->5: view settings, redraw")
+
+-- 7 -> 8: one reversed flag for all shapes becomes a flag per kind
+storage = { schema_version = 7, sprites = {}, controllers = { [5] = {
+    ui = { preset_index = 1, draw_curve = false, preview_build = false, selected_layer = 0 },
+    curve = { kind = "circle", points = {}, closed = false, handles = { circle = {}, ellipse = {}, arc = {} }, reversed = true },
+    presets = { { name = "Default", layers = { [0] = { idx = 0, type = "empty", size = 1, offset = 0 } } } },
+    revision = 2, redraw = false, work = {},
+} } }
+load_save()
+local r5 = storage.controllers[5].curve.reversed
+check(r5.circle == true and r5.arc == true and r5.catmull_rom == nil, "7->8: shapes stay reversed, the spline doesn't")
 
 -- The migrated controller works with the current code.
 local planner = require("scripts.build.planner")

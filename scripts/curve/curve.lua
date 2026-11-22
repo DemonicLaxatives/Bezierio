@@ -1,21 +1,60 @@
 --- Curve data and sampling.
 ---
---- A curve is plain data: an ordered list of control points and whether it is a
---- closed loop. It is drawn as a centripetal Catmull-Rom spline through the points.
+--- A curve is plain data. Its `kind` is either "catmull_rom", a centripetal
+--- Catmull-Rom spline through an ordered list of control points (optionally a
+--- closed loop), or a shape (circle, ellipse, arc; see shapes.lua) defined by a few
+--- handles. Each kind keeps its own points, so switching kinds loses nothing; the
+--- editing functions below work on the active kind's points.
 --- Everything downstream only sees sample points.
 local vect = require("scripts.vector_math")
 local catmull_rom = require("scripts.curve.catmull_rom")
+local shapes = require("scripts.curve.shapes")
 
 local lib = {}
 
+--- Curve kinds, in menu order (locale: bezierio-curve-kind.<kind>).
+lib.KINDS = { "catmull_rom", "circle", "ellipse", "arc" }
+
+--- @alias CurveKind "catmull_rom"|"circle"|"ellipse"|"arc"
+
 --- @class Curve
---- @field kind "catmull_rom"
---- @field points Vector[]   # control points, in order
---- @field closed boolean    # loop back from the last point to the first (needs 3+ points)
+--- @field kind CurveKind
+--- @field points Vector[]   # spline control points, in order
+--- @field closed boolean    # spline: loop back from the last point to the first (needs 3+ points)
+--- @field handles table<string, Vector[]>  # shape kind -> its handles
+--- @field reversed table<string, boolean>  # kind -> travel the other way (layers swap sides)
 
 --- @return Curve
 function lib.new()
-    return { kind = "catmull_rom", points = {}, closed = false }
+    return { kind = "catmull_rom", points = {}, closed = false, handles = { circle = {}, ellipse = {}, arc = {} }, reversed = {} }
+end
+
+--- @param curve Curve
+--- @return boolean
+function lib.is_spline(curve)
+    return curve.kind ~= "circle" and curve.kind ~= "ellipse" and curve.kind ~= "arc"
+end
+
+--- The points being edited: the spline's control points, or the shape's handles.
+--- @param curve Curve
+--- @return Vector[]
+function lib.active(curve)
+    if lib.is_spline(curve) then return curve.points end
+    curve.handles = curve.handles or {}
+    local list = curve.handles[curve.kind]
+    if not list then
+        list = {}
+        curve.handles[curve.kind] = list
+    end
+    return list
+end
+
+--- How many points the active kind takes (nil: any number).
+--- @param curve Curve
+--- @return integer|nil
+function lib.capacity(curve)
+    local names = shapes.HANDLES[curve.kind]
+    return names and #names or nil
 end
 
 --- @param point Vector
@@ -27,50 +66,104 @@ end
 --- Add a point at the end. Coordinates are rounded to 0.01.
 --- @param curve Curve
 --- @param point Vector
---- @return integer index
+--- @return integer|nil index  # nil when a shape has all its handles already
 function lib.append(curve, point)
-    table.insert(curve.points, rounded(point))
-    return #curve.points
+    local list, capacity = lib.active(curve), lib.capacity(curve)
+    if capacity and #list >= capacity then return nil end
+    table.insert(list, rounded(point))
+    return #list
 end
 
---- Move an existing point.
+--- Move an existing point. A shape's centre handle moves the whole shape.
 --- @param curve Curve
 --- @param idx integer
 --- @param point Vector
 function lib.set_point(curve, idx, point)
-    if curve.points[idx] then curve.points[idx] = rounded(point) end
+    local list = lib.active(curve)
+    local old = list[idx]
+    if not old then return end
+    if idx == 1 and not lib.is_spline(curve) then
+        local p = rounded(point)
+        lib.translate(curve, p.x - old.x, p.y - old.y)
+        return
+    end
+    list[idx] = rounded(point)
+end
+
+--- Move every point of the active kind.
+--- @param curve Curve
+--- @param dx number
+--- @param dy number
+function lib.translate(curve, dx, dy)
+    local list = lib.active(curve)
+    for i, p in ipairs(list) do list[i] = rounded({ x = p.x + dx, y = p.y + dy }) end
+end
+
+--- The point a move puts where you click: a shape's centre, or the middle of a
+--- spline's points (their bounding box).
+--- @param curve Curve
+--- @return Vector|nil
+function lib.center(curve)
+    local list = lib.active(curve)
+    if #list == 0 then return nil end
+    if not lib.is_spline(curve) then return { x = list[1].x, y = list[1].y } end
+    local x1, y1, x2, y2 = math.huge, math.huge, -math.huge, -math.huge
+    for _, p in ipairs(list) do
+        x1, y1 = math.min(x1, p.x), math.min(y1, p.y)
+        x2, y2 = math.max(x2, p.x), math.max(y2, p.y)
+    end
+    return { x = (x1 + x2) / 2, y = (y1 + y2) / 2 }
+end
+
+--- Move the curve so that its centre (see lib.center) lands on `position`.
+--- @param curve Curve
+--- @param position Vector
+function lib.move_to(curve, position)
+    local c = lib.center(curve)
+    if c then lib.translate(curve, position.x - c.x, position.y - c.y) end
 end
 
 --- Remove a point; later points move up one place.
 --- @param curve Curve
 --- @param idx integer
 function lib.remove(curve, idx)
-    if curve.points[idx] then table.remove(curve.points, idx) end
+    local list = lib.active(curve)
+    if list[idx] then table.remove(list, idx) end
 end
 
---- Insert a point so that it gets index `idx` (#points + 1 appends).
+--- Insert a spline point so that it gets index `idx` (#points + 1 appends).
+--- Shapes just get the point appended (if they still need one).
 --- @param curve Curve
 --- @param idx integer
 --- @param point Vector
---- @return integer index
+--- @return integer|nil index
 function lib.insert(curve, idx, point)
+    if not lib.is_spline(curve) then return lib.append(curve, point) end
     idx = math.max(1, math.min(idx, #curve.points + 1))
     table.insert(curve.points, idx, rounded(point))
     return idx
 end
 
---- Reverse the point order, which flips the direction of travel (layers swap sides).
+--- Flip the direction of travel (layers swap sides). The points stay as they
+--- are; each kind remembers its own direction.
 --- @param curve Curve
 function lib.reverse(curve)
-    local points, n = curve.points, #curve.points
-    for i = 1, math.floor(n / 2) do
-        points[i], points[n + 1 - i] = points[n + 1 - i], points[i]
-    end
+    if type(curve.reversed) ~= "table" then curve.reversed = {} end
+    curve.reversed[curve.kind] = not lib.is_reversed(curve) or nil
 end
 
+--- Whether the active kind runs the other way.
+--- @param curve Curve
+--- @return boolean
+function lib.is_reversed(curve)
+    return type(curve.reversed) == "table" and curve.reversed[curve.kind] == true
+end
+
+--- Remove all points of the active kind.
 --- @param curve Curve
 function lib.clear(curve)
-    curve.points = {}
+    local list = lib.active(curve)
+    for i = #list, 1, -1 do list[i] = nil end
 end
 
 --- Evaluations per segment when looking for the part of the curve nearest a click.
@@ -125,14 +218,14 @@ function lib.insertion_index(curve, position)
     return last_raw[best_seg] + 1
 end
 
---- Index of the control point nearest to `position`, if within `radius`.
+--- Index of the (active kind's) point nearest to `position`, if within `radius`.
 --- @param curve Curve
 --- @param position Vector
 --- @param radius number
 --- @return integer|nil
 function lib.point_near(curve, position, radius)
     local best, best_d = nil, radius
-    for i, p in ipairs(curve.points) do
+    for i, p in ipairs(lib.active(curve)) do
         local d = vect.distance(p, position)
         if d <= best_d then best, best_d = i, d end
     end
@@ -158,31 +251,58 @@ function lib.distinct_points(curve)
     return points
 end
 
---- Whether the curve is drawn as a loop (closed flag and enough points).
+--- The shape the active handles describe (nil for splines, or incomplete shapes).
+--- @param curve Curve
+--- @return ShapeDescription|nil
+function lib.shape(curve)
+    if lib.is_spline(curve) then return nil end
+    return shapes.describe(curve.kind, lib.active(curve))
+end
+
+--- Whether the curve is drawn as a loop: a spline with the closed flag and enough
+--- points, a circle or an ellipse.
 --- @param curve Curve
 --- @return boolean
 function lib.is_closed(curve)
+    if not lib.is_spline(curve) then
+        local shape = lib.shape(curve)
+        return shape ~= nil and shape.closed
+    end
     return curve.closed == true and #curve.points >= 3
 end
 
 --- @param curve Curve
 --- @return boolean
 function lib.is_drawable(curve)
+    if not lib.is_spline(curve) then return lib.shape(curve) ~= nil end
     return #lib.distinct_points(curve) >= 2
 end
 
 --- @class CurveSampler
---- @field state CatmullRomSampler
+--- @field state CatmullRomSampler|ShapeSampler
 --- @field done boolean
 
---- A resumable sampler; nil when the curve has fewer than two distinct points.
+--- A resumable sampler; nil when there's nothing to draw yet.
 --- @param curve Curve
 --- @param max_step number
 --- @return CurveSampler|nil
 function lib.new_sampler(curve, max_step)
+    if not lib.is_spline(curve) then
+        local shape = lib.shape(curve)
+        if not shape then return nil end
+        return { state = shapes.new_sampler(shape, max_step, lib.is_reversed(curve)), done = false }
+    end
     local points = lib.distinct_points(curve)
     if #points < 2 then return nil end
     local closed = lib.is_closed(curve) and #points >= 3
+    if lib.is_reversed(curve) then
+        -- Travel the points backwards; a loop still starts (and has its seam) at P1.
+        local backwards = {}
+        local first = closed and 1 or 0
+        if closed then backwards[1] = points[1] end
+        for i = #points, 1 + first, -1 do backwards[#backwards + 1] = points[i] end
+        points = backwards
+    end
     return { state = catmull_rom.new_sampler(points, max_step, closed), done = false }
 end
 
@@ -192,7 +312,12 @@ end
 --- @param budget number
 --- @return number used
 function lib.step(sampler, out, budget)
-    local used = catmull_rom.step(sampler.state, out, budget)
+    local used
+    if sampler.state.kind == "shape" then
+        used = shapes.step(sampler.state, out, budget)
+    else
+        used = catmull_rom.step(sampler.state, out, budget)
+    end
     sampler.done = sampler.state.done
     return used
 end

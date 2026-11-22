@@ -13,6 +13,7 @@ local lib = {}
 ---@field max? integer|fun(layer: Layer): integer
 ---@field default any|fun(layer: Layer): any
 ---@field labels? table<integer, LocalisedString>         # show words instead of numbers
+---@field disabled_by? string                             # a checkbox field that makes this one irrelevant
 
 ---@class LayerType
 ---@field name string                       # stored as layer.type
@@ -33,6 +34,8 @@ local lib = {}
 ---@field placed_by string|nil # item name
 ---@field quality string|nil   # quality name
 ---@field size integer         # footprint in tiles
+---@field needs_power boolean|nil  # runs on electricity (smart pole placement powers it)
+---@field preview false|nil    # false: not drawn in the build preview (still built)
 ---@field offset integer       # gap between this layer and the one closer to layer 0
 ---@field [string] any         # type-specific fields
 
@@ -199,13 +202,42 @@ function lib.new_layer(layer_idx, item_name, quality_name, offset)
         size = lib.footprint_size(prototype),
         offset = offset or 0,
     }
-    if def.init then def.init(layer, prototype) end
+    lib.refresh(layer, prototype)
     for _, field in ipairs(def.fields) do
         if layer[field.name] == nil then
             layer[field.name] = resolve(layer, field, "default")
         end
     end
     return layer
+end
+
+--- Recompute the values a layer derives from its prototype (size, wire reach,
+--- whether it needs power, ...). Run for new layers and, for saved ones, when mods
+--- or prototypes change. Settings the player chose are left alone, except for
+--- clamping them into ranges that depend on the derived values.
+--- @param layer Layer
+--- @param prototype LuaEntityPrototype|LuaTilePrototype|nil  # looked up by name if nil
+--- @return boolean  # false if the prototype is gone
+function lib.refresh(layer, prototype)
+    if not layer.name then return true end
+    if not prototype then
+        prototype = layer.type == "tile" and prototypes.tile[layer.name] or prototypes.entity[layer.name]
+        if not prototype then return false end
+    end
+    local def = lib.type_of(layer)
+    layer.size = lib.footprint_size(prototype)
+    layer.needs_power = prototype.type ~= "tile" and prototype.electric_energy_source_prototype ~= nil or nil
+    if def.init then def.init(layer, prototype) end
+    for _, field in ipairs(def.fields) do
+        local value = layer[field.name]
+        if type(value) == "number" then
+            local min, max = resolve(layer, field, "min"), resolve(layer, field, "max")
+            if min then value = math.max(min, value) end
+            if max then value = math.min(max, value) end
+            layer[field.name] = value
+        end
+    end
+    return true
 end
 
 --- Filter for the layer item pickers: every item that places a supported entity

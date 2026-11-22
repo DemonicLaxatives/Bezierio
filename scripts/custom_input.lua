@@ -1,10 +1,15 @@
---- The curve pointer in the world.
+--- The curve pointer in the world. It edits the active kind's points: the spline's
+--- control points, or a shape's handles.
 ---
 --- Left click: on a point, select it; with a point selected, move it there (it
---- stays selected); otherwise add a point at the end. Shift + left click: add a
---- point into the nearest stretch of curve (and select it). Right click: with a
---- point selected, deselect it; otherwise remove the point under the cursor.
---- Shift + mouse wheel: select the next / previous point.
+--- stays selected); otherwise add a point at the end (shapes: until they have all
+--- their handles). Shift + left click: add a spline point into the nearest stretch
+--- of curve (and select it). Right click: with a point selected, deselect it;
+--- otherwise remove the point under the cursor. Shift + mouse wheel: select the
+--- next / previous point.
+---
+--- In move mode (the move button), left click moves the curve's centre there and
+--- right click leaves move mode.
 local curve_lib = require("scripts.curve.curve")
 local curve_control = require("scripts.gui.curve_control")
 local state = require("scripts.state")
@@ -37,14 +42,19 @@ function lib.on_pointer(e)
 
     local ui, curve = state.ui(player.index), state.curve(player.index)
     local position = e.cursor_position --[[@as Vector]]
+    if ui.pointer_mode == "move" then
+        curve_lib.move_to(curve, position)
+        state.request_point_redraw(player.index)
+        curve_control.points_changed(player)
+        return
+    end
     local near = curve_lib.point_near(curve, position, lib.PICK_RADIUS)
     if near then
         if near ~= ui.selected_point then curve_control.select_point(player, near) end
-    elseif ui.selected_point and curve.points[ui.selected_point] then
+    elseif ui.selected_point and curve_lib.active(curve)[ui.selected_point] then
         curve_lib.set_point(curve, ui.selected_point, position)
         curve_control.points_changed(player)
-    else
-        curve_lib.append(curve, position)
+    elseif curve_lib.append(curve, position) then
         curve_control.points_changed(player)
     end
 end
@@ -56,6 +66,10 @@ function lib.on_pointer_insert(e)
 
     local curve = state.curve(player.index)
     local position = e.cursor_position --[[@as Vector]]
+    if state.ui(player.index).pointer_mode == "move" or not curve_lib.is_spline(curve) then
+        lib.on_pointer(e)
+        return
+    end
     local idx = curve_lib.insert(curve, curve_lib.insertion_index(curve, position), position)
     state.ui(player.index).selected_point = idx
     state.request_redraw(player.index)
@@ -67,7 +81,12 @@ function lib.on_pointer_remove(e)
     local player = pointer_player(e)
     if not player then return end
 
-    if state.ui(player.index).selected_point then
+    local ui = state.ui(player.index)
+    if ui.pointer_mode == "move" then
+        curve_control.set_move_mode(player, false)
+        return
+    end
+    if ui.selected_point then
         curve_control.select_point(player, nil)
         return
     end
@@ -81,7 +100,7 @@ local function cycle(e, step)
     local player = pointer_player(e)
     if not player then return end
     local selected = state.ui(player.index).selected_point
-    local count = #state.curve(player.index).points
+    local count = #curve_lib.active(state.curve(player.index))
     if not selected or count == 0 then return end
     curve_control.select_point(player, (selected - 1 + step) % count + 1)
 end

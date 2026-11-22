@@ -1,4 +1,6 @@
---- Electric poles, spaced along the middle of their band.
+--- Electric poles along the middle of their band: every `spacing` tiles, or with
+--- `smart` placement as far apart as the wires reach, closer where powered entities
+--- in the plan need it (see build/smart_poles.lua).
 --- @type LayerType
 return {
     name = "electric-pole",
@@ -13,13 +15,15 @@ return {
             max = function(layer) return layer.wire_distance end,
             -- Leave a tile of slack: positions get snapped to the grid after spacing.
             default = function(layer) return math.max(layer.size, layer.wire_distance - 1) end,
+            disabled_by = "smart",
         },
+        { name = "smart", widget = "checkbox", default = false },
         { name = "connect_with_circuit_wires", widget = "checkbox", default = false },
     },
     --- @param layer Layer
     --- @param prototype LuaEntityPrototype
     init = function(layer, prototype)
         layer.wire_distance = math.floor(prototype.get_max_wire_distance(layer.quality))
-        layer.reach = math.floor(prototype.get_supply_area_distance(layer.quality) or 0)
+        layer.reach = prototype.get_supply_area_distance(layer.quality) or 0 -- supply area half-size (e.g. 2.5)
     end,
 }

@@ -29,11 +29,27 @@ local c = make({ { x = 0, y = 0 }, { x = 10, y = 0 } })
 check(curve_lib.insert(c, 2, { x = 5.004, y = 1 }) == 2 and xs(c) == "0,0 5,1 10,0", "insert in the middle, rounded")
 check(curve_lib.insert(c, 99, { x = 20, y = 0 }) == 4, "insert past the end appends")
 check(curve_lib.insert(c, 0, { x = -10, y = 0 }) == 1 and c.points[1].x == -10, "insert before the start")
+-- Reverse: the points stay put, the curve runs the other way
+local before = xs(c)
 curve_lib.reverse(c)
-check(c.points[1].x == 20 and c.points[5].x == -10 and c.points[3].x == 5, "reverse, odd count")
-local even = make({ { x = 1, y = 0 }, { x = 2, y = 0 }, { x = 3, y = 0 }, { x = 4, y = 0 } })
-curve_lib.reverse(even)
-check(xs(even) == "4,0 3,0 2,0 1,0", "reverse, even count")
+check(xs(c) == before and curve_lib.is_reversed(c), "reverse keeps the points")
+local forward = curve_lib.samples(make({ { x = 0, y = 0 }, { x = 10, y = 5 }, { x = 20, y = 0 } }), 0.25)
+local rc = make({ { x = 0, y = 0 }, { x = 10, y = 5 }, { x = 20, y = 0 } })
+curve_lib.reverse(rc)
+local backward = curve_lib.samples(rc, 0.25)
+local same = #forward == #backward
+for i = 1, #forward do
+    local f, b = forward[i], backward[#backward + 1 - i]
+    if not b or math.abs(f.x - b.x) > 1e-9 or math.abs(f.y - b.y) > 1e-9 then same = false end
+end
+check(same, "an open curve is sampled exactly backwards")
+local loop = make({ { x = 0, y = 0 }, { x = 10, y = 0 }, { x = 10, y = 10 }, { x = 0, y = 10 } }, true)
+curve_lib.reverse(loop)
+local ls = curve_lib.samples(loop, 0.25)
+check(ls[1].x == 0 and ls[1].y == 0 and ls[#ls].x == 0 and ls[#ls].y == 0, "a reversed loop still starts and ends at P1")
+check(ls[3].y > 0 and math.abs(ls[3].x) < 1, "and heads for P4 first")
+curve_lib.reverse(loop)
+check(not curve_lib.is_reversed(loop), "reverse twice: back to forwards")
 
 -- insertion_index on an open line P1 (0,0) - P2 (10,0) - P3 (20,0)
 local line = make({ { x = 0, y = 0 }, { x = 10, y = 0 }, { x = 20, y = 0 } })

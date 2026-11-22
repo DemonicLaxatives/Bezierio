@@ -64,6 +64,26 @@ step("preview rendered, totals shown", function(player)
   log("plan: " .. #plan.entities .. " entities, " .. #plan.tiles .. " tiles, skipped " .. plan.skipped)
 end)
 
+step("hide a layer in the preview", function(player)
+  storage.shown = dev("render_count")
+  dev("set_checked", P, "layer_preview_-1", false)
+  check(layers()[-1].preview == false and controller().work.plan ~= nil, "hidden, no replanning")
+end, "idle")
+
+step("hidden layer not drawn, shown again", function(player)
+  local now = dev("render_count")
+  check(now < storage.shown - 20, "fewer objects with the tiles hidden: " .. now .. " < " .. storage.shown)
+  dev("set_checked", P, "layer_preview_-1", true)
+  check(layers()[-1].preview == nil, "shown again")
+  -- With the quality mod, the layer button shows the layer's quality.
+  if prototypes.quality["rare"] then
+    dev("set_elem", P, "layer_type", { name = "stone-wall", quality = "rare" })
+    local button = el(player, "layer_select_0")
+    check(button.quality and button.quality.name == "rare", "quality shown on the layer button")
+    dev("set_elem", P, "layer_type", { name = "stone-wall", quality = "normal" })
+  end
+end, "idle")
+
 step("force build", function(player)
   local s = player.surface
   local walls = planned_walls(dev("plan", P))
@@ -201,6 +221,35 @@ step("underlay built under walls", function(player)
   dev("click", P, "layer_delete_-2")
   dev("click", P, "layer_select_-1")
   dev("set_checked", P, "under", false)
+  dev("click", P, "layer_select_0")
+  flow.clear_build(s)
+end)
+
+step("smart poles", function(player)
+  flow.clear_build(player.surface)
+  storage.spaced_poles = flow.count_planned(dev("plan", P))["small-electric-pole"]
+  dev("click", P, "layer_select_1")
+  dev("set_checked", P, "smart", true)
+  check(layers()[1].smart == true and not el(player, "spacing_slider").enabled, "smart on, spacing greyed out")
+  player.cheat_mode = true
+  dev("click", P, "build")
+end, "idle")
+
+step("smart poles power every turret", function(player)
+  local s = player.surface
+  local plan = dev("plan", P)
+  check(plan.unpowered == 0, "nothing reported unpowered: " .. plan.unpowered)
+  local turrets = s.find_entities_filtered { name = "laser-turret" }
+  check(#turrets > 0, "turrets built")
+  -- In some pole's supply area (is_connected_to_electric_network also wants a
+  -- power source, and this map has none).
+  for _, t in pairs(turrets) do
+    check(t.electric_network_id ~= nil, "turret at " .. t.position.x .. "," .. t.position.y .. " is on the network")
+  end
+  local poles = s.count_entities_filtered { name = "small-electric-pole" }
+  log("smart poles: " .. poles .. " (spacing 6: " .. storage.spaced_poles .. ") for " .. #turrets .. " turrets")
+  player.cheat_mode = false
+  dev("set_checked", P, "smart", false)
   dev("click", P, "layer_select_0")
   flow.clear_build(s)
 end)

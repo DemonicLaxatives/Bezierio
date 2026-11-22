@@ -100,6 +100,35 @@ function helpers.plan(points, layers, budget, closed)
     return job.plan, steps
 end
 
+--- Plan a build for a whole curve (any kind) + layers.
+--- @param curve table
+--- @param layers table<integer, table>
+--- @param budget integer|nil
+--- @return table plan
+function helpers.plan_curve(curve, layers, budget)
+    local planner = require("scripts.build.planner")
+    local job = planner.new_job(curve, deepcopy(layers))
+    local steps = 0
+    while not planner.step(job, budget or math.huge) do
+        steps = steps + 1
+        if steps > 1e7 then error("planner did not finish") end
+    end
+    return job.plan
+end
+
+--- A shape curve with these handles.
+--- @param kind string
+--- @param handles {x: number, y: number}[]
+--- @param reversed boolean|nil
+function helpers.shape_curve(kind, handles, reversed)
+    local curve_lib = require("scripts.curve.curve")
+    local c = curve_lib.new()
+    c.kind = kind
+    for _, h in ipairs(handles) do curve_lib.append(c, h) end
+    if reversed then curve_lib.reverse(c) end
+    return c
+end
+
 --- Canonical text form of a plan: order-independent, so it can be compared
 --- across implementations that emit placements in a different order.
 --- @param plan table

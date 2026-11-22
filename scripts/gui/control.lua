@@ -62,7 +62,7 @@ function lib.add(parent, player)
     items.style.single_line = false
     items.style.maximal_width = 320
     local warnings = totals.add { type = "flow", name = "totals_warnings", direction = "horizontal" }
-    for _, name in ipairs({ "bends", "gaps" }) do
+    for _, name in ipairs({ "bends", "gaps", "unpowered" }) do
         local label = warnings.add {
             type = "label",
             name = "totals_" .. name,

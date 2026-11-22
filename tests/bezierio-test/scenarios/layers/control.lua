@@ -72,6 +72,20 @@ step("configure layers", function(player)
   check(el(player, "layer_rows").type == "scroll-pane", "layer list scrolls")
 end)
 
+step("mirror layers", function(player)
+  local before = {}
+  for k, layer in pairs(layers()) do before[k] = layer.type end
+  dev("click", P, "layer_select_2")
+  dev("click", P, "layer_mirror")
+  for k, t in pairs(before) do
+    check(layers()[-k].type == t and layers()[-k].idx == -k, "layer " .. k .. " is now layer " .. -k)
+  end
+  check(controller().ui.selected_layer == -2 and el(player, "layer_row_-2"), "selection follows")
+  dev("click", P, "layer_mirror")
+  check(layers()[2].type == "electric-turret" and controller().ui.selected_layer == 2, "mirrored back")
+  dev("click", P, "layer_select_0")
+end)
+
 step("underlay option", function(player)
   dev("click", P, "layer_select_-1")
   dev("set_checked", P, "under", true)

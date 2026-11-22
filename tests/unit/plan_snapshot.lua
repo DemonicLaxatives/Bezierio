@@ -66,10 +66,31 @@ cases[#cases + 1] = {
     layers = { [0] = underlay(0, 3), [1] = wall(1, 1), [-1] = wall(-1, 1), [2] = { idx = 2, type = "tile", name = "path", quality = "normal", radius = 1, checkerboard = 0, size = 1, offset = 0, priority = 100 } },
 }
 
+-- Smart pole placement: as far apart as the wires reach, closer for the turrets
+cases[#cases + 1] = {
+    name = "smart poles around turrets",
+    points = { { x = 0, y = 0 }, { x = 40, y = -20 }, { x = 80, y = 10 } },
+    layers = {
+        [0] = wall(0, 1),
+        [1] = { idx = 1, type = "electric-pole", name = "pole", quality = "normal", size = 1, offset = 0, priority = 10, spacing = 7, wire_distance = 9, reach = 3, smart = true },
+        [2] = { idx = 2, type = "electric-turret", name = "turret", quality = "normal", size = 2, offset = 2, priority = 50, spacing = 12, needs_power = true },
+        [-1] = { idx = -1, type = "roboport", name = "roboport", quality = "normal", size = 4, offset = 6, priority = 20, spacing = 40, needs_power = true },
+    },
+}
+
+-- Shapes (sampled exactly, not through control points)
+local ring_layers = { [0] = wall(0, 1), [1] = underlay(1, 2), [2] = { idx = 2, type = "electric-turret", name = "turret", quality = "normal", size = 2, offset = 0, priority = 50, spacing = 8 } }
+cases[#cases + 1] = { name = "circle", curve = helpers.shape_curve("circle", { { x = 0.5, y = 0.5 }, { x = 0.5, y = -24.5 } }), layers = ring_layers }
+cases[#cases + 1] = { name = "circle reversed", curve = helpers.shape_curve("circle", { { x = 0.5, y = 0.5 }, { x = 0.5, y = -24.5 } }, true), layers = ring_layers }
+cases[#cases + 1] = { name = "rotated ellipse", curve = helpers.shape_curve("ellipse", { { x = 0, y = 0 }, { x = 30, y = 20 }, { x = -4, y = 9 } }), layers = { [0] = wall(0, 2) } }
+cases[#cases + 1] = { name = "arc", curve = helpers.shape_curve("arc", { { x = 0, y = 0 }, { x = -30, y = 0 }, { x = 10, y = 10 } }), layers = ring_layers }
+
 local lines = {}
 for _, case in ipairs(cases) do
     lines[#lines + 1] = "## " .. case.name
-    lines[#lines + 1] = helpers.canonical(helpers.plan(case.points, case.layers, nil, case.closed))
+    local plan = case.curve and helpers.plan_curve(case.curve, case.layers)
+        or helpers.plan(case.points, case.layers, nil, case.closed)
+    lines[#lines + 1] = helpers.canonical(plan)
 end
 local actual = table.concat(lines, "\n") .. "\n"
 

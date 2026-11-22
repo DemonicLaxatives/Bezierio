@@ -22,9 +22,25 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
    - <kbd>Shift</kbd> + mouse wheel selects the next or previous point;
    - right-click deselects, or removes the point under the cursor.
 
+   The drop-down next to the pointer button picks what to draw: a **curve**
+   through any number of points, or a **circle**, **ellipse** or **arc**, placed
+   with the pointer like the curve's points (the window says which handle to click
+   next):
+   - circle: the centre, then a point on the circle;
+   - ellipse: the centre, the end of one axis (its radius and the rotation), then a
+     point whose distance from that axis sets the other radius;
+   - arc: the centre, the start (sets the radius), then the end (only its
+     direction counts); the arc runs clockwise from start to end.
+
+   The map shows how the handles are used (the ellipse's axes, and where the
+   width and end handles actually land), and the window shows the resulting radii
+   and arc angle. Each keeps its own points, so you can switch back and forth. Dragging a shape's
+   centre moves the whole shape. The **move** button makes clicks move the curve's
+   centre to where you click; right-click to stop.
+
    The curve passes through every point, in order. Tick **Closed loop** to join
-   the last point back to the first; the ⇄ button reverses the point order (the
-   curve runs the other way, so the layers swap sides). The point list in the
+   the last point back to the first; the ⇄ button reverses the curve's direction, leaving the points as they are
+   (so the layers swap sides; for a circle, inside and outside). The point list in the
    window shows each point's coordinates: click a point's name to select it, type
    new coordinates and press <kbd>Enter</kbd>, or remove a point with its ✕. The
    trash button removes all points.
@@ -36,7 +52,8 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
    - **Layer 0** runs along the middle of the curve.
    - **Layers 1, 2, …** stack to the right of the direction of travel (P1 → last
      point), **layers −1, −2, …** to the left. Use the **+** buttons to add layers
-     above or below, and the arrows to reorder them.
+     above or below, and the arrows to reorder them. The ⇅ button mirrors the
+     stack: every layer moves to the other side of the curve.
    - **Walls and tiles** fill a band. *Width* sets its thickness. *Checkerboard*
      leaves out alternating squares of the given size; the sign picks which squares.
      A tile layer with *Under entities* takes no room: the next layers out are
@@ -44,7 +61,12 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
    - **Electric poles, electric turrets and roboports** are placed every
      *Spacing* tiles along the middle of their band. Poles stay within wire reach of
      each other (extra poles are added where needed), get copper wire, and red and
-     green wire too if you tick *Circuit wires*.
+     green wire too if you tick *Circuit wires*. With *Smart placement*, poles go as
+     far apart as the wires reach, but closer where needed so that every powered
+     entity in the build (turrets, roboports, ...) gets power, like dragging poles
+     in the game.
+   - The checkbox in front of a layer shows or hides it in the preview (it's
+     built either way).
    - *Offset* leaves a gap between a layer and the one inside it. An empty layer
      acts as a 1-tile spacer.
    - Picking another item (or quality) for a layer keeps its settings where the

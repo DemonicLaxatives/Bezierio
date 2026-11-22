@@ -98,6 +98,24 @@ lib["delete"] = function(e)
     layers_changed(e.player_index)
 end
 
+--- Swap the sides: layer k becomes layer -k (layer 0 stays).
+--- @param e EventData.on_gui_click
+lib["mirror"] = function(e)
+    local layers = state.layers(e.player_index)
+    -- (Not -k for 0: Factorio's Lua numbers are doubles, and -0 prints as "-0".)
+    local function opposite(k) return k == 0 and 0 or -k end
+    local mirrored = {}
+    for k, layer in pairs(layers) do
+        layer.idx = opposite(k)
+        mirrored[opposite(k)] = layer
+    end
+    for k in pairs(layers) do layers[k] = nil end
+    for k, layer in pairs(mirrored) do layers[k] = layer end
+    local ui = state.ui(e.player_index)
+    ui.selected_layer = opposite(ui.selected_layer)
+    layers_changed(e.player_index)
+end
+
 --- The item picker changed: replace the layer with a fresh one for that item,
 --- keeping the settings it shares with the old one.
 --- @param e EventData.on_gui_elem_changed
@@ -146,6 +164,16 @@ lib["set_value"] = function(e)
     local player = game.get_player(e.player_index)
     if player then layer_view.sync_value(player, layer, field_name) end
     state.changed(e.player_index)
+end
+
+--- Show or hide a layer in the build preview (only the drawing changes).
+--- @param e EventData.on_gui_checked_state_changed
+lib["toggle_preview"] = function(e)
+    local idx = tonumber(e.element.tags.idx)
+    local layer = idx and state.layers(e.player_index)[idx]
+    if not layer then return end
+    if e.element.state then layer.preview = nil else layer.preview = false end
+    state.request_redraw(e.player_index)
 end
 
 --- @param e EventData.on_gui_checked_state_changed

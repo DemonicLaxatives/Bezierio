@@ -128,11 +128,34 @@ Done (group a):
 7. **Split the GUI test** into `points`, `layers` and `build` scenarios with a
    shared `lib/flow.lua`; `tests/run_all.sh` runs everything.
 
+Done (group b):
+
+3. **Smart pole placement:** a pole layer option. Poles go as far apart as the
+   wires reach, but early enough that every powered entity in the plan (electric
+   energy source: turrets, roboports, ...) is in a supply area. Ones no pole can
+   reach are counted and shown ("N unpowered"). Spacing is greyed out.
+6. **Shape helpers:** circle, ellipse and arc as curve kinds (a drop-down next to
+   the pointer button), placed with the pointer by their handles (centre + radius
+   point; centre + axis end + width point; centre + start + end) and sampled
+   exactly; each kind keeps its own points. Mirror the layer stack.
+
+Group b follow-ups (done):
+
+- Shapes are placed with the pointer instead of typed in (the numeric pane is
+  gone), and dragging a shape's centre moves the whole shape.
+- Move mode works on any curve: clicks move its centre there, right-click stops.
+- Offsetting sideways was dropped.
+- Reverse flips the direction of any kind (layers swap sides; inside / outside for
+  a circle) without touching its points: the spline no longer reorders them. Each
+  kind remembers its own direction, and the button shows it.
+- The drawing shows how the handles are used: the ellipse's axes and the points
+  its width handle and the arc's end handle actually use (marked, with a thin line
+  from the handle); the point list shows the resulting radii and arc angle.
+- Each layer in the list has a checkbox for showing it in the build preview (it's
+  built either way), and the layer buttons show non-normal quality.
+
 To do:
 
-3. **Pole smart placement.** Override spacing, placing the poles as far as possible from one another when there's nothing to power,
-  but place one early to ensure that every power network member in the plan gets a connection.
-  Just like drag placing poles works in game.
 4. **More layer types**, prioritised by defence use:
    - pipes and belts 
       - directional: needs the tangent → direction mapping
@@ -161,9 +184,6 @@ To do:
    `placement = "unsupported"` today). Give the user a toggle to lay elevated or normal rails, 
    will have to do the support calculations ourselves.
 
-6. **Shape helpers:** circle/arc/ellipse generators (see
-   `python_scripts/generate_circles.py`), mirroring the layer stack, offsetting the
-   whole curve.
 
 ## Phase 3: release, CI and automated release
 
@@ -215,6 +235,7 @@ To do:
 
 ### Release hygiene for the first release (0.2.0)
 
+- GUI upgrades, make it more cohesive and nicer. Have the panels, and elements within them align to one another. Give the list entries alternating shaded backgrounds. The button for adding a layer should take the full width of the layer in gui, but also shorter in height. Give the user The option to hide some parts of the gui, like the point coordinates, layer controls, etc. and in the collapsed mode hide some of the buttons and controls.
 - `debug.lua` `lib.debug = false` (enforced by the release check above).
 - New screenshots for the README and mod portal. The current ones show the 0.1
   curve projector.
@@ -222,7 +243,7 @@ To do:
   ghost quality.
 - A real multiplayer test: a manual session with two players (everything is per
   player and in `storage`, but nothing has run two players at once yet).
-- Remove the migrations made during development, they're usefull for seamless testing but serve no purpose for the end user on initial release.
+- Remove the dev-migrations, they're usefull for seamless testing but serve no purpose for the end user on initial release.
 - A storage migration test ground work, there will be no migrations for release: create a save with schema N, load it with N+1, check
   nothing crashes (`--test-save`). Releases are when old saves start to matter. 
 - A full review.

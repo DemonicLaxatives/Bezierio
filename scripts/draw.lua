@@ -6,6 +6,8 @@
 local vect = require("scripts.vector_math")
 local state = require("scripts.state")
 local palette = require("scripts.palette")
+local curve_lib = require("scripts.curve.curve")
+local shapes = require("scripts.curve.shapes")
 
 local lib = {}
 
@@ -59,8 +61,10 @@ local function base_params(player)
     return { surface = player.surface, players = { player.index }, visible = true }
 end
 
---- Control point markers and the lines joining them in order. The point selected
---- for the pointer is highlighted.
+--- Point markers: a spline's control points and the dashed lines joining them in
+--- order, or a shape's handles with dashed lines from its centre. The point
+--- selected for the pointer is highlighted; in move mode, so is the centre the
+--- move puts where you click.
 --- @param player LuaPlayer
 --- @param controller Controller
 local function draw_control_points(player, controller)
@@ -69,6 +73,8 @@ local function draw_control_points(player, controller)
     local point_color = palette.named(view.point_color)
     local selected_color = palette.named(view.selected_color)
     local sprites = state.sprites(player.index).control_points
+    local points = curve_lib.active(curve)
+    local names = shapes.HANDLES[curve.kind]
 
     local circle = base_params(player)
     circle.radius = 0.5
@@ -79,12 +85,12 @@ local function draw_control_points(player, controller)
     label.color = { r = 1, g = 1, b = 1, a = 1 }
     label.scale = 3
 
-    for i, point in ipairs(curve.points) do
+    for i, point in ipairs(points) do
         circle.target = point
         circle.color = (i == selected) and selected_color or point_color
         table.insert(sprites, rendering.draw_circle(circle))
         label.target = point
-        label.text = "P" .. i
+        label.text = names and { "bezierio-handle-short." .. (names[i] or "center") } or ("P" .. i)
         table.insert(sprites, rendering.draw_text(label))
     end
 
@@ -93,15 +99,58 @@ local function draw_control_points(player, controller)
     line.width = 2
     line.dash_length = 0.5
     line.gap_length = 0.25
-    local points = curve.points
     local count = #points
-    for i = 1, count - 1 do
-        line.from, line.to = points[i], points[i + 1]
-        table.insert(sprites, rendering.draw_line(line))
+    if names then
+        -- How the handles are used: the ellipse's axes, and where a handle that is
+        -- only partly used (ellipse width, arc end) actually lands, with a thin
+        -- line from the handle to it.
+        local construction = shapes.construction(curve.kind, points)
+        local used = {}
+        for _, u in ipairs(construction and construction.used or {}) do used[u.handle] = u.at end
+        for _, axis in ipairs(construction and construction.axes or {}) do
+            line.from, line.to = axis.from, axis.to
+            table.insert(sprites, rendering.draw_line(line))
+        end
+        for i = 2, count do
+            if not (construction and construction.axes[1] and i == 2) then -- the axis covers it
+                line.from, line.to = points[1], used[i] or points[i]
+                table.insert(sprites, rendering.draw_line(line))
+            end
+        end
+        local thin = base_params(player)
+        thin.color = { r = 1, g = 1, b = 1, a = 0.6 }
+        thin.width = 1
+        thin.dash_length = 0.2
+        thin.gap_length = 0.2
+        local marker = base_params(player)
+        marker.radius = 0.35
+        marker.filled = true
+        marker.color = palette.named(view.point_color, 0.8)
+        for i, at in pairs(used) do
+            thin.from, thin.to = points[i], at
+            table.insert(sprites, rendering.draw_line(thin))
+            marker.target = at
+            table.insert(sprites, rendering.draw_circle(marker))
+        end
+    else
+        for i = 1, count - 1 do
+            line.from, line.to = points[i], points[i + 1]
+            table.insert(sprites, rendering.draw_line(line))
+        end
+        if curve.closed and count >= 3 then
+            line.from, line.to = points[count], points[1]
+            table.insert(sprites, rendering.draw_line(line))
+        end
     end
-    if curve.closed and count >= 3 then
-        line.from, line.to = points[count], points[1]
-        table.insert(sprites, rendering.draw_line(line))
+
+    local center = controller.ui.pointer_mode == "move" and curve_lib.center(curve)
+    if center then
+        local marker = base_params(player)
+        marker.target = center
+        marker.radius = 0.8
+        marker.filled = true
+        marker.color = palette.named(view.selected_color, 0.6)
+        table.insert(sprites, rendering.draw_circle(marker))
     end
 end
 
@@ -211,9 +260,10 @@ end
 --- @param view ViewSettings
 --- @param progress DrawProgress
 --- @param plan BuildPlan
+--- @param hidden table<integer, boolean>  # layers not drawn
 --- @param budget number
 --- @return number used, boolean caught_up
-local function step_preview(player, view, progress, plan, budget)
+local function step_preview(player, view, progress, plan, hidden, budget)
     local used = 0
     local sprites = state.sprites(player.index).preview
     local entity_alpha = view.preview_opacity / 100
@@ -226,10 +276,11 @@ local function step_preview(player, view, progress, plan, budget)
         if progress.preview_tiles < #plan.tiles then
             local i = progress.preview_tiles + 1
             local j = run_end(plan.tiles, i, tile_cell)
-            rect.color = palette.layer_color(plan.tiles[i].layer, tile_alpha)
-            rect.left_top, rect.right_bottom = run_box(plan.tiles, i, j, tile_cell)
             progress.preview_tiles = j
             used = used + (j - i + 1) * lib.COST.cell
+            if hidden[plan.tiles[i].layer] then goto continue end
+            rect.color = palette.layer_color(plan.tiles[i].layer, tile_alpha)
+            rect.left_top, rect.right_bottom = run_box(plan.tiles, i, j, tile_cell)
         elseif plan.done and (progress.preview_warnings or 0) < #plan.warnings then
             -- Tight bends: drawn once the plan is complete (the list grows while planning).
             progress.preview_warnings = (progress.preview_warnings or 0) + 1
@@ -252,6 +303,11 @@ local function step_preview(player, view, progress, plan, budget)
                 rect.left_top, rect.right_bottom = run_box(plan.entities, i, j, entity_cell)
                 progress.preview_entities = j
                 used = used + (j - i + 1) * lib.COST.cell
+                if hidden[entity.layer] then goto continue end
+            elseif hidden[entity.layer] then
+                progress.preview_entities = i
+                used = used + lib.COST.cell
+                goto continue
             else
                 local half = entity.size / 2 - 0.05
                 rect.left_top = vect.sub(entity.position, { x = half, y = half })
@@ -294,7 +350,11 @@ function lib.step(player, controller, plan_job, budget)
         used, caught_up = used + u, caught_up and done
     end
     if ui.preview_build then
-        local u, done = step_preview(player, controller.view, progress, plan_job.plan, budget - used)
+        local hidden = {}
+        for idx, layer in pairs(state.layers_of(controller)) do
+            if layer.preview == false then hidden[idx] = true end
+        end
+        local u, done = step_preview(player, controller.view, progress, plan_job.plan, hidden, budget - used)
         used, caught_up = used + u, caught_up and done
     end
     return used, caught_up

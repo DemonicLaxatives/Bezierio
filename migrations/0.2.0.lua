@@ -15,5 +15,5 @@ end
 for key in pairs(storage) do storage[key] = nil end
 storage.controllers = {}
 storage.sprites = {}
-storage.schema_version = 5
+storage.schema_version = 8
 storage.rebuild_needed = true

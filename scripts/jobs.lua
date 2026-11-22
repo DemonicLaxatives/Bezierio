@@ -75,6 +75,9 @@ local function report_build(player, job)
     if plan.gaps > 0 then
         player.print({ "bezierio-message.pole-gaps", tostring(plan.gaps) })
     end
+    if plan.unpowered > 0 then
+        player.print({ "bezierio-message.unpowered", tostring(plan.unpowered) })
+    end
 end
 
 --- The status line: what's happening right now.
@@ -146,10 +149,11 @@ local function show_totals(player, controller, plan)
     local items = window.find(player, "totals_items")
     local bends = window.find(player, "totals_bends")
     local gaps = window.find(player, "totals_gaps")
-    if not (length and items and bends and gaps) then return end
+    local unpowered = window.find(player, "totals_unpowered")
+    if not (length and items and bends and gaps and unpowered) then return end
     if not plan then
         length.caption, items.caption, items.tooltip = "", "", ""
-        bends.visible, gaps.visible = false, false
+        bends.visible, gaps.visible, unpowered.visible = false, false, false
         return
     end
     length.caption = { "label.totals", string.format("%.0f", plan.length) }
@@ -158,6 +162,8 @@ local function show_totals(player, controller, plan)
     bends.visible = #plan.warnings > 0
     gaps.caption = { "label.totals-gaps", tostring(plan.gaps) }
     gaps.visible = plan.gaps > 0
+    unpowered.caption = { "label.totals-unpowered", tostring(plan.unpowered) }
+    unpowered.visible = plan.unpowered > 0
 end
 
 --- @param player LuaPlayer

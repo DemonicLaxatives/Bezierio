@@ -16,6 +16,7 @@ local vect = require("scripts.vector_math")
 local geometry = require("scripts.build.geometry")
 local curve_lib = require("scripts.curve.curve")
 local registry = require("scripts.layers.registry")
+local smart_poles = require("scripts.build.smart_poles")
 
 local lib = {}
 
@@ -40,6 +41,7 @@ lib.COST = {
 --- @field position Vector
 --- @field size integer
 --- @field layer integer
+--- @field frame integer|nil   # spaced entities: the curve sample they were placed at
 
 --- @class PlannedTile
 --- @field name string
@@ -60,6 +62,7 @@ lib.COST = {
 --- @field counts table<integer, integer>   # placements per layer index
 --- @field chains table<integer, PlanChain> # pole layers: poles in order, for wiring
 --- @field gaps integer           # consecutive poles out of wire reach (no room for a pole between)
+--- @field unpowered integer      # powered entities no smart pole line could reach
 --- @field warnings Vector[]       # where a bend is tighter than the layers on its inside
 --- @field closed boolean        # the curve is a loop (pole chains close too)
 --- @field done boolean
@@ -89,7 +92,7 @@ lib.COST = {
 --- @field occupied table<string, boolean># cells taken by entities
 --- @field spaced integer[]               # indices into bands, in placement order
 --- @field spaced_cursor integer
---- @field walk {i: integer, travelled: number, next_at: number, last: Vector|nil}|nil
+--- @field walk {i: integer, travelled: number, next_at: number, last: Vector|nil}|SmartWalk|nil
 --- @field outer_plus number              # outermost built distance on the + side (grid units)
 --- @field outer_minus number             # ... on the - side
 --- @field last_warning Vector|nil
@@ -135,7 +138,7 @@ function lib.new_job(curve, layers)
         last_warning = nil,
         plan = {
             entities = {}, tiles = {}, unsupported = {}, skipped = 0,
-            length = 0, counts = {}, chains = {}, gaps = 0, warnings = {},
+            length = 0, counts = {}, chains = {}, gaps = 0, unpowered = 0, warnings = {},
             closed = curve_lib.is_closed(curve),
             done = sampler == nil,
         },
@@ -512,7 +515,8 @@ end
 --- @param job PlannerJob
 --- @param layer Layer
 --- @param pos Vector
-local function commit(job, layer, pos)
+--- @param frame integer|nil  # the curve sample it was placed at
+local function commit(job, layer, pos, frame)
     local size = layer.size
     local x0, y0 = footprint_origin(pos, size)
     for dx = 0, size - 1 do
@@ -522,7 +526,7 @@ local function commit(job, layer, pos)
     end
     local plan = job.plan
     table.insert(plan.entities, {
-        name = layer.name, quality = layer.quality, position = pos, size = size, layer = layer.idx,
+        name = layer.name, quality = layer.quality, position = pos, size = size, layer = layer.idx, frame = frame,
     })
     plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
     local chain = plan.chains[layer.idx]
@@ -586,12 +590,16 @@ local function place(job, layer, walk, target, direction)
             return used
         end
     end
-    commit(job, layer, pos)
+    commit(job, layer, pos, walk.i and math.min(walk.i, #job.frames) or nil)
     walk.last = pos
     return used
 end
 
---- Walk each spaced layer's centre line, placing an entity every `spacing` tiles.
+--- What smart pole placement needs from here.
+local SMART_HELPERS = { find_spot = find_spot, search_spot = search_spot, commit = commit, COST = lib.COST }
+
+--- Walk each spaced layer's centre line, placing an entity every `spacing` tiles
+--- (or, for poles with smart placement, see smart_poles.lua).
 --- @param job PlannerJob
 --- @param budget number
 local function stage_spaced(job, budget)
@@ -607,11 +615,22 @@ local function stage_spaced(job, budget)
             if layer.wire_distance then
                 job.plan.chains[layer.idx] = { wires = layer.connect_with_circuit_wires == true, members = {} }
             end
-            walk = { i = 2, travelled = 0, next_at = spacing, last = nil }
-            job.walk = walk
-            used = used + place(job, layer, walk, geometry.offset_point(frames[1], u_mid), frames[1].t)
+            if layer.smart and layer.wire_distance then
+                walk = smart_poles.new_walk()
+                job.walk = walk
+            else
+                walk = { i = 2, travelled = 0, next_at = spacing, last = nil }
+                job.walk = walk
+                used = used + place(job, layer, walk, geometry.offset_point(frames[1], u_mid), frames[1].t)
+            end
         end
-        while walk.i <= #frames and used < budget do
+        local walked = false
+        if walk.smart then
+            local u
+            u, walked = smart_poles.step(job, walk, band, budget - used, SMART_HELPERS)
+            used = used + u
+        end
+        while not walk.smart and walk.i <= #frames and used < budget do
             local a = geometry.offset_point(frames[walk.i - 1], u_mid)
             local b = geometry.offset_point(frames[walk.i], u_mid)
             local seg = vect.distance(a, b)
@@ -625,7 +644,7 @@ local function stage_spaced(job, budget)
             walk.i = walk.i + 1
             used = used + lib.COST.frame
         end
-        if walk.i > #frames then
+        if walked or (not walk.smart and walk.i > #frames) then
             -- Close a pole loop: the last pole must reach the first.
             local chain = job.plan.chains[layer.idx]
             if job.closed and chain and #chain.members > 1 and walk.last then

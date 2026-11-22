@@ -18,6 +18,7 @@ local lib = {}
 --- @field selected_point integer|nil   # control point the pointer moves (until right-click)
 --- @field selected_layer integer        # layer shown in the detail pane
 --- @field preset_mode "rename"|"export"|"import"|nil  # what the preset bar shows (window only)
+--- @field pointer_mode "move"|nil        # clicks move the curve (until right-click)
 
 --- @class Preset
 --- @field name string
@@ -107,7 +108,7 @@ end
 --- The game doesn't raise on_configuration_changed when it only applied
 --- migrations (2.1.24, mod version unchanged), so `rebuild_needed` makes the next
 --- access do what on_configuration_changed does (lib.ensure_rebuilt).
-lib.SCHEMA_VERSION = 5
+lib.SCHEMA_VERSION = 8
 
 --- Discard everything: a fresh, empty layout.
 local function reset()
@@ -144,6 +145,19 @@ function lib.on_configuration_changed()
     if rendering then rendering.clear(script.mod_name) end
     storage.sprites = {}
     for _, controller in pairs(storage.controllers) do
+        -- Values layers derive from prototypes (sizes, wire reach, power) may have
+        -- changed with the mods; layers whose prototype is gone become empty.
+        if prototypes then
+            for _, preset in pairs(controller.presets) do
+                for idx, layer in pairs(preset.layers) do
+                    if not registry.types[layer.type] or not registry.refresh(layer) then
+                        local empty = registry.new_empty(idx)
+                        empty.offset = layer.offset or 0
+                        preset.layers[idx] = empty
+                    end
+                end
+            end
+        end
         controller.work = lib.new_work()
         controller.redraw = true
         controller.redraw_points = nil

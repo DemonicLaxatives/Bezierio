@@ -61,9 +61,13 @@ step("pointer inserts points, reverse", function(player)
   dev("click", P, "cp_label_3")
   dev("click", P, "reverse_points")
   points = controller().curve.points
-  check(points[1].x == 30 and points[3].x == -30.3 and controller().ui.selected_point == 1, "reversed, selection follows")
+  check(points[1].x == -30.3 and points[3].x == 30 and controller().ui.selected_point == 3, "reversed: points and selection unchanged")
+  check(controller().curve.reversed.catmull_rom == true and el(player, "reverse_points").toggled, "reversed, button shows it")
+  dev("set_elem", P, "layer_type", { name = "stone-wall", quality = "normal" })
+  local plan = dev("plan", P)
+  check(plan.entities[1] and math.abs(plan.entities[1].position.x - 30) < 3, "the curve now starts at P3")
   dev("click", P, "reverse_points")
-  check(controller().curve.points[1].x == -30.3 and controller().ui.selected_point == 3, "reversed back")
+  check(not controller().curve.reversed.catmull_rom and not el(player, "reverse_points").toggled, "reversed back")
   dev("click", P, "cp_label_3")
   check(controller().ui.selected_point == nil, "list button deselects")
 end)
@@ -102,6 +106,70 @@ step("closed loop", function(player)
   check(plan.closed and #plan.entities > 100, "closed loop planned: " .. #plan.entities)
   dev("set_checked", P, "closed_loop", false)
 end)
+
+step("shapes with the pointer", function(player)
+  local function active() return controller().curve.handles[controller().curve.kind] end
+  local spline = controller().curve.points
+  dev("select", P, "curve_kind", 2) -- circle
+  check(controller().curve.kind == "circle" and not el(player, "closed_loop").visible, "circle selected, no closed toggle")
+  check(el(player, "no_points").caption[1] == "label.next-handle", "says what to click next")
+  dev("click", P, "pointer_button")
+  dev("pointer", P, { x = 0.5, y = 0.5 })      -- centre
+  dev("pointer", P, { x = 0.5, y = -9.5 })     -- radius 10
+  dev("pointer", P, { x = 30, y = 30 })        -- a third handle: refused
+  check(#active() == 2 and not el(player, "no_points"), "two handles, list complete")
+  local plan = dev("plan", P)
+  check(plan.closed and #plan.entities > 40, "circle planned: " .. #plan.entities)
+  for _, e in pairs(plan.entities) do
+    local d = math.sqrt((e.position.x - 0.5) ^ 2 + (e.position.y - 0.5) ^ 2)
+    check(d > 8.5 and d < 11.5, "wall on the circle")
+  end
+
+  -- the centre moves the whole circle
+  dev("pointer", P, { x = 0.5, y = 0.5 })      -- select C
+  dev("pointer", P, { x = 20.5, y = 0.5 })     -- move it
+  check(active()[1].x == 20.5 and active()[2].x == 20.5 and active()[2].y == -9.5, "circle moved with its centre")
+  dev("pointer_remove", P, { x = 0, y = 0 })   -- deselect
+  dev("click", P, "reverse_points")
+  check(controller().curve.reversed.circle == true and el(player, "reverse_points").toggled, "reverse flips the circle's direction")
+
+  -- move mode: clicks move the centre there; right-click ends it
+  dev("click", P, "move_curve")
+  check(controller().ui.pointer_mode == "move", "move mode on")
+  dev("pointer", P, { x = -10.5, y = 5.5 })
+  check(active()[1].x == -10.5 and active()[1].y == 5.5 and active()[2].y == -4.5, "moved to the click")
+  dev("pointer_remove", P, { x = 0, y = 0 })
+  check(controller().ui.pointer_mode == nil and not el(player, "move_curve").toggled, "right-click ends move mode")
+
+  check(el(player, "shape_info").caption[1] == "label.shape-info-circle" and el(player, "shape_info").caption[2] == "10.0", "radius shown")
+
+  -- an ellipse: its width handle only counts by its distance from the first axis
+  dev("select", P, "curve_kind", 3)
+  dev("pointer", P, { x = 0, y = 0 })
+  dev("pointer", P, { x = 20, y = 0 })
+  dev("pointer", P, { x = 12, y = 6 })
+  check(el(player, "shape_info").caption[2] == "20.0" and el(player, "shape_info").caption[3] == "6.0", "radii shown: 20 x 6")
+
+  -- an arc: centre, start, end; then back to the curve, its points untouched
+  dev("select", P, "curve_kind", 4)
+  dev("pointer", P, { x = 0, y = 0 })
+  dev("pointer", P, { x = 0, y = -15 })
+  dev("pointer", P, { x = 30, y = 0 })
+  check(#active() == 3 and not dev("plan", P).closed and #dev("plan", P).entities > 10, "arc planned")
+  local info = el(player, "shape_info").caption
+  check(info[2] == "15.0" and info[3] == "90", "arc shown as radius 15, 90 degrees (the end handle's distance doesn't count)")
+  dev("select", P, "curve_kind", 1)
+  check(controller().curve.kind == "catmull_rom" and el(player, "closed_loop").visible
+    and #controller().curve.points == #spline and el(player, "cp_label_1").caption == "P1", "back to the curve, points kept")
+
+  dev("click", P, "move_curve")
+  dev("pointer", P, { x = 100, y = 100 })
+  local p = controller().curve.points
+  check(math.abs((p[1].x + p[3].x) / 2 - 100) < 0.01, "spline moved by its middle")
+  dev("pointer", P, { x = 0, y = -17.5 })      -- back roughly where it was
+  dev("pointer_remove", P, { x = 0, y = 0 })
+  dev("click", P, "pointer_button")
+end, "idle")
 
 step("clear points", function(player)
   dev("click", P, "control_points_clear")

@@ -47,6 +47,11 @@ function lib.add_slider_field(flow, layer, field)
         discrete_values = true,
     }
     slider.style.width = 120
+    local disabled = field.disabled_by ~= nil and layer[field.disabled_by] == true
+    if disabled then
+        slider.enabled = false
+        label.tooltip = { "tooltip.disabled-by-" .. locale_key(field.disabled_by) }
+    end
 
     if field.labels then
         local indicator = frame.add { type = "label", name = name .. "_value", caption = field.labels[value] }
@@ -60,6 +65,7 @@ function lib.add_slider_field(flow, layer, field)
             numeric = true,
             allow_decimal = false,
             allow_negative = min < 0,
+            enabled = not disabled,
         }
         indicator.style.width = 40
     end
@@ -147,6 +153,13 @@ local function add_row(list, layer, selected)
     row.style.vertical_align = "center"
 
     row.add {
+        type = "checkbox",
+        name = "layer_preview_" .. k,
+        state = layer.preview ~= false,
+        tooltip = { "tooltip.layer-preview" },
+        tags = { group = "layer", action = "toggle_preview", idx = k },
+    }
+    local select = row.add {
         type = "sprite-button",
         name = "layer_select_" .. k,
         sprite = layer.placed_by and ("item/" .. layer.placed_by) or nil,
@@ -155,6 +168,7 @@ local function add_row(list, layer, selected)
         toggled = selected,
         style = "slot_button",
     }
+    if layer.placed_by and layer.quality and layer.quality ~= "normal" then select.quality = layer.quality end
     local label = row.add {
         type = "label",
         name = "layer_label_" .. k,
@@ -195,12 +209,21 @@ function lib.fill(column, player_index)
     if not layers[ui.selected_layer] then ui.selected_layer = 0 end
 
     local list = column.add { type = "frame", name = "layer_flow", direction = "vertical", style = "inside_shallow_frame_with_padding" }
-    list.add {
+    local top = list.add { type = "flow", name = "layer_list_top", direction = "horizontal" }
+    top.add {
         type = "sprite-button",
         name = "add_layer_above",
         tags = { group = "layer", action = "new_layer", direction = 1 },
         sprite = "utility/add",
         tooltip = { "tooltip.add-layer" },
+        style = "tool_button",
+    }
+    top.add {
+        type = "sprite-button",
+        name = "layer_mirror",
+        tags = { group = "layer", action = "mirror" },
+        sprite = "bezierio-mirror",
+        tooltip = { "tooltip.mirror-layers" },
         style = "tool_button",
     }
     local rows = list.add {

@@ -42,3 +42,14 @@ for _, entry in ipairs(palette.NAMED) do
     },
   }
 end
+
+data:extend {
+  {
+    type = "sprite",
+    name = "bezierio-mirror",
+    filename = "__Bezierio__/graphics/icons/mirror.png",
+    size = 32,
+    scale = 0.5,
+    flags = { "gui-icon" },
+  },
+}

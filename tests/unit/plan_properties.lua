@@ -262,6 +262,117 @@ if underlay_with_overlap == 0 then
   print("FAIL no underlay ever lay under an entity")
 end
 
+-- Smart poles: every powered entity is in some pole's supply area (or counted as
+-- unpowered), consecutive poles stay in reach (or are counted gaps), and without
+-- anything to power the poles are about a wire reach apart.
+local smart_cases, smart_r = 80, helpers.rng(4242)
+local MARGIN = 0.3
+local smart_unpowered, smart_consumers = 0, 0
+for it = 1, smart_cases do
+  local raw = helpers.random_points(smart_r)
+  local closed = #raw >= 3 and it % 3 == 0
+  local wire = smart_r.int(6, 30)
+  local reach = smart_r.range(2, 9)
+  local layers = {
+    [0] = { idx = 0, type = "wall", name = "wall", quality = "normal", radius = 1, checkerboard = 0, size = 1, offset = 0 },
+    [1] = { idx = 1, type = "electric-pole", name = "pole", quality = "normal", size = smart_r.int(1, 2), offset = smart_r.int(0, 2), spacing = 3, wire_distance = wire, reach = reach, smart = true },
+  }
+  local with_consumers = it % 4 ~= 0
+  if with_consumers then
+    layers[2] = { idx = 2, type = "electric-turret", name = "turret", quality = "normal", size = 2, offset = smart_r.int(0, 3), spacing = smart_r.int(2, 20), needs_power = true }
+    layers[-1] = { idx = -1, type = "roboport", name = "roboport", quality = "normal", size = 4, offset = smart_r.int(0, 8), spacing = smart_r.int(4, 40), needs_power = true }
+  end
+  local plan = helpers.plan(raw, layers, nil, closed)
+  local problems = {}
+  local poles, consumers = {}, {}
+  for _, e in ipairs(plan.entities) do
+    if e.layer == 1 then table.insert(poles, e.position) end
+    if e.layer == 2 or e.layer == -1 then table.insert(consumers, e) end
+  end
+  local uncovered = 0
+  for _, c in ipairs(consumers) do
+    local d = reach + c.size / 2 - MARGIN
+    local ok = false
+    for _, p in ipairs(poles) do
+      if math.abs(c.position.x - p.x) < d and math.abs(c.position.y - p.y) < d then ok = true; break end
+    end
+    if not ok then uncovered = uncovered + 1 end
+  end
+  if uncovered ~= plan.unpowered then
+    table.insert(problems, uncovered .. " consumers unpowered, " .. plan.unpowered .. " reported")
+  end
+  smart_unpowered, smart_consumers = smart_unpowered + uncovered, smart_consumers + #consumers
+  local chain = plan.chains[1]
+  local out_of_reach = 0
+  local n = #chain.members
+  for m = 1, (closed and n > 2) and n or n - 1 do
+    local pa = plan.entities[chain.members[m]].position
+    local pb = plan.entities[chain.members[m % n + 1]].position
+    if math.sqrt((pa.x - pb.x) ^ 2 + (pa.y - pb.y) ^ 2) > wire + 1e-9 then out_of_reach = out_of_reach + 1 end
+  end
+  if out_of_reach ~= plan.gaps then table.insert(problems, out_of_reach .. " pairs out of reach, gaps " .. plan.gaps) end
+  if not with_consumers and plan.length > 0 then
+    -- The centre line can be longer than the curve on the outside of bends.
+    local limit = math.ceil(plan.length * 1.5 / math.max(1, wire - 2)) + 2
+    if #poles > limit then table.insert(problems, #poles .. " poles for length " .. string.format("%.0f", plan.length) .. ", reach " .. wire) end
+  end
+  if #problems > 0 then
+    failures = failures + 1
+    print("FAIL smart #" .. it .. (closed and " (closed)" or "") .. ": " .. table.concat(problems, "; "))
+  end
+end
+iterations = iterations + smart_cases
+print(string.format("(smart poles: %d of %d powered entities out of reach; the test puts some on the far side on purpose)", smart_unpowered, smart_consumers))
+
+-- Shapes: a circle or ellipse of 1-wide wall is one unbroken ring (every cell has
+-- two neighbours after pruning spurs); an arc is one piece. Either direction.
+local shape_cases, shape_r = 60, helpers.rng(777)
+for it = 1, shape_cases do
+  local kind = ({ "circle", "ellipse", "arc" })[it % 3 + 1]
+  local cx, cy = shape_r.range(-50, 50), shape_r.range(-50, 50)
+  local rr = shape_r.range(4, 60)
+  local ang = shape_r.range(0, 2 * math.pi)
+  local handles = { { x = cx, y = cy }, { x = cx + rr * math.cos(ang), y = cy + rr * math.sin(ang) } }
+  if kind == "ellipse" then
+    local other = shape_r.range(4, 60)
+    handles[3] = { x = cx - other * math.sin(ang), y = cy + other * math.cos(ang) }
+  elseif kind == "arc" then
+    local to = ang + shape_r.range(0.3, 6)
+    handles[3] = { x = cx + math.cos(to), y = cy + math.sin(to) }
+  end
+  local curve = helpers.shape_curve(kind, handles, it % 2 == 0)
+  local plan = helpers.plan_curve(curve, { [0] = { idx = 0, type = "wall", name = "wall", quality = "normal", radius = 1, checkerboard = 0, size = 1, offset = 0 } })
+  local walls = {}
+  for _, e in ipairs(plan.entities) do
+    local x, y = math.floor(e.position.x), math.floor(e.position.y)
+    walls[x .. "," .. y] = { x, y }
+  end
+  local problems = {}
+  local pieces = components(walls, 1)
+  if pieces ~= 1 then table.insert(problems, pieces .. " pieces") end
+  if kind ~= "arc" then
+    local ring = {}
+    for k, cell in pairs(walls) do ring[k] = cell end
+    local pruned = true
+    while pruned do
+      pruned = false
+      for k, cell in pairs(ring) do
+        local m = 0
+        for _, dd in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+          if ring[(cell[1] + dd[1]) .. "," .. (cell[2] + dd[2])] then m = m + 1 end
+        end
+        if m < 2 then ring[k] = nil; pruned = true end
+      end
+    end
+    if next(ring) == nil then table.insert(problems, "not a closed ring") end
+  end
+  if #problems > 0 then
+    failures = failures + 1
+    print(string.format("FAIL shape #%d %s r=%.1f: %s", it, kind, rr, table.concat(problems, "; ")))
+  end
+end
+iterations = iterations + shape_cases
+
 print(string.format("(%d plans had pole gaps where there was no room for a pole)", gap_plans))
 print(string.format("%d/%d random plans passed", iterations - failures, iterations))
 os.exit(failures == 0 and 0 or 1)
