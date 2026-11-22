@@ -198,6 +198,70 @@ if #straight.warnings ~= 0 then failures = failures + 1; print("FAIL straight li
 local hairpin = helpers.plan({ { x = 0, y = 0 }, { x = 30, y = 0 }, { x = 30, y = 3 }, { x = 0, y = 3 } }, side)
 if #hairpin.warnings == 0 then failures = failures + 1; print("FAIL hairpin has no bend warnings") end
 
+-- Underlay tile layers take no room: adding one anywhere in the stack leaves every
+-- entity where it was, keeps the other tiles, and only adds tiles in free cells.
+local underlay_cases, underlay_with_overlap = 60, 0
+for it = 1, underlay_cases do
+  local raw = helpers.random_points(r)
+  local layers = helpers.random_layers(r)
+  local closed = #raw >= 3 and it % 2 == 0
+  local dir = r.int(0, 1) == 1 and 1 or -1
+  local outer = 0
+  while layers[outer + dir] do outer = outer + dir end
+  local at = dir * r.int(1, math.abs(outer) + 1)
+  local with = {}
+  for k, layer in pairs(layers) do
+    local shifted = helpers.deepcopy(layer)
+    if k * dir >= at * dir then shifted.idx = k + dir end
+    with[shifted.idx] = shifted
+  end
+  with[at] = { idx = at, type = "tile", name = "under", quality = "normal", radius = r.int(1, 6), checkerboard = 0, size = 1, offset = r.int(0, 2), under = true }
+
+  local base = helpers.plan(raw, layers, nil, closed)
+  local plan = helpers.plan(raw, with, nil, closed)
+  local problems = {}
+  local function entity_keys(p)
+    local keys = {}
+    for _, e in ipairs(p.entities) do table.insert(keys, string.format("%s@%g,%g", e.name, e.position.x, e.position.y)) end
+    table.sort(keys)
+    return table.concat(keys, " ")
+  end
+  if entity_keys(base) ~= entity_keys(plan) then
+    table.insert(problems, "entities moved")
+    if os.getenv("DEBUG_UNDERLAY") then
+      print(entity_keys(base)); print(entity_keys(plan))
+      for k, l in pairs(with) do print(k, l.type, l.radius, l.offset, l.size, l.spacing) end
+      for _, p in ipairs(raw) do print(p.x, p.y) end
+      print("closed", closed)
+    end
+  end
+  local cells, under_cells = {}, {}
+  for _, t in ipairs(plan.tiles) do
+    local k = t.x .. "," .. t.y
+    if cells[k] then table.insert(problems, "tile overlap at " .. k) end
+    cells[k] = t.name
+    if t.name == "under" then under_cells[k] = true end
+  end
+  for _, t in ipairs(base.tiles) do
+    if cells[t.x .. "," .. t.y] ~= t.name then table.insert(problems, "tile lost at " .. t.x .. "," .. t.y); break end
+  end
+  for _, e in ipairs(plan.entities) do
+    if under_cells[math.floor(e.position.x) .. "," .. math.floor(e.position.y)] then
+      underlay_with_overlap = underlay_with_overlap + 1
+      break
+    end
+  end
+  if #problems > 0 then
+    failures = failures + 1
+    print("FAIL underlay #" .. it .. " at L" .. at .. ": " .. table.concat(problems, "; ", 1, math.min(3, #problems)))
+  end
+end
+iterations = iterations + underlay_cases
+if underlay_with_overlap == 0 then
+  failures = failures + 1
+  print("FAIL no underlay ever lay under an entity")
+end
+
 print(string.format("(%d plans had pole gaps where there was no room for a pole)", gap_plans))
 print(string.format("%d/%d random plans passed", iterations - failures, iterations))
 os.exit(failures == 0 and 0 or 1)

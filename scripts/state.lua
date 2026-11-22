@@ -7,6 +7,7 @@
 --- storage.item_filter      filter for the layer item pickers
 local registry = require("scripts.layers.registry")
 local curve_lib = require("scripts.curve.curve")
+local palette = require("scripts.palette")
 
 local lib = {}
 
@@ -14,7 +15,7 @@ local lib = {}
 --- @field preset_index integer
 --- @field draw_curve boolean
 --- @field preview_build boolean
---- @field held_point integer|nil       # control point picked up by the pointer, to be dropped
+--- @field selected_point integer|nil   # control point the pointer moves (until right-click)
 --- @field selected_layer integer        # layer shown in the detail pane
 
 --- @class Preset
@@ -43,9 +44,11 @@ local lib = {}
 --- @field ui InterfaceState
 --- @field curve Curve
 --- @field presets Preset[]
+--- @field view ViewSettings             # how this player's drawing looks
 --- @field revision integer               # bumped whenever the curve or layers change
 --- @field changed_tick integer|nil        # tick of the last change (planning waits a moment)
 --- @field redraw boolean                 # view settings changed; redraw from scratch
+--- @field redraw_points boolean|nil       # only the point markers changed (selection)
 --- @field work Work
 
 --- @class SpriteCache
@@ -70,8 +73,9 @@ end
 --- @return Controller
 function lib.new_controller()
     return {
-        ui = { preset_index = 1, draw_curve = false, preview_build = false, held_point = nil, selected_layer = 0 },
+        ui = { preset_index = 1, draw_curve = false, preview_build = false, selected_point = nil, selected_layer = 0 },
         curve = curve_lib.new(),
+        view = lib.default_view(),
         presets = { { name = "Default", layers = { [0] = registry.new_empty(0) } } },
         revision = 1,
         redraw = true,
@@ -79,9 +83,16 @@ function lib.new_controller()
     }
 end
 
+--- @return ViewSettings
+function lib.default_view()
+    local view = {}
+    for k, v in pairs(palette.VIEW_DEFAULTS) do view[k] = v end
+    return view
+end
+
 -- Migrations ------------------------------------------------------------------
 
-lib.SCHEMA_VERSION = 4
+lib.SCHEMA_VERSION = 5
 
 --- MIGRATIONS[v] upgrades storage from version v to v + 1. Never edit a released
 --- migration; add a new one and bump SCHEMA_VERSION.
@@ -161,6 +172,17 @@ local MIGRATIONS = {
             controller.work = lib.new_work()
         end
     end,
+
+    -- 4 -> 5: a point picked up by the pointer stays selected after it is moved
+    -- (held_point -> selected_point); per-player view settings.
+    [4] = function()
+        for _, controller in pairs(storage.controllers or {}) do
+            controller.ui.selected_point = controller.ui.held_point
+            controller.ui.held_point = nil
+            controller.view = lib.default_view()
+            controller.redraw = true
+        end
+    end,
 }
 lib.MIGRATIONS = MIGRATIONS
 
@@ -222,6 +244,12 @@ function lib.ui(player_index)
 end
 
 --- @param player_index integer
+--- @return ViewSettings
+function lib.view(player_index)
+    return lib.get(player_index).view
+end
+
+--- @param player_index integer
 --- @return Curve
 function lib.curve(player_index)
     return lib.get(player_index).curve
@@ -263,6 +291,12 @@ end
 --- @param player_index integer
 function lib.request_redraw(player_index)
     lib.get(player_index).redraw = true
+end
+
+--- Only the point markers changed (e.g. the selection): redraw just those.
+--- @param player_index integer
+function lib.request_point_redraw(player_index)
+    lib.get(player_index).redraw_points = true
 end
 
 --- Build once the plan for the current curve and layers is ready.

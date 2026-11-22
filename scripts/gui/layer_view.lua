@@ -92,7 +92,8 @@ local function add_checkbox_field(flow, layer, field)
         type = "checkbox",
         name = field.name,
         caption = { "checkbox." .. locale_key(field.name) },
-        state = layer[field.name],
+        tooltip = { "tooltip." .. locale_key(field.name) },
+        state = layer[field.name] == true,
         tags = { group = "layer", action = "set_flag", field = field.name, idx = layer.idx },
     }
 end
@@ -134,6 +135,9 @@ end
 
 -- Layer list --------------------------------------------------------------------
 
+--- Height of the layer list before it scrolls (about eight rows).
+lib.LIST_HEIGHT = 340
+
 --- @param list LuaGuiElement
 --- @param layer Layer
 --- @param selected boolean
@@ -154,7 +158,9 @@ local function add_row(list, layer, selected)
     local label = row.add {
         type = "label",
         name = "layer_label_" .. k,
-        caption = { "label.layer-row", tostring(k), tostring(registry.thickness(layer)) },
+        caption = registry.is_underlay(layer)
+            and { "label.layer-row-under", tostring(k), tostring(registry.thickness(layer)) }
+            or { "label.layer-row", tostring(k), tostring(registry.thickness(layer)) },
     }
     label.style.font_color = palette.layer_color(k)
     label.style.width = 90
@@ -165,14 +171,15 @@ local function add_row(list, layer, selected)
         { name = "layer_delete_" .. k, sprite = "utility/trash", tooltip = "delete-layer", action = "delete" },
     }
     for _, b in ipairs(buttons) do
+        local fixed = b.action == "delete" and k == 0
         local button = row.add {
             type = "sprite-button",
             name = b.name,
             sprite = b.sprite,
-            tooltip = { "tooltip." .. b.tooltip },
+            tooltip = { "tooltip." .. (fixed and "delete-layer-0" or b.tooltip) },
             tags = { group = "layer", action = b.action, direction = b.direction, idx = k },
             style = "tool_button",
-            enabled = not (b.action == "delete" and k == 0),
+            enabled = not fixed,
         }
         button.style.size = 24
     end
@@ -196,13 +203,20 @@ function lib.fill(column, player_index)
         tooltip = { "tooltip.add-layer" },
         style = "tool_button",
     }
+    local rows = list.add {
+        type = "scroll-pane",
+        name = "layer_rows",
+        horizontal_scroll_policy = "never",
+        vertical_scroll_policy = "auto",
+    }
+    rows.style.maximal_height = lib.LIST_HEIGHT
     local min_layer, max_layer = 0, 0
     for k in pairs(layers) do
         max_layer = math.max(max_layer, k)
         min_layer = math.min(min_layer, k)
     end
     for k = max_layer, min_layer, -1 do
-        if layers[k] then add_row(list, layers[k], k == ui.selected_layer) end
+        if layers[k] then add_row(rows, layers[k], k == ui.selected_layer) end
     end
     list.add {
         type = "sprite-button",
@@ -215,6 +229,8 @@ function lib.fill(column, player_index)
 
     local detail = column.add { type = "frame", name = "layer_detail", direction = "vertical", style = "inside_shallow_frame_with_padding" }
     fill_detail(detail, layers[ui.selected_layer])
+    local selected_row = rows["layer_row_" .. ui.selected_layer]
+    if selected_row then rows.scroll_to_element(selected_row) end
 end
 
 --- @param parent LuaGuiElement

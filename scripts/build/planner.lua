@@ -4,7 +4,9 @@
 --- is centred, layers 1, 2, ... stack outward on the right of the direction of
 --- travel, -1, -2, ... on the left. Each band is a half-open range [lo, hi) of grid
 --- distance, and every cell near the curve is assigned to at most one band (by its
---- centre), so layers never overlap.
+--- centre), so layers never overlap. The exception are underlay tile layers
+--- ("under entities"): they take no room, so the next layer out starts where they
+--- start, and their tiles go under whatever the other bands place in the same cells.
 ---
 --- The job is plain data (no closures, no coroutines), so it can live in `storage`
 --- and continue after save/load. `step` does a bounded amount of work; call it
@@ -19,6 +21,9 @@ local lib = {}
 
 --- Max distance between curve samples, in tiles.
 lib.SAMPLE_STEP = 0.25
+
+--- Spacing of the extra probes past the ends of an open curve, in tiles.
+lib.END_PROBE_STEP = 0.2
 
 --- Work units per operation, for budgeting.
 lib.COST = {
@@ -63,6 +68,7 @@ lib.COST = {
 --- @field layer Layer
 --- @field lo number
 --- @field hi number
+--- @field under boolean   # underlay tile band: shares its cells with the other bands
 
 --- @alias PlannerStage "sample"|"tangents"|"fill"|"normals"|"bands"|"bends"|"rasterize"|"spaced"|"done"
 
@@ -145,28 +151,25 @@ function lib.bands(layers)
     if not base then return bands end
 
     local half = registry.thickness(base) / 2
-    table.insert(bands, { layer = base, lo = -half, hi = half })
+    local base_under = registry.is_underlay(base)
+    table.insert(bands, { layer = base, lo = -half, hi = half, under = base_under })
 
-    local outer = half
-    local k = 1
-    while layers[k] do
-        local layer = layers[k]
-        local lo = outer + (layer.offset or 0)
-        local hi = lo + registry.thickness(layer)
-        table.insert(bands, { layer = layer, lo = lo, hi = hi })
-        outer = hi
-        k = k + 1
-    end
-
-    outer = half
-    k = -1
-    while layers[k] do
-        local layer = layers[k]
-        local hi = -(outer + (layer.offset or 0))
-        local lo = hi - registry.thickness(layer)
-        table.insert(bands, { layer = layer, lo = lo, hi = hi })
-        outer = -lo
-        k = k - 1
+    for _, side in ipairs({ 1, -1 }) do
+        local outer = base_under and 0 or half -- distance from the curve on this side
+        local k = side
+        while layers[k] do
+            local layer = layers[k]
+            local under = registry.is_underlay(layer)
+            local near = outer + (layer.offset or 0)
+            local far = near + registry.thickness(layer)
+            if side == 1 then
+                table.insert(bands, { layer = layer, lo = near, hi = far, under = under })
+            else
+                table.insert(bands, { layer = layer, lo = -far, hi = -near, under = under })
+            end
+            if not under then outer = far end
+            k = k + side
+        end
     end
     return bands
 end
@@ -354,42 +357,67 @@ local function stage_bends(job, budget)
     return used
 end
 
---- Classify the cells around one frame and emit band placements.
+--- Place a band layer's tile or entity in a cell (if its checkerboard keeps it).
+--- @param job PlannerJob
+--- @param layer Layer
+--- @param x integer
+--- @param y integer
+--- @param key string    # cell_key(x, y)
+--- @return boolean  # whether a tile was placed
+local function emit_cell(job, layer, x, y, key)
+    local def = registry.type_of(layer)
+    if def.placement ~= "band" or not checkerboard_keep(x, y, layer.checkerboard) then return false end
+    local plan = job.plan
+    plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
+    if def.output == "tile" then
+        table.insert(plan.tiles, { name = layer.name, x = x, y = y, layer = layer.idx })
+        return true
+    end
+    job.occupied[key] = true
+    table.insert(plan.entities, {
+        name = layer.name, quality = layer.quality,
+        position = { x = x + 0.5, y = y + 0.5 }, size = 1, layer = layer.idx,
+    })
+    return false
+end
+
+--- Classify the cells around one frame and emit band placements: probe across
+--- the curve along the frame's normal, `shift` tiles along its tangent.
 --- @param job PlannerJob
 --- @param f CurveFrame
+--- @param shift number|nil
 --- @return number used
-local function rasterize_frame(job, f)
+local function rasterize_frame(job, f, shift)
     local used = 0
-    local plan, bands, seen = job.plan, job.bands, job.seen
+    local bands, seen = job.bands, job.seen
+    local px, py = f.p.x, f.p.y
+    if shift then px, py = px + f.t.x * shift, py + f.t.y * shift end
     local v = job.umin - 1
     while v <= job.umax + 1 do
         used = used + lib.COST.sweep
         local d = v * f.w
-        local x = math.floor(f.p.x + f.n.x * d)
-        local y = math.floor(f.p.y + f.n.y * d)
+        local x = math.floor(px + f.n.x * d)
+        local y = math.floor(py + f.n.y * d)
         local key = cell_key(x, y)
         if not seen[key] then
             seen[key] = true
             used = used + lib.COST.cell
             local u = geometry.grid_distance(job.frames, job.index, { x = x + 0.5, y = y + 0.5 })
             if u then
+                -- The cell's own band first; then an underlay, unless that placed a tile.
+                local placed_tile = false
                 for _, band in ipairs(bands) do
-                    if u >= band.lo and u < band.hi then
-                        local layer = band.layer
-                        local def = registry.type_of(layer)
-                        if def.placement == "band" and checkerboard_keep(x, y, layer.checkerboard) then
-                            plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
-                            if def.output == "tile" then
-                                table.insert(plan.tiles, { name = layer.name, x = x, y = y, layer = layer.idx })
-                            else
-                                job.occupied[key] = true
-                                table.insert(plan.entities, {
-                                    name = layer.name, quality = layer.quality,
-                                    position = { x = x + 0.5, y = y + 0.5 }, size = 1, layer = layer.idx,
-                                })
-                            end
-                        end
+                    if not band.under and u >= band.lo and u < band.hi then
+                        placed_tile = emit_cell(job, band.layer, x, y, key)
                         break
+                    end
+                end
+                if not placed_tile then
+                    for _, band in ipairs(bands) do
+                        if band.under and u >= band.lo and u < band.hi then
+                            emit_cell(job, band.layer, x, y, key)
+                            break
+                        end
                     end
                 end
             end
@@ -399,12 +427,35 @@ local function rasterize_frame(job, f)
     return used
 end
 
+--- Cells count as beside an open curve's end up to half a grid unit past it (see
+--- geometry.frame_u), which no probe across the end frame may cross. Probe a little
+--- past both ends too.
+--- @param job PlannerJob
+--- @param f CurveFrame
+--- @param outward number  # -1 before the first frame, 1 after the last
+--- @return number used
+local function rasterize_end(job, f, outward)
+    local used = 0
+    local reach = 0.5 * (math.abs(f.t.x) + math.abs(f.t.y)) + 0.5
+    local shift = lib.END_PROBE_STEP
+    while shift < reach do
+        used = used + rasterize_frame(job, f, outward * shift)
+        shift = shift + lib.END_PROBE_STEP
+    end
+    return used
+end
+
 --- @param job PlannerJob
 --- @param budget number
 local function stage_rasterize(job, budget)
     local used, frames = 0, job.frames
     while job.cursor <= #frames and used < budget do
-        used = used + rasterize_frame(job, frames[job.cursor])
+        local f = frames[job.cursor]
+        used = used + rasterize_frame(job, f)
+        if not job.plan.closed then
+            if job.cursor == 1 then used = used + rasterize_end(job, f, -1) end
+            if job.cursor == #frames then used = used + rasterize_end(job, f, 1) end
+        end
         job.cursor = job.cursor + 1
     end
     if job.cursor > #frames then

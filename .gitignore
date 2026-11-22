@@ -1,3 +1,4 @@
 .vscode/**
 **/**/**.kra
 **/__pycache__/**
+*.png~

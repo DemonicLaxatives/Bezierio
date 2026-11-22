@@ -1,18 +1,38 @@
 data:extend {
-  -- With the pointer in hand: click empty ground to add a point, click a point to
-  -- pick it up, click again to drop it.
+  -- With the pointer in hand: click a point to select it; with a point selected,
+  -- click to move it there; otherwise click to add a point at the end.
   {
     type = "custom-input",
     name = "bezierio-pointer",
     key_sequence = "mouse-button-1",
     consuming = "none",
   },
-  -- With the pointer in hand: remove the point under the cursor (or put a held
-  -- point back).
+  -- With the pointer in hand: add a point into the nearest stretch of curve.
+  {
+    type = "custom-input",
+    name = "bezierio-pointer-insert",
+    key_sequence = "SHIFT + mouse-button-1",
+    consuming = "none",
+  },
+  -- With the pointer in hand: deselect the selected point, or remove the point
+  -- under the cursor.
   {
     type = "custom-input",
     name = "bezierio-pointer-remove",
     key_sequence = "mouse-button-2",
+    consuming = "none",
+  },
+  -- With the pointer in hand and a point selected: select the next / previous point.
+  {
+    type = "custom-input",
+    name = "bezierio-select-next",
+    key_sequence = "SHIFT + mouse-wheel-down",
+    consuming = "none",
+  },
+  {
+    type = "custom-input",
+    name = "bezierio-select-previous",
+    key_sequence = "SHIFT + mouse-wheel-up",
     consuming = "none",
   },
   -- Take the pointer.

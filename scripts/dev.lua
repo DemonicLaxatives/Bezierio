@@ -68,6 +68,11 @@ remote.add_interface("bezierio-dev", {
         element.state = checked
         interactions.handle_event(event("on_gui_checked_state_changed", player_index, element))
     end,
+    select = function(player_index, path, index)
+        local element = find(player_index, path)
+        element.selected_index = index
+        interactions.handle_event(event("on_gui_selection_state_changed", player_index, element))
+    end,
     --- over: nil = world click; a path/element = click on that element;
     --- true = over a GUI without an element reported (as for slider clicks)
     pointer = function(player_index, position, over)
@@ -77,11 +82,22 @@ remote.add_interface("bezierio-dev", {
             input_name = "bezierio-pointer", in_gui = over ~= nil, element = element,
         })
     end,
+    pointer_insert = function(player_index, position)
+        custom_input.on_pointer_insert({
+            player_index = player_index, cursor_position = position,
+            input_name = "bezierio-pointer-insert", in_gui = false,
+        })
+    end,
     pointer_remove = function(player_index, position)
         custom_input.on_pointer_remove({
             player_index = player_index, cursor_position = position,
             input_name = "bezierio-pointer-remove", in_gui = false,
         })
+    end,
+    --- step: 1 = next point (shift + wheel down), -1 = previous
+    select_step = function(player_index, step)
+        local e = { player_index = player_index, in_gui = false }
+        if step > 0 then custom_input.on_select_next(e) else custom_input.on_select_previous(e) end
     end,
     controller = function(player_index)
         return state.get(player_index)

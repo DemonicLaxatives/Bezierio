@@ -128,23 +128,51 @@ step("pointer adds points", function(player)
   check(el(player, "cp_x_1").text == "-30.3" and el(player, "cp_y_3").text == "5", "point list shows coordinates")
 end)
 
-step("pointer picks up, drops and removes points", function(player)
-  dev("pointer", P, { x = 0.4, y = -39.5 })        -- near P2: pick it up
-  check(controller().ui.held_point == 2, "P2 held")
-  dev("pointer", P, { x = 0, y = -35 })            -- drop it
+step("pointer selects, moves and removes points", function(player)
+  local function selected() return controller().ui.selected_point end
+  dev("pointer", P, { x = 0.4, y = -39.5 })        -- near P2: select it
+  check(selected() == 2 and el(player, "cp_label_2").toggled, "P2 selected, list shows it")
+  dev("pointer", P, { x = 0, y = -35 })            -- move it
   local p2 = controller().curve.points[2]
-  check(controller().ui.held_point == nil and p2.x == 0 and p2.y == -35, "P2 moved")
-  dev("pointer", P, { x = 0, y = -35 })            -- pick up again ...
-  dev("pointer", P, { x = 0, y = -40 })            -- ... and put it back
-  dev("pointer", P, { x = 20, y = 20 })            -- P4
+  check(selected() == 2 and p2.x == 0 and p2.y == -35, "P2 moved and still selected")
+  dev("pointer", P, { x = 0, y = -40 })            -- move it back
+  check(controller().curve.points[2].y == -40 and point_count() == 3, "moved back, nothing added")
+  dev("select_step", P, 1)
+  check(selected() == 3, "shift+wheel: next point")
+  dev("select_step", P, 1)
+  check(selected() == 1, "shift+wheel: wraps to P1")
+  dev("select_step", P, -1)
+  check(selected() == 3 and el(player, "cp_label_3").toggled and not el(player, "cp_label_1").toggled, "shift+wheel: previous")
+  dev("pointer_remove", P, { x = 0, y = 0 })       -- right-click: deselect
+  check(selected() == nil and point_count() == 3, "deselected, nothing removed")
+  dev("select_step", P, 1)
+  check(selected() == nil, "no cycling without a selection")
+  dev("pointer", P, { x = 20, y = 20 })            -- nothing selected: P4 added
   check(point_count() == 4, "P4 added")
   dev("pointer_remove", P, { x = 20.5, y = 19.5 }) -- right-click near P4
   check(point_count() == 3, "P4 removed")
-  dev("pointer", P, { x = -30, y = 5 })            -- pick up P1
-  dev("pointer_remove", P, { x = 0, y = 0 })       -- right-click while holding: put it back
-  check(controller().ui.held_point == nil and controller().curve.points[1].x == -30.3, "hold cancelled, P1 unchanged")
 end)
 
+step("pointer inserts points, reverse", function(player)
+  dev("pointer_insert", P, { x = -16, y = -20 })    -- shift+click beside the P1-P2 stretch
+  local points = controller().curve.points
+  check(#points == 4 and points[2].x == -16 and points[2].y == -20, "inserted as P2")
+  check(controller().ui.selected_point == 2, "inserted point selected")
+  dev("click", P, "cp_delete_2")
+  check(point_count() == 3 and controller().ui.selected_point == nil, "deleted, selection gone")
+  dev("pointer_insert", P, { x = 35, y = 8 })      -- past the end: appended
+  check(point_count() == 4 and controller().curve.points[4].x == 35, "inserted past the end")
+  dev("click", P, "cp_delete_4")
+
+  dev("click", P, "cp_label_3")
+  dev("click", P, "reverse_points")
+  points = controller().curve.points
+  check(points[1].x == 30 and points[3].x == -30.3 and controller().ui.selected_point == 1, "reversed, selection follows")
+  dev("click", P, "reverse_points")
+  check(controller().curve.points[1].x == -30.3 and controller().ui.selected_point == 3, "reversed back")
+  dev("click", P, "cp_label_3")
+  check(controller().ui.selected_point == nil, "list button deselects")
+end)
 step("point list edits", function(player)
   dev("set_text", P, "cp_x_3", "abc")
   check(el(player, "cp_x_3").text == "30", "invalid input reverted")
@@ -154,6 +182,25 @@ step("point list edits", function(player)
   check(point_count() == 3 and not el(player, "cp_x_4"), "P4 deleted from the list")
   dev("click", P, "pointer_button") -- put the pointer away
   check(not player.cursor_stack.valid_for_read, "pointer put away")
+  dev("click", P, "cp_label_2")      -- selecting in the list takes the pointer
+  check(controller().ui.selected_point == 2 and player.cursor_stack.valid_for_read
+    and el(player, "pointer_button").toggled, "list selection takes the pointer")
+  dev("click", P, "cp_label_2")
+  dev("click", P, "pointer_button")
+  check(not player.cursor_stack.valid_for_read and controller().ui.selected_point == nil, "pointer put away again")
+end)
+
+step("view settings", function(player)
+  dev("click", P, "view_settings_button")
+  check(el(player, "view_settings").visible, "view settings shown")
+  dev("select", P, "view_curve_color", 4)
+  check(controller().view.curve_color == "red", "curve colour set: " .. controller().view.curve_color)
+  dev("set_value", P, "view_preview_opacity", 50)
+  check(controller().view.preview_opacity == 50 and el(player, "view_preview_opacity_value").caption == "50", "opacity set")
+  dev("click", P, "view_reset")
+  check(controller().view.curve_color == "blue" and el(player, "view_preview_opacity").slider_value == 30, "reset")
+  dev("click", P, "view_settings_button")
+  check(not el(player, "view_settings").visible, "view settings hidden")
 end)
 
 step("draw curve", function(player)
@@ -200,6 +247,12 @@ step("configure layers", function(player)
   dev("set_value", P, "radius_slider", 3)
   dev("set_value", P, "checkerboard_slider", -2)
   check(layers()[-1].type == "tile" and layers()[-1].radius == 3, "tile layer")
+  -- another similar item keeps the settings (and so does switching back)
+  dev("set_elem", P, "layer_type", { name = "concrete", quality = "normal" })
+  check(layers()[-1].name == "concrete" and layers()[-1].radius == 3 and layers()[-1].checkerboard == -2
+    and el(player, "radius_slider").slider_value == 3, "settings kept when the item changes")
+  dev("set_elem", P, "layer_type", { name = "stone-brick", quality = "normal" })
+  check(layers()[-1].radius == 3 and layers()[-1].checkerboard == -2, "settings kept switching back")
 
   dev("click", P, "add_layer_above")
   dev("set_elem", P, "layer_type", { name = "laser-turret", quality = "normal" })
@@ -217,6 +270,9 @@ step("configure layers", function(player)
 
   dev("click", P, "layer_select_0")
   check(controller().ui.selected_layer == 0 and el(player, "layer_type").elem_value.name == "stone-wall", "layer 0 selected")
+  local delete_0 = el(player, "layer_delete_0")
+  check(not delete_0.enabled and delete_0.tooltip[1] == "tooltip.delete-layer-0", "layer 0 can't be deleted, says why")
+  check(el(player, "layer_rows").type == "scroll-pane", "layer list scrolls")
 end)
 
 step("preview", function(player)
@@ -227,7 +283,11 @@ end, "idle")
 step("preview rendered, totals shown", function(player)
   check(dev("render_count") > storage.before + 50, "preview drawn: " .. dev("render_count"))
   check(el(player, "status").caption == "", "status empty when idle")
-  check(type(el(player, "totals").caption) == "table", "totals line filled")
+  check(type(el(player, "totals_length").caption) == "table", "length shown")
+  local items = el(player, "totals_items")
+  check(items.caption:find("[item=stone-wall]", 1, true) and items.caption:find("[item=stone-brick]", 1, true),
+    "items totalled: " .. items.caption)
+  check(type(items.tooltip) == "table" and #items.tooltip >= 5, "per-layer breakdown in the tooltip")
 
   local plan = dev("plan", P)
   local cells = {}
@@ -363,6 +423,39 @@ step("map editor built real entities", function(player)
   check(walls == planned["stone-wall"], "real walls in editor (incl. revived ghost): " .. walls .. "/" .. planned["stone-wall"])
   check(#s.find_entities_filtered { type = "entity-ghost" } == 0, "no ghosts left in editor build")
   check(player.controller_type ~= defines.controllers.editor, "left map editor")
+end)
+
+step("underlay", function(player)
+  local s = player.surface
+  clear_build(s)
+  dev("click", P, "layer_select_-1")
+  dev("set_checked", P, "under", true)
+  check(layers()[-1].under == true and el(player, "layer_label_-1").caption[1] == "label.layer-row-under", "tiles under")
+  dev("click", P, "add_layer_below")
+  dev("set_elem", P, "layer_type", { name = "stone-wall", quality = "normal" })
+  player.cheat_mode = true
+  dev("click", P, "build")
+end, "idle")
+
+step("underlay built under walls", function(player)
+  local s = player.surface
+  local plan = dev("plan", P)
+  local walls, on_path = 0, 0
+  for _, e in pairs(plan.entities) do
+    if e.layer == -2 then
+      walls = walls + 1
+      check(s.find_entity("stone-wall", e.position), "L-2 wall built")
+      if s.get_tile(e.position.x, e.position.y).name == "stone-path" then on_path = on_path + 1 end
+    end
+  end
+  -- the tile layer is a checkerboard, so about half the walls stand on path
+  check(walls > 20 and on_path > walls / 3, "walls on the tiles: " .. on_path .. "/" .. walls)
+  player.cheat_mode = false
+  dev("click", P, "layer_delete_-2")
+  dev("click", P, "layer_select_-1")
+  dev("set_checked", P, "under", false)
+  dev("click", P, "layer_select_0")
+  clear_build(s)
 end)
 
 step("no build without permission", function(player)

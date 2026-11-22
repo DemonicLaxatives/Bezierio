@@ -2,6 +2,7 @@
 local control = require("scripts.gui.control")
 local curve_control = require("scripts.gui.curve_control")
 local layer_view = require("scripts.gui.layer_view")
+local view_settings = require("scripts.gui.view_settings")
 local state = require("scripts.state")
 
 local lib = {}
@@ -44,6 +45,7 @@ function lib.create_main_window(player)
     local main = frame.add { type = "flow", name = "main", direction = "horizontal" }
     local left = main.add { type = "flow", name = "left_column", direction = "vertical" }
     control.add(left, player)
+    view_settings.add(left, player)
     curve_control.add(left, player)
     layer_view.add(main, player.index)
 end

@@ -77,35 +77,42 @@ planning, random-curve properties and migrations.
   change.
 - `python_scripts/` deleted.
 
-### Follow-ups found along the way
+### Follow-ups (done)
 
-- **Insert a point between two others.** The pointer only appends. Option:
-  click near the curve (not a point) to insert there.
-  - Yes let's do it, shift + click near the curve
-  - Also, let the user select the point not just by clicking on it in the world but also in the gui, don't deselect the point after it's been moved, let it be cleared by righ click in the world, just like it already is
-  - when a point has been selected, let the user shift + scroll to cycle the exising points
-  - add a button between closed loop and remove controlpoints, that swaps the point order - flipping the tangent direction.
-- **A real multiplayer test.** Everything is per player and in `storage`, but
-  nothing runs two players at once. A headless server plus a client isn't
-  possible in `--test-scenario`; this needs a manual session. 
-  - Let's put this off for later - pre-release.
-- **Bend warnings use grid units**, which underestimate distance on diagonals by
-  up to √2. Fine as a hint; refine if it misleads.
-  - Leave as is, just give a tooltip on the "N Tight bends" warning explaining the issue better, without going into detail on the underestimation, just explain what the warning means in general.
-- **Very sharp turns** still leave small stray pieces of wall (a few cells) at the
-  tip. They're cosmetic, and the property test tolerates pieces under 10 cells.
-  - That's fine, it's a tradeoff of trying to make sharp turns on a rectangular grid.
-- Bug, larger build preview jobs fail at some point, builds fine, just the drawing stops at some point.
-- Make it an option that tile bands don't offset entity bands, they have no collision with them, so it would be nice to have them under the entities.
-- Layer list should also become scrollable at some size
-- We need per player settings on the sprite colors, opacity, etc. accesible from the mod gui.
-- Build icons are offset to the upper right corner in their slots, further more shorten their tooltips to just "force build" and "super force build" these are ingame terms with an already defined meaning.
-- Build costs should be totalled and list qualities too, only in tooltips show the breakdown per layer.
-- Give a tooltip on why L0 can't be deleted.
-
+- **Point editing:**
+  - a selected point stays selected after it moves; right-click deselects;
+  - points can be selected from the point list too (this takes the pointer if
+    your hand is empty);
+  - Shift + click inserts a point into the nearest stretch of curve, or before or
+    after an end;
+  - Shift + mouse wheel cycles the selection;
+  - a reverse button flips the point order.
+- **Totals:**
+  - items are summed by item and quality, with a per-layer breakdown in the
+    tooltip;
+  - the tight-bends and pole-gaps counts have tooltips explaining them.
+- **Big previews:** drawing stopped at a 4,000-object cap. The cap is now 50,000,
+  straight runs of cells share a rectangle, and the status line says when the cap
+  is reached.
+- **Tile layers:** *Under entities* option. The band takes no room, and the
+  layers further out sit on the tiles.
+- **Window:**
+  - the layer list scrolls;
+  - a View settings pane sets point, curve and warning colours, curve width and
+    preview opacity, per player;
+  - the build icons are centred, with "Force build" and "Super force build"
+    tooltips;
+  - layer 0's delete button explains why it's disabled.
+- **Planner:** open curves sometimes missed a cell or two at their ends (found by
+  the new underlay property test). They're probed past the ends now.
+- **Left as is:**
+  - bend warnings use grid units;
+  - very sharp turns can leave small stray pieces, a tradeoff of a rectangular
+    grid.
 
 ## Phase 2: features
 
+0. Adhere to factorio migration convention: https://github.com/321freddy/even-distribution 
 1. **Blueprint output (rec: highest-value feature).** Write the plan into a
    blueprint in the cursor instead of placing ghosts. Players can then
    stamp/rotate/share it, and it works with any build mode the game supports.
@@ -195,10 +202,13 @@ Just like drag placing poles works in game.
 - `debug.lua` `lib.debug = false` (enforced by the release check above).
 - New screenshots for the README and mod portal. The current ones show the 0.1
   curve projector.
-- A storage migration test: create a save with schema N, load it with N+1, check
-  nothing crashes (`--test-save`). Releases are when old saves start to matter.
 - Quality: build with a non-normal quality under the `quality` mod and check the
   ghost quality.
+- A real multiplayer test: a manual session with two players (everything is per
+  player and in `storage`, but nothing has run two players at once yet).
+- Remove the migrations made during development, they're usefull for seamless testing but serve no purpose for the end user on initial release.
+- A storage migration test ground work, there will be no migrations for release: create a save with schema N, load it with N+1, check
+  nothing crashes (`--test-save`). Releases are when old saves start to matter. 
 
 ## Testing to add along the way
 

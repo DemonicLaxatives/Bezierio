@@ -98,7 +98,8 @@ lib["delete"] = function(e)
     layers_changed(e.player_index)
 end
 
---- The item picker changed: replace the layer with a fresh one for that item.
+--- The item picker changed: replace the layer with a fresh one for that item,
+--- keeping the settings it shares with the old one.
 --- @param e EventData.on_gui_elem_changed
 lib["type"] = function(e)
     local layers = state.layers(e.player_index)
@@ -111,8 +112,9 @@ lib["type"] = function(e)
         local item_name = (type(value.name) == "string" and value.name or value.name.name) --[[@as string]]
         local quality = value.quality
         local quality_name = type(quality) == "string" and quality or (quality and quality.name) or "normal"
-        layer = registry.new_layer(idx, item_name, quality_name, layers[idx] and layers[idx].offset)
+        layer = registry.new_layer(idx, item_name, quality_name)
     end
+    registry.carry_over(layer, layers[idx])
     layers[idx] = layer
     layers_changed(e.player_index)
 end
@@ -152,9 +154,11 @@ lib["set_flag"] = function(e)
     local field_name = element.tags.field --[[@as string]]
     local idx = tonumber(element.tags.idx)
     local layer = idx and state.layers(e.player_index)[idx]
-    if not layer or type(layer[field_name]) ~= "boolean" then return end
+    if not layer then return end
+    local field = registry.field(layer, field_name)
+    if not (field and field.widget == "checkbox") then return end
     layer[field_name] = element.state
-    state.changed(e.player_index)
+    layers_changed(e.player_index)
 end
 
 return lib

@@ -7,6 +7,7 @@ lib["main"]    = require("scripts.gui.layout")
 lib["control"] = require("scripts.gui.control")
 lib["curve"]   = require("scripts.gui.curve_control")
 lib["layer"]   = require("scripts.gui.layer_control")
+lib["view"]    = require("scripts.gui.view_settings")
 
 --- Which element types each event is routed for. Every element raises on_gui_click,
 --- but e.g. a click on a choose-elem-button must not run its "value changed" action
@@ -17,6 +18,7 @@ lib.routed_types = {
     [defines.events.on_gui_confirmed] = {["textfield"] = true},
     [defines.events.on_gui_value_changed] = {["slider"] = true},
     [defines.events.on_gui_checked_state_changed] = {["checkbox"] = true},
+    [defines.events.on_gui_selection_state_changed] = {["drop-down"] = true},
 }
 
 --- @param e {name: defines.events, element: LuaGuiElement, player_index: integer}
@@ -51,6 +53,7 @@ script.on_event(defines.events.on_gui_elem_changed, lib.handle_event)
 script.on_event(defines.events.on_gui_confirmed, lib.handle_event)
 script.on_event(defines.events.on_gui_value_changed, lib.handle_event)
 script.on_event(defines.events.on_gui_checked_state_changed, lib.handle_event)
+script.on_event(defines.events.on_gui_selection_state_changed, lib.handle_event)
 
 script.on_event(defines.events.on_gui_closed,
     --- @param e EventData.on_gui_closed

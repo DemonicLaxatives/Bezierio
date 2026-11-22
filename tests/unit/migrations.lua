@@ -32,13 +32,14 @@ local function v2_storage()
     }
 end
 
--- 2 -> 3 -> 4
+-- 2 -> 3 -> 4 -> 5
 storage = v2_storage()
 state.ensure()
 local c = storage.controllers[1]
 check(storage.schema_version == state.SCHEMA_VERSION, "schema version bumped")
 check(c.ui.preset_index == 1 and c.ui.draw_curve == true, "ui state carried over")
-check(c.ui.active_control_point == nil and c.ui.held_point == nil, "numbered pointer state dropped")
+check(c.ui.active_control_point == nil and c.ui.held_point == nil and c.ui.selected_point == nil, "numbered pointer state dropped")
+check(c.view and c.view.curve_color == "blue" and c.view.preview_opacity == 30, "view settings added")
 check(c.state == nil and c.curve_cache == nil, "old fields gone")
 check(c.curve.kind == "catmull_rom" and c.curve.closed == false, "curve kind")
 check(#c.curve.points == 2, "complete points kept as a list, gaps and half points dropped")
@@ -62,6 +63,18 @@ local c2 = storage.controllers[2]
 check(#c2.curve.points == 2 and c2.curve.points[1].y == 2 and c2.curve.points[2].x == 3, "3->4: slots in order")
 check(c2.revision == 6 and c2.redraw == true and c2.work.draw ~= nil, "3->4: replan and redraw")
 check(c2.ui.preview_build == true, "3->4: toggles kept")
+
+-- 4 -> 5 on its own: a held point becomes the selected point
+storage = { schema_version = 4, sprites = {}, controllers = { [3] = {
+    ui = { preset_index = 1, draw_curve = true, preview_build = false, held_point = 2, selected_layer = 0 },
+    curve = { kind = "catmull_rom", points = { { x = 0, y = 0 }, { x = 5, y = 5 } }, closed = false },
+    presets = { { name = "Default", layers = { [0] = { idx = 0, type = "empty", size = 1, offset = 0 } } } },
+    revision = 2, redraw = false, work = {},
+} } }
+state.ensure()
+local c3 = storage.controllers[3]
+check(c3.ui.selected_point == 2 and c3.ui.held_point == nil, "4->5: held point selected")
+check(c3.view.selected_color == "amber" and c3.redraw == true, "4->5: view settings, redraw")
 
 -- The migrated controller works with the current code.
 local planner = require("scripts.build.planner")

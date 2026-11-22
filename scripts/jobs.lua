@@ -79,30 +79,70 @@ local function status_of(controller)
     if work.revision ~= controller.revision and plan_needed(controller) then
         return { "label.status-planning", "0" }, "p0"
     end
+    if controller.ui.preview_build and work.draw.preview_count >= draw.MAX_PREVIEW_OBJECTS then
+        return { "label.status-preview-partial" }, "cap"
+    end
     return "", ""
 end
 
---- The totals line: curve length, what each layer needs, warnings.
+--- The item for a layer, as rich text.
+--- @param layer Layer
+--- @return string
+local function item_text(layer)
+    local quality = layer.quality or "normal"
+    if quality == "normal" then return string.format("[item=%s]", layer.placed_by) end
+    return string.format("[item=%s,quality=%s]", layer.placed_by, quality)
+end
+
+--- What the build needs: items summed over layers (by item and quality), and the
+--- same per layer for the tooltip.
 --- @param controller Controller
 --- @param plan BuildPlan
---- @return LocalisedString
-local function totals_of(controller, plan)
+--- @return string, LocalisedString  # caption, tooltip
+local function items_of(controller, plan)
     local layers = state.layers_of(controller)
     local keys = {}
     for idx in pairs(plan.counts) do table.insert(keys, idx) end
     table.sort(keys, function(a, b) return a > b end)
-    local items = {}
+
+    local totals, order, rows = {}, {}, { "", { "label.totals-per-layer" } }
     for _, idx in ipairs(keys) do
         local layer = layers[idx]
         if layer and layer.placed_by then
-            table.insert(items, string.format("[item=%s]×%d", layer.placed_by, plan.counts[idx]))
+            local item, count = item_text(layer), plan.counts[idx]
+            if not totals[item] then table.insert(order, item) end
+            totals[item] = (totals[item] or 0) + count
+            -- A LocalisedString takes at most 20 parameters.
+            if #rows <= 20 then
+                table.insert(rows, { "label.totals-layer", tostring(idx), item, tostring(count) })
+            end
         end
     end
-    local caption = { "", { "label.totals", string.format("%.0f", plan.length) } }
-    if #items > 0 then table.insert(caption, "  " .. table.concat(items, " ")) end
-    if #plan.warnings > 0 then table.insert(caption, { "label.totals-bends", tostring(#plan.warnings) }) end
-    if plan.gaps > 0 then table.insert(caption, { "label.totals-gaps", tostring(plan.gaps) }) end
-    return caption
+    local parts = {}
+    for _, item in ipairs(order) do table.insert(parts, string.format("%s×%d", item, totals[item])) end
+    return table.concat(parts, " "), rows
+end
+
+--- @param player LuaPlayer
+--- @param controller Controller
+--- @param plan BuildPlan|nil  # nil clears the totals
+local function show_totals(player, controller, plan)
+    local length = window.find(player, "totals_length")
+    local items = window.find(player, "totals_items")
+    local bends = window.find(player, "totals_bends")
+    local gaps = window.find(player, "totals_gaps")
+    if not (length and items and bends and gaps) then return end
+    if not plan then
+        length.caption, items.caption, items.tooltip = "", "", ""
+        bends.visible, gaps.visible = false, false
+        return
+    end
+    length.caption = { "label.totals", string.format("%.0f", plan.length) }
+    items.caption, items.tooltip = items_of(controller, plan)
+    bends.caption = { "label.totals-bends", tostring(#plan.warnings) }
+    bends.visible = #plan.warnings > 0
+    gaps.caption = { "label.totals-gaps", tostring(plan.gaps) }
+    gaps.visible = plan.gaps > 0
 end
 
 --- @param player LuaPlayer
@@ -117,17 +157,14 @@ local function update_window(player, controller)
         if label then label.caption = caption end
     end
     local plan_job = work.plan
-    local totals = window.find(player, "totals")
-    if totals then
-        if plan_job and plan_job.plan.done and controller.ui.preview_build then
-            if work.totals_revision ~= work.revision then
-                work.totals_revision = work.revision
-                totals.caption = totals_of(controller, plan_job.plan)
-            end
-        elseif work.totals_revision then
-            work.totals_revision = nil
-            totals.caption = ""
+    if plan_job and plan_job.plan.done and controller.ui.preview_build then
+        if work.totals_revision ~= work.revision then
+            work.totals_revision = work.revision
+            show_totals(player, controller, plan_job.plan)
         end
+    elseif work.totals_revision then
+        work.totals_revision = nil
+        show_totals(player, controller, nil)
     end
 end
 
@@ -147,8 +184,11 @@ function lib.update(player, controller)
         controller.redraw = true
     end
     if controller.redraw then
-        controller.redraw = false
+        controller.redraw, controller.redraw_points = false, nil
         draw.reset(player, controller)
+    elseif controller.redraw_points then
+        controller.redraw_points = nil
+        draw.redraw_points(player, controller)
     end
 
     local settled = work.revision == controller.revision
@@ -198,7 +238,7 @@ end
 --- @return boolean
 function lib.is_idle(player_index, controller)
     local work = controller.work
-    if controller.redraw or work.revision ~= controller.revision then return false end
+    if controller.redraw or controller.redraw_points or work.revision ~= controller.revision then return false end
     if work.pending_build or work.build then return false end
     local sprites = storage.sprites and storage.sprites[player_index]
     if sprites and sprites.trash and #sprites.trash > 0 then return false end

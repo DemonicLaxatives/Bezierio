@@ -48,9 +48,81 @@ function lib.remove(curve, idx)
     if curve.points[idx] then table.remove(curve.points, idx) end
 end
 
+--- Insert a point so that it gets index `idx` (#points + 1 appends).
+--- @param curve Curve
+--- @param idx integer
+--- @param point Vector
+--- @return integer index
+function lib.insert(curve, idx, point)
+    idx = math.max(1, math.min(idx, #curve.points + 1))
+    table.insert(curve.points, idx, rounded(point))
+    return idx
+end
+
+--- Reverse the point order, which flips the direction of travel (layers swap sides).
+--- @param curve Curve
+function lib.reverse(curve)
+    local points, n = curve.points, #curve.points
+    for i = 1, math.floor(n / 2) do
+        points[i], points[n + 1 - i] = points[n + 1 - i], points[i]
+    end
+end
+
 --- @param curve Curve
 function lib.clear(curve)
     curve.points = {}
+end
+
+--- Evaluations per segment when looking for the part of the curve nearest a click.
+local NEAREST_STEPS = 16
+
+--- Where a point inserted at `position` belongs: the index that puts it into the
+--- stretch of curve passing nearest to it. On an open curve, a position beyond the
+--- first or last point goes before or after it.
+--- @param curve Curve
+--- @param position Vector
+--- @return integer index  # for lib.insert
+function lib.insertion_index(curve, position)
+    local raw = curve.points
+    -- Distinct points, each mapped to the last raw index of its run of duplicates.
+    local points, last_raw = {}, {}
+    for i, p in ipairs(raw) do
+        local prev = points[#points]
+        if prev and prev.x == p.x and prev.y == p.y then
+            last_raw[#points] = i
+        else
+            points[#points + 1] = p
+            last_raw[#points] = i
+        end
+    end
+    local closed = lib.is_closed(curve)
+    if closed and #points > 1 and points[1].x == points[#points].x and points[1].y == points[#points].y then
+        points[#points] = nil
+    end
+    closed = closed and #points >= 3
+    if #points < 2 then return #raw + 1 end
+
+    local best_seg, best_s, best_d = 1, 0, math.huge
+    for j, seg in ipairs(catmull_rom.segments(points, closed)) do
+        for k = 0, NEAREST_STEPS do
+            local s = k / NEAREST_STEPS
+            local d = vect.distance(catmull_rom.evaluate(seg, s), position)
+            if d < best_d then best_seg, best_s, best_d = j, s, d end
+        end
+    end
+
+    if not closed then
+        local n = #points
+        if best_seg == 1 and best_s == 0
+            and vect.dot(vect.sub(position, points[1]), vect.sub(points[2], points[1])) < 0 then
+            return 1
+        end
+        if best_seg == n - 1 and best_s == 1
+            and vect.dot(vect.sub(position, points[n]), vect.sub(points[n - 1], points[n])) < 0 then
+            return #raw + 1
+        end
+    end
+    return last_raw[best_seg] + 1
 end
 
 --- Index of the control point nearest to `position`, if within `radius`.

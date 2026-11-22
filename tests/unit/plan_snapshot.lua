@@ -48,6 +48,24 @@ for i = 1, 24 do
     cases[#cases + 1] = { name = "random " .. i, points = helpers.random_points(r), layers = helpers.random_layers(r) }
 end
 
+-- Tile layers laid under the others ("under entities")
+local function wall(idx, radius, offset)
+    return { idx = idx, type = "wall", name = "wall", quality = "normal", radius = radius, checkerboard = 0, size = 1, offset = offset or 0, priority = 100 }
+end
+local function underlay(idx, radius, offset)
+    return { idx = idx, type = "tile", name = "tile", quality = "normal", radius = radius, checkerboard = 0, size = 1, offset = offset or 0, priority = 100, under = true }
+end
+cases[#cases + 1] = {
+    name = "underlay beside layer 0",
+    points = { { x = 0, y = 0 }, { x = 20, y = -10 }, { x = 40, y = 5 } },
+    layers = { [0] = wall(0, 1), [1] = underlay(1, 4), [2] = wall(2, 1, 1), [-1] = underlay(-1, 2, 1), [-2] = wall(-2, 2) },
+}
+cases[#cases + 1] = {
+    name = "underlay as layer 0",
+    points = { { x = 0, y = 0 }, { x = 30, y = 10 } },
+    layers = { [0] = underlay(0, 3), [1] = wall(1, 1), [-1] = wall(-1, 1), [2] = { idx = 2, type = "tile", name = "path", quality = "normal", radius = 1, checkerboard = 0, size = 1, offset = 0, priority = 100 } },
+}
+
 local lines = {}
 for _, case in ipairs(cases) do
     lines[#lines + 1] = "## " .. case.name

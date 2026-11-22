@@ -2,7 +2,6 @@
 -- tests/run.sh bench, then read "BENCH" lines. Not part of the regular test run.
 local P = 1
 local function dev(fn, ...) return remote.call("bezierio-dev", fn, ...) end
-local BUDGET = 3000 -- the setting's default (scenarios can't change mod settings)
 local phase, started_tick = "warmup", 0
 
 local function mark(name) log("BENCH " .. name .. " tick=" .. game.tick) end
@@ -38,7 +37,15 @@ script.on_event(defines.events.on_tick, function(e)
   elseif phase == "plan" and e.tick > started_tick + 15 and dev("idle", P) then
     mark("plan-end")
     local plan = dev("plan", P)
-    log("BENCH plan entities=" .. #plan.entities .. " tiles=" .. #plan.tiles)
+    local progress = dev("controller", P).work.draw
+    log("BENCH plan entities=" .. #plan.entities .. " tiles=" .. #plan.tiles
+      .. " preview drew " .. progress.preview_entities .. " entities, " .. progress.preview_tiles .. " tiles in "
+      .. progress.preview_count .. " rectangles (render objects " .. dev("render_count") .. ")")
+    if progress.preview_entities < #plan.entities or progress.preview_tiles < #plan.tiles then
+      log("BENCH FAIL: preview incomplete")
+      script.finish_test(false)
+      return
+    end
     player.cheat_mode = true
     dev("click", P, "build")
     phase, started_tick = "instant", e.tick

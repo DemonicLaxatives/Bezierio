@@ -1,6 +1,6 @@
 local state = require("scripts.state")
 local curve_lib = require("scripts.curve.curve")
-local window = require("scripts.gui.window")
+local view_settings = require("scripts.gui.view_settings")
 
 local lib = {}
 
@@ -31,34 +31,39 @@ function lib.add(parent, player)
         type = "sprite-button",
         name = "build",
         tags = { group = "control", action = "build" },
-        sprite = "utility/ghost_cursor",
+        sprite = "bezierio-force-build",
         tooltip = { "tooltip.force-build" },
+        style = "tool_button",
     }
     buttons.add {
         type = "sprite-button",
         name = "super_build",
         tags = { group = "control", action = "super_build" },
-        sprite = "utility/force_ghost_cursor",
+        sprite = "bezierio-super-force-build",
         tooltip = { "tooltip.super-force-build" },
+        style = "tool_button",
     }
+    view_settings.add_toggle(buttons)
     flow.add { type = "label", name = "status", caption = "" }
-    local totals = flow.add { type = "label", name = "totals", caption = "" }
-    totals.style.single_line = false
-    totals.style.maximal_width = 320
-end
 
---- @param player LuaPlayer
---- @param caption LocalisedString
-function lib.set_status(player, caption)
-    local label = window.find(player, "status")
-    if label then label.caption = caption end
-end
-
---- @param player LuaPlayer
---- @param caption LocalisedString
-function lib.set_totals(player, caption)
-    local label = window.find(player, "totals")
-    if label then label.caption = caption end
+    -- Filled in by jobs.lua once the preview's plan is done.
+    local totals = flow.add { type = "flow", name = "totals", direction = "vertical" }
+    totals.style.vertical_spacing = 0
+    totals.add { type = "label", name = "totals_length", caption = "" }
+    local items = totals.add { type = "label", name = "totals_items", caption = "" }
+    items.style.single_line = false
+    items.style.maximal_width = 320
+    local warnings = totals.add { type = "flow", name = "totals_warnings", direction = "horizontal" }
+    for _, name in ipairs({ "bends", "gaps" }) do
+        local label = warnings.add {
+            type = "label",
+            name = "totals_" .. name,
+            caption = "",
+            tooltip = { "tooltip.totals-" .. name },
+            visible = false,
+        }
+        label.style.font_color = { r = 1, g = 0.3, b = 0.3 }
+    end
 end
 
 --- @param e EventData.on_gui_click

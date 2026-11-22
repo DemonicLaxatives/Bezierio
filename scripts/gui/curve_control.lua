@@ -20,15 +20,26 @@ end
 local function fill_points(pane, player_index)
     pane.clear()
     local curve = state.curve(player_index)
-    local held = state.ui(player_index).held_point
+    local selected = state.ui(player_index).selected_point
     if #curve.points == 0 then
         pane.add { type = "label", name = "no_points", caption = { "label.no-points" } }
         return
     end
     local cp_table = pane.add { type = "table", name = "cp_table", column_count = 4 }
+    cp_table.style.vertical_align = "center"
     for i, point in ipairs(curve.points) do
-        local label = cp_table.add { type = "label", name = "cp_label_" .. i, caption = "P" .. i }
-        if i == held then label.style.font_color = { r = 1, g = 0.85, b = 0.2 } end
+        local select = cp_table.add {
+            type = "button",
+            name = "cp_label_" .. i,
+            caption = "P" .. i,
+            tooltip = { "tooltip.select-point" },
+            tags = { group = "curve", action = "select", idx = i },
+            toggled = i == selected,
+            style = "tool_button",
+        }
+        select.style.width = 40
+        select.style.height = 24
+        select.style.padding = 0
         for _, axis in pairs({ "x", "y" }) do
             local box = cp_table.add {
                 type = "textfield",
@@ -78,6 +89,14 @@ function lib.add(parent, player)
         tooltip = { "tooltip.closed-loop" },
         state = curve.closed,
         tags = { group = "curve", action = "closed" },
+    }
+    header.add {
+        type = "sprite-button",
+        name = "reverse_points",
+        tags = { group = "curve", action = "reverse" },
+        tooltip = { "tooltip.reverse-points" },
+        sprite = "bezierio-reverse",
+        style = "tool_button",
     }
     header.add {
         type = "sprite-button",
@@ -141,8 +160,56 @@ lib["clear"] = function(e)
     local player = game.get_player(e.player_index)
     if not player then return end
     curve_lib.clear(state.curve(e.player_index))
-    state.ui(e.player_index).held_point = nil
+    state.ui(e.player_index).selected_point = nil
     lib.points_changed(player)
+end
+
+--- Reverse the point order; the selection stays on the same point.
+--- @param e EventData.on_gui_click
+lib["reverse"] = function(e)
+    local player = game.get_player(e.player_index)
+    if not player then return end
+    local curve, ui = state.curve(e.player_index), state.ui(e.player_index)
+    curve_lib.reverse(curve)
+    if ui.selected_point then ui.selected_point = #curve.points + 1 - ui.selected_point end
+    lib.points_changed(player)
+end
+
+--- Select a point (nil deselects): the pointer then moves it. Only the point
+--- markers are redrawn.
+--- @param player LuaPlayer
+--- @param idx integer|nil
+function lib.select_point(player, idx)
+    local ui = state.ui(player.index)
+    if idx and not state.curve(player.index).points[idx] then idx = nil end
+    ui.selected_point = idx
+    state.request_point_redraw(player.index)
+    local pane = window.find(player, "cp_table")
+    if not pane then return end
+    for _, child in pairs(pane.children) do
+        if child.tags.action == "select" then child.toggled = child.tags.idx == idx end
+    end
+    local button = idx and window.find(player, "cp_label_" .. idx)
+    if button then pane.parent.scroll_to_element(button) end
+end
+
+--- A point button in the list: select it (and take the pointer if the hand is
+--- empty), or deselect it if it is already selected.
+--- @param e EventData.on_gui_click
+lib["select"] = function(e)
+    local player = game.get_player(e.player_index)
+    local idx = tonumber(e.element.tags.idx)
+    if not player or not idx then return end
+    if state.ui(e.player_index).selected_point == idx then
+        lib.select_point(player, nil)
+        return
+    end
+    lib.select_point(player, idx)
+    local cursor = player.cursor_stack
+    if cursor and not cursor.valid_for_read and player.clear_cursor() then
+        cursor.set_stack { name = lib.POINTER, count = 1 }
+        lib.sync_pointer_button(player)
+    end
 end
 
 --- @param e EventData.on_gui_click
@@ -153,16 +220,16 @@ lib["delete"] = function(e)
     lib.remove_point(player, idx)
 end
 
---- Remove a point, keeping a held point held.
+--- Remove a point, keeping the selected point selected.
 --- @param player LuaPlayer
 --- @param idx integer
 function lib.remove_point(player, idx)
     local ui = state.ui(player.index)
     curve_lib.remove(state.curve(player.index), idx)
-    if ui.held_point == idx then
-        ui.held_point = nil
-    elseif ui.held_point and ui.held_point > idx then
-        ui.held_point = ui.held_point - 1
+    if ui.selected_point == idx then
+        ui.selected_point = nil
+    elseif ui.selected_point and ui.selected_point > idx then
+        ui.selected_point = ui.selected_point - 1
     end
     lib.points_changed(player)
 end

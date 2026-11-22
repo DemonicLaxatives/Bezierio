@@ -115,6 +115,27 @@ function lib.field_range(layer, field_name)
     return resolve(layer, field, "min"), resolve(layer, field, "max")
 end
 
+--- Keep the settings of `old` that `layer`'s type also has (same field name and
+--- value type), clamped to the new ranges: switching a layer to another quality or
+--- a similar item shouldn't reset its width, spacing, etc. Offset always carries.
+--- @param layer Layer  # freshly made, with defaults
+--- @param old Layer|nil
+function lib.carry_over(layer, old)
+    if not old then return end
+    if type(old.offset) == "number" then layer.offset = old.offset end
+    for _, field in ipairs(lib.type_of(layer).fields) do
+        local value = old[field.name]
+        if value ~= nil and type(value) == type(layer[field.name]) then
+            if type(value) == "number" then
+                local min, max = resolve(layer, field, "min"), resolve(layer, field, "max")
+                if min then value = math.max(min, value) end
+                if max then value = math.min(max, value) end
+            end
+            layer[field.name] = value
+        end
+    end
+end
+
 --- Band width of a layer in grid units.
 --- @param layer Layer
 --- @return number
@@ -122,6 +143,13 @@ function lib.thickness(layer)
     local def = lib.type_of(layer)
     if def.thickness then return def.thickness(layer) end
     return layer.size or 1
+end
+
+--- A tile layer laid under the other layers instead of beside them.
+--- @param layer Layer
+--- @return boolean
+function lib.is_underlay(layer)
+    return layer.under == true and lib.type_of(layer).tile == true
 end
 
 -- Prototype helpers (runtime only: they use `prototypes`). -------------------

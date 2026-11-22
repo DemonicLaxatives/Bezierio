@@ -7,12 +7,13 @@ info.json, data.lua, control.lua   mod entry points
 settings.lua             map setting: work budget per tick
 prototypes/
   items.lua              bezierio-pointer: cursor-only item for placing control points
-  custom_input.lua       pointer click / right-click, Alt+B to take the pointer
+  custom_input.lua       pointer click / shift-click / right-click / shift-wheel, Alt+B
+  sprites.lua            GUI icons: centred build icons, reverse, colour swatches
 scripts/
   state.lua              the definition of `storage`, accessors, migrations (start here)
   jobs.lua               per-tick runner: planning, drawing, building, within a budget
   draw.lua               rendering: control points, curve, build preview, bend warnings
-  palette.lua            one colour per layer (layer list and preview)
+  palette.lua            one colour per layer; named colours and defaults for the view settings
   init.lua               on_init / on_configuration_changed / players, mod-gui button
   custom_input.lua       the curve pointer in the world
   dev.lua                remote interface for the test scenarios (only when `bezierio-test` is active)
@@ -37,7 +38,8 @@ scripts/
     window.lua           find window elements by name
     layout.lua           main window (group "main")
     control.lua          Draw / Preview / Build buttons, status and totals lines (group "control")
-    curve_control.lua    pointer button, closed loop, point list (group "curve")
+    curve_control.lua    pointer button, closed loop, reverse, point list (group "curve")
+    view_settings.lua    per-player colours, curve width, preview opacity (group "view")
     layer_view.lua       layer list and the selected layer's detail pane
     layer_control.lua    layer actions (group "layer")
 tests/                   see Testing
@@ -50,7 +52,9 @@ changed:
 
 - `state.changed(i)`: the curve or the layers changed. This bumps
   `controller.revision`; the plan is redone.
-- `state.request_redraw(i)`: only the view changed (Draw / Preview toggles).
+- `state.request_redraw(i)`: only the view changed (Draw / Preview toggles, view
+  settings).
+- `state.request_point_redraw(i)`: only the point markers changed (selection).
 - `state.request_build(i, mode)`: build once the plan for the current revision is
   ready.
 
@@ -63,13 +67,17 @@ changed:
    `SETTLE_TICKS`, drop the plan and redraw. On a redraw request, retire the
    render objects and redraw the control points (cheap).
 2. **Draw.** Draw what the planner has produced so far, using at most
-   `DRAW_SHARE` of the budget.
+   `DRAW_SHARE` of the budget. A straight run of neighbouring 1×1 cells in plan
+   order shares one rectangle. The preview stops at `draw.MAX_PREVIEW_OBJECTS`
+   (50,000; the status line says so). The 4,000 cap it replaced cut big previews
+   off partway.
 3. **Plan.** Advance the planner: only up to the curve samples when just the curve
    is shown; the whole plan when the preview is on or a build is waiting.
 4. **Build.** Start a waiting build when its plan is done, then advance the build
    job.
 5. **Window.** Update the status line (progress) and, once a plan is done, the
-   totals line (length, items per layer, bend warnings, pole gaps).
+   totals (length; items summed by item and quality, per layer in the tooltip;
+   bend warnings and pole gaps, with tooltips explaining them).
 
 Heavy work is never done in a single tick. Every job is plain data in
 `storage.controllers[i].work`: no closures or coroutines. So jobs survive
@@ -81,7 +89,8 @@ The budget is the map setting `bezierio-work-budget` (default 1000). Measured
 with the `bench` scenario:
 - one unit is about 2.5–3 µs, whether planning, drawing or building;
 - the default costs roughly 2.5–3 ms per tick per player;
-- the 850-tile, 23k-placement test curve plans in ~730 ticks and builds in ~125.
+- the 850-tile, 23k-placement test curve plans and previews in ~820 ticks and
+  builds in ~125.
 
 After changing costs or the planner, rerun the bench and keep the units balanced.
 
@@ -95,11 +104,12 @@ The shape is documented at the top of [scripts/state.lua](../scripts/state.lua):
 ```
 storage.schema_version
 storage.controllers[player_index]
-    ui        preset_index, draw_curve, preview_build, held_point, selected_layer
+    ui        preset_index, draw_curve, preview_build, selected_point, selected_layer
+    view      colours (names from palette.NAMED), curve_width, preview_opacity
     curve     {kind = "catmull_rom", points = {{x, y}, ...}, closed}
     presets   {{name, layers = {[k] = Layer}}}             (layer k: … -1, 0, 1 …)
     revision  bumped on curve/layer changes (changed_tick: when)
-    redraw    view needs redrawing
+    redraw    view needs redrawing (redraw_points: only the point markers)
     work      jobs: plan (PlannerJob), draw progress, pending_build, build (BuildJob)
 storage.sprites[player_index]   LuaRenderObjects: curve / control_points / preview / trash
 storage.item_filter             ItemPrototypeFilter for the layer pickers
@@ -128,10 +138,21 @@ Open curves get reflected end neighbours, so they start and end exactly on the
 first and last points. Closed curves wrap around. Consecutive duplicate points are
 dropped before sampling. The sampler is resumable, one piece of a segment at a time.
 
-The pointer (`custom_input.lua`) edits the list:
-- left-click appends a point or picks one up (within `PICK_RADIUS`);
-- a second left-click drops the held point;
-- right-click removes a point, or cancels a hold.
+The pointer (`custom_input.lua`) edits the list. One point can be selected
+(`ui.selected_point`, also from the point list in the window):
+- left-click on a point (within `PICK_RADIUS`) selects it;
+- left-click elsewhere moves the selected point there (it stays selected), or
+  appends a point if none is selected;
+- shift + left-click inserts a point where `curve.insertion_index` says: into the
+  segment passing nearest the click (16 evaluations per segment), or before the
+  first / after the last point when the click lies beyond an end of an open curve.
+  The new point is selected;
+- right-click deselects, or removes the point under the cursor;
+- shift + mouse wheel selects the next / previous point.
+
+Changing the selection only redraws the point markers, not the preview. The
+reverse button reverses the list, so the curve runs the other way and the layers
+swap sides.
 
 ## Layer types
 
@@ -153,7 +174,9 @@ A layer type is one file in `scripts/layers/`, listed in `TYPE_FILES` in
   `thickness(layer)` if the band width isn't the footprint size.
 
 Layers are plain data. They name prototypes rather than holding them, so saves
-survive mods changing prototypes.
+survive mods changing prototypes. Picking another item for a layer makes a fresh layer and then
+`registry.carry_over` keeps every setting the new type also has (same field name),
+clamped to the new range, plus the offset.
 
 ## How the planner works (`scripts/build/planner.lua`, `geometry.lua`)
 
@@ -165,14 +188,20 @@ survive mods changing prototypes.
    diagonals. Walls never join only at corners.
 3. **Layers become bands** `[lo, hi)` of `u`. Layer 0 is centred; ±k stack
    outward, each starting `offset` after the previous one. The width comes from
-   the layer type.
+   the layer type. A tile layer with *Under entities* (`registry.is_underlay`)
+   takes no room: the next layer out starts where it starts.
 4. **Rasterize**: sweep cells near the curve and compute each cell centre's `u`.
    - Exact nearest sample via a spatial hash. Where the curve passes near itself,
      the branch with the smallest |u| wins.
    - `u` is quantized to 1/1024 so exact ties on rational slopes fall
      deterministically into one band.
-   - Each cell gets at most one band, so layers never overlap.
+   - Each cell gets at most one band, so layers never overlap. Underlay bands are
+     the exception: a cell also gets the first underlay containing it, unless its
+     own band placed a tile there.
    - Band layers emit placements as cells are classified.
+   - Open curves also get a few probes past each end (`END_PROBE_STEP`): cells
+     count as beside the curve up to half a grid unit past its end, and no probe
+     across the end frame may cross them.
 5. **Tight bends**: a stage measures curvature (the turn of the tangent between
    neighbouring samples). Where a bend is tighter than the outermost layer on its
    inside, it records a warning position (`plan.warnings`); the preview marks
@@ -268,9 +297,11 @@ tests/run.sh bench                                       # timing of plan / buil
 
 | Test | What it checks |
 |---|---|
-| `plan_snapshot.lua` | Planner output for 27 fixed cases matches `snapshots/plans.txt`. Run with `--update` only for an intended change, and review the diff. |
+| `plan_snapshot.lua` | Planner output for 30 fixed cases matches `snapshots/plans.txt`. Run with `--update` only for an intended change, and review the diff. |
 | `planner_jobs.lua` | Running the planner in tiny slices gives exactly the one-shot plan. |
-| `plan_properties.lua` | Random curves and loops: no overlaps, an unbroken layer 0 wall line (a ring through the seam for loops), poles in reach except counted gaps, and bend warnings where they belong. |
+| `plan_properties.lua` | Random curves and loops: no overlaps, an unbroken layer 0 wall line (a ring through the seam for loops), poles in reach except counted gaps, and bend warnings where they belong. Adding an underlay anywhere never moves an entity or a tile. |
+| `curve_edit.lua` | Inserting (including where a shift-click goes) and reversing points. |
+| `layers.lua` | Which layer settings survive picking another item (`registry.carry_over`). |
 | `migrations.lua` | Storage upgrades. |
 
 `helpers.plan` is the only place the tests touch the planner API.
