@@ -1,5 +1,7 @@
 ---@diagnostic disable: undefined-global, lowercase-global
--- Storage migrations (scripts/state.lua), run outside Factorio on hand-made storage.
+-- Storage migrations: runs the files in migrations/ the way the game does (each
+-- file once, in lexicographic file name order, then on_configuration_changed) on
+-- hand-made storage, outside Factorio.
 --   lua5.4 tests/unit/migrations.lua
 local helpers = dofile((arg[0]:match("^(.*)/tests/unit/") or ".") .. "/tests/unit/helpers.lua")
 local state = require("scripts.state")
@@ -9,6 +11,43 @@ local function check(cond, msg)
     checks = checks + 1
     if not cond then failures = failures + 1; print("FAIL: " .. msg) end
 end
+
+-- The parts of the game API that migrations and state.lua use.
+local cleared, destroyed = 0, 0
+script = { mod_name = "Bezierio" }
+rendering = { clear = function() cleared = cleared + 1 end }
+game = { players = { { gui = { screen = { bezierio_window = { destroy = function() destroyed = destroyed + 1 end } } } } } }
+prototypes = {
+    entity = {
+        ["stone-wall"] = { tile_width = 1, tile_height = 1 },
+        ["small-electric-pole"] = { tile_width = 1, tile_height = 1 },
+        ["laser-turret"] = { tile_width = 2, tile_height = 2 },
+    },
+    get_item_filtered = function() return { ["stone-wall"] = true } end,
+}
+
+--- migrations/*.lua in the game's order.
+local function migration_files()
+    local files = {}
+    local list = io.popen('ls "' .. helpers.repo .. '/migrations"')
+    for name in list:lines() do
+        if name:match("%.lua$") then table.insert(files, name) end
+    end
+    list:close()
+    table.sort(files) -- byte-wise, as the game does
+    return files
+end
+local FILES = migration_files()
+
+--- Load a save: apply every migration file; the next tick or event finishes the
+--- upgrade (the game doesn't raise on_configuration_changed for migrations alone).
+local function load_save()
+    for _, name in ipairs(FILES) do dofile(helpers.repo .. "/migrations/" .. name) end
+    state.ensure_rebuilt()
+    check(storage.rebuild_needed == nil, "rebuilt once")
+end
+
+check(FILES[#FILES] == "0.2.0.lua" and FILES[1] == "0.2.0-dev-1.lua", "dev upgrades sort before 0.2.0.lua: " .. table.concat(FILES, " "))
 
 -- Storage as written by schema 2 (the first 2.1 layout).
 local function v2_storage()
@@ -24,6 +63,7 @@ local function v2_storage()
                 presets = { { name = "Default", layers = {
                     [0] = { idx = 0, priority = 100, placed_by = "stone-wall", name = "stone-wall", quality = "normal", size = 1, offset = 0, type = "wall", checkerboard = 0, radius = 2 },
                     [1] = { idx = 1, priority = 0, size = 1, offset = 0, type = "nil" },
+                    [2] = { idx = 2, priority = 10, placed_by = "small-electric-pole", name = "small-electric-pole", quality = "normal", size = 2, offset = 0, type = "electric-pole", spacing = 1 },
                 } } },
             },
         },
@@ -34,7 +74,7 @@ end
 
 -- 2 -> 3 -> 4 -> 5
 storage = v2_storage()
-state.ensure()
+load_save()
 local c = storage.controllers[1]
 check(storage.schema_version == state.SCHEMA_VERSION, "schema version bumped")
 check(c.ui.preset_index == 1 and c.ui.draw_curve == true, "ui state carried over")
@@ -47,21 +87,22 @@ check(c.curve.points[1].x == -30.3 and c.curve.points[2].x == 30 and c.curve.poi
 local layers = c.presets[1].layers
 check(layers[0].type == "wall" and layers[0].radius == 2 and layers[0].priority == nil, "wall layer kept, priority dropped")
 check(layers[1].type == "empty", "nil layer -> empty")
-check(type(c.revision) == "number" and c.redraw == true and type(c.work) == "table", "job fields added")
+check(layers[2].size == 1 and layers[2].spacing == 1, "small pole resized to 1x1 from the prototype")
+check(type(c.revision) == "number" and c.redraw == true and type(c.work) == "table" and c.work.draw, "jobs rebuilt")
 check(next(storage.sprites) == nil, "stale sprite references dropped")
-check(storage.item_filter ~= nil, "item filter kept")
+check(storage.item_filter[1].name[1] == "stone-wall", "item filter rebuilt")
 
 -- 3 -> 4 on its own: sparse slots with a gap
 storage = { schema_version = 3, sprites = {}, controllers = { [2] = {
     ui = { preset_index = 1, draw_curve = false, preview_build = true, active_control_point = 2 },
-    curve = { kind = "bezier", points = { [2] = { x = 1, y = 2 }, [7] = { x = 3, y = 4 }, [4] = { x = 9 } } },
+    curve = { kind = "bezier", points = { [2] = { x = 1, y = 2 }, [7] = { x = 3.456, y = 4 }, [4] = { x = 9 } } },
     presets = { { name = "Default", layers = { [0] = { idx = 0, type = "empty", size = 1, offset = 0 } } } },
     revision = 5, redraw = false, work = {},
 } } }
-state.ensure()
+load_save()
 local c2 = storage.controllers[2]
-check(#c2.curve.points == 2 and c2.curve.points[1].y == 2 and c2.curve.points[2].x == 3, "3->4: slots in order")
-check(c2.revision == 6 and c2.redraw == true and c2.work.draw ~= nil, "3->4: replan and redraw")
+check(#c2.curve.points == 2 and c2.curve.points[1].y == 2 and c2.curve.points[2].x == 3.46, "3->4: slots in order, rounded")
+check(c2.revision > 5 and c2.redraw == true and c2.work.draw ~= nil, "3->4: replan and redraw")
 check(c2.ui.preview_build == true, "3->4: toggles kept")
 
 -- 4 -> 5 on its own: a held point becomes the selected point
@@ -71,35 +112,47 @@ storage = { schema_version = 4, sprites = {}, controllers = { [3] = {
     presets = { { name = "Default", layers = { [0] = { idx = 0, type = "empty", size = 1, offset = 0 } } } },
     revision = 2, redraw = false, work = {},
 } } }
-state.ensure()
+load_save()
 local c3 = storage.controllers[3]
 check(c3.ui.selected_point == 2 and c3.ui.held_point == nil, "4->5: held point selected")
 check(c3.view.selected_color == "amber" and c3.redraw == true, "4->5: view settings, redraw")
 
 -- The migrated controller works with the current code.
 local planner = require("scripts.build.planner")
-local plan = planner.plan(c.curve, layers)
+storage = v2_storage()
+load_save()
+local plan = planner.plan(storage.controllers[1].curve, storage.controllers[1].presets[1].layers)
 check(#plan.entities > 0, "migrated data plans a build")
 
--- Fresh game
-storage = {}
-state.ensure()
-check(storage.schema_version == state.SCHEMA_VERSION and next(storage.controllers) == nil, "fresh storage initialised")
-
 -- 0.1.x data (no schema version, old shape) is discarded
-storage = { controllers = { [1] = { foo = 1 } }, curve_projectors = {} }
-state.ensure()
-check(storage.schema_version == state.SCHEMA_VERSION and next(storage.controllers) == nil, "unversioned data discarded")
+cleared, destroyed = 0, 0
+storage = { controllers = { [1] = { foo = 1 } }, curve_projectors = { 1, 2 } }
+load_save()
+check(storage.schema_version == state.SCHEMA_VERSION and next(storage.controllers) == nil, "0.1 data discarded")
+check(storage.curve_projectors == nil, "0.1 tables removed")
+check(cleared > 0 and destroyed == 1, "0.1 drawings and window removed")
 
--- Data from a newer version is discarded rather than misread
-storage = { schema_version = state.SCHEMA_VERSION + 1, controllers = { [1] = { x = 1 } } }
-state.ensure()
-check(next(storage.controllers) == nil, "newer data discarded")
+-- New game: on_init, then the game runs every migration file. Nothing may change.
+storage = {}
+state.init()
+storage.controllers[4] = state.new_controller()
+storage.controllers[4].curve.points = { { x = 1, y = 1 }, { x = 2, y = 2 } }
+storage.controllers[4].ui.selected_point = 2
+local before = helpers.canonical_table(storage)
+for _, name in ipairs(FILES) do dofile(helpers.repo .. "/migrations/" .. name) end
+check(helpers.canonical_table(storage) == before, "migrations do nothing on current data")
+check(storage.schema_version == state.SCHEMA_VERSION, "fresh storage at the current version")
 
--- Current version is left alone
-storage = { schema_version = state.SCHEMA_VERSION, controllers = { [7] = state.new_controller() }, sprites = {} }
-state.ensure()
-check(storage.controllers[7] ~= nil, "current data untouched")
+-- Current data keeps its contents through a configuration change
+state.on_configuration_changed()
+check(storage.controllers[4].curve.points[2].x == 2 and storage.controllers[4].ui.selected_point == 2, "current data kept")
+
+-- Data from a newer version is discarded rather than misread. (Going back to an
+-- older mod version changes the mod version, so the game raises on_configuration_changed.)
+storage = { schema_version = state.SCHEMA_VERSION + 1, controllers = { [1] = { x = 1 } }, sprites = {} }
+for _, name in ipairs(FILES) do dofile(helpers.repo .. "/migrations/" .. name) end
+state.on_configuration_changed()
+check(next(storage.controllers) == nil and storage.schema_version == state.SCHEMA_VERSION, "newer data discarded")
 
 print(string.format("%d/%d migration checks passed", checks - failures, checks))
 os.exit(failures == 0 and 0 or 1)

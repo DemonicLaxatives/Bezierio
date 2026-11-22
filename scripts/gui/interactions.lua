@@ -8,6 +8,7 @@ lib["control"] = require("scripts.gui.control")
 lib["curve"]   = require("scripts.gui.curve_control")
 lib["layer"]   = require("scripts.gui.layer_control")
 lib["view"]    = require("scripts.gui.view_settings")
+lib["preset"]  = require("scripts.gui.preset_control")
 
 --- Which element types each event is routed for. Every element raises on_gui_click,
 --- but e.g. a click on a choose-elem-button must not run its "value changed" action

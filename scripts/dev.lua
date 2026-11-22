@@ -113,6 +113,17 @@ remote.add_interface("bezierio-dev", {
     item_filter = function()
         return state.item_filter()
     end,
+    --- Replace Bézierio's storage (migration test fixture).
+    set_storage = function(data)
+        for key in pairs(storage) do storage[key] = nil end
+        for key, value in pairs(data) do storage[key] = value end
+    end,
+    storage = function()
+        return storage
+    end,
+    schema_version = function()
+        return state.SCHEMA_VERSION
+    end,
     render_count = function()
         return #rendering.get_all_objects(script.mod_name)
     end,

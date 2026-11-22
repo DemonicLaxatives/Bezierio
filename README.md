@@ -30,7 +30,9 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
    trash button removes all points.
 3. Toggle **Draw** to see the curve and its points.
 4. **Set up layers** in the layer list. Pick a layer to edit it in the pane below
-   the list.
+   the list. Layer stacks are saved as **presets**: the bar above the list
+   switches between them, and copies, renames, deletes, exports or imports them
+   (export gives a string to share; import takes one).
    - **Layer 0** runs along the middle of the curve.
    - **Layers 1, 2, …** stack to the right of the direction of travel (P1 → last
      point), **layers −1, −2, …** to the left. Use the **+** buttons to add layers
@@ -60,6 +62,10 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
 
    Robots, or you, then build the ghosts. A whole build is one undo step
    (<kbd>Ctrl</kbd>+<kbd>Z</kbd>).
+
+   - **Blueprint** puts the build in your cursor as a blueprint instead. It snaps
+     onto the preview, so the first click places it exactly there, and further
+     copies line up end to end. Rotate, share or store it like any blueprint.
 
    In the map editor or with cheat mode on, both buttons build the real entities
    and tiles straight away. Trees, rocks and (with super force) your buildings in

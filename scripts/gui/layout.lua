@@ -3,6 +3,7 @@ local control = require("scripts.gui.control")
 local curve_control = require("scripts.gui.curve_control")
 local layer_view = require("scripts.gui.layer_view")
 local view_settings = require("scripts.gui.view_settings")
+local preset_control = require("scripts.gui.preset_control")
 local state = require("scripts.state")
 
 local lib = {}
@@ -34,8 +35,9 @@ end
 --- @param player LuaPlayer
 function lib.create_main_window(player)
     -- The status and totals lines start empty; make jobs.lua fill them in again.
-    local work = state.get(player.index).work
-    work.status, work.totals_revision = nil, nil
+    local controller = state.get(player.index)
+    controller.work.status, controller.work.totals_revision = nil, nil
+    controller.ui.preset_mode = nil
 
     local frame = player.gui.screen.add { type = "frame", name = "bezierio_window", direction = "vertical" }
     frame.location = { 75, 75 }
@@ -47,7 +49,9 @@ function lib.create_main_window(player)
     control.add(left, player)
     view_settings.add(left, player)
     curve_control.add(left, player)
-    layer_view.add(main, player.index)
+    local right = main.add { type = "flow", name = "right_column", direction = "vertical" }
+    preset_control.add(right, player)
+    layer_view.add(right, player.index)
 end
 
 --- @param e EventData.on_gui_click|EventData.on_gui_closed

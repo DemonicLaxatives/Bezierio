@@ -112,15 +112,27 @@ planning, random-curve properties and migrations.
 
 ## Phase 2: features
 
-0. Adhere to factorio migration convention: https://github.com/321freddy/even-distribution 
-1. **Blueprint output (rec: highest-value feature).** Write the plan into a
-   blueprint in the cursor instead of placing ghosts. Players can then
-   stamp/rotate/share it, and it works with any build mode the game supports.
-2. **Presets.** The data model already has `presets[]` but the GUI only uses #1.
-   Add save/rename/switch, and export/import as a string.
-3. **Pole smart placement.** Override spacing, placing the poles as far as possible from one another, 
-but when there's consumers along the way, ensure they're all powered. 
-Just like drag placing poles works in game.
+Done (group a):
+
+0. **Migrations** follow the game's convention: files in `migrations/`, each acting
+   only on its starting schema version (new games run them all). The game doesn't
+   raise on_configuration_changed for migrations alone, so they flag a rebuild that
+   the next tick or event does. `tests/migrate-save.sh` checks it on a real save.
+1. **Blueprint output:** a Blueprint button puts the plan in the cursor, with
+   absolute snapping offset so it lands on the preview. Wires and qualities are
+   included. Built over several ticks; writing it into the item is one engine call
+   (~18 ms for the 18k-entity bench curve).
+2. **Presets:** a bar above the layer list to switch, rename, copy, delete,
+   export and import layer stacks (versioned string; import rebuilds each layer
+   like the picker, so missing items become empty layers and are reported).
+7. **Split the GUI test** into `points`, `layers` and `build` scenarios with a
+   shared `lib/flow.lua`; `tests/run_all.sh` runs everything.
+
+To do:
+
+3. **Pole smart placement.** Override spacing, placing the poles as far as possible from one another when there's nothing to power,
+  but place one early to ensure that every power network member in the plan gets a connection.
+  Just like drag placing poles works in game.
 4. **More layer types**, prioritised by defence use:
    - pipes and belts 
       - directional: needs the tangent → direction mapping
@@ -139,11 +151,15 @@ Just like drag placing poles works in game.
    - land mines (scattered with a density, optional parameter to connect them up with circui wires);
    - lamps (spacing, colors - monochrome, a cyclic color pallete takings samples from the curve lenght);
    - gates where a rail or belt crosses a wall.
+   - solar pannels - spacing
+   - acumulators - spacing
+   - radars - spacing, autoscale the slider with their range
 5. **Rails.** Fit 2.0 rail pieces (straight, half-diagonal, curved-a/b) to the
    curve, plus signals at a spacing measured in wagons (fields already exist).
    This is the largest item: it needs a search over rail-piece sequences that stays
    within a tolerance of the curve. `scripts/layers/rail.lua` is the stub (it is
-   `placement = "unsupported"` today).
+   `placement = "unsupported"` today). Give the user a toggle to lay elevated or normal rails, 
+   will have to do the support calculations ourselves.
 
 6. **Shape helpers:** circle/arc/ellipse generators (see
    `python_scripts/generate_circles.py`), mirroring the layer stack, offsetting the
@@ -209,6 +225,7 @@ Just like drag placing poles works in game.
 - Remove the migrations made during development, they're usefull for seamless testing but serve no purpose for the end user on initial release.
 - A storage migration test ground work, there will be no migrations for release: create a save with schema N, load it with N+1, check
   nothing crashes (`--test-save`). Releases are when old saves start to matter. 
+- A full review.
 
 ## Testing to add along the way
 

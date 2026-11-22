@@ -5,6 +5,7 @@
 ```
 info.json, data.lua, control.lua   mod entry points
 settings.lua             map setting: work budget per tick
+migrations/              storage upgrades, run by the game once per save (see Storage)
 prototypes/
   items.lua              bezierio-pointer: cursor-only item for placing control points
   custom_input.lua       pointer click / shift-click / right-click / shift-wheel, Alt+B
@@ -13,6 +14,7 @@ scripts/
   state.lua              the definition of `storage`, accessors, migrations (start here)
   jobs.lua               per-tick runner: planning, drawing, building, within a budget
   draw.lua               rendering: control points, curve, build preview, bend warnings
+  presets.lua            named layer stacks: copy, rename, delete, export/import strings
   palette.lua            one colour per layer; named colours and defaults for the view settings
   init.lua               on_init / on_configuration_changed / players, mod-gui button
   custom_input.lua       the curve pointer in the world
@@ -30,6 +32,7 @@ scripts/
     geometry.lua         frames, spatial index, grid distance from the curve
     planner.lua          curve + layers -> BuildPlan, as a resumable job
     executor.lua         BuildPlan -> world, as a resumable job (incl. wiring)
+    blueprint.lua        BuildPlan -> blueprint in the cursor, as a resumable job
     undo.lua             keeps a whole build in one undo item
     outputs/ghost.lua    ... as ghosts
     outputs/instant.lua  ... as real entities (map editor, cheat mode)
@@ -40,6 +43,7 @@ scripts/
     control.lua          Draw / Preview / Build buttons, status and totals lines (group "control")
     curve_control.lua    pointer button, closed loop, reverse, point list (group "curve")
     view_settings.lua    per-player colours, curve width, preview opacity (group "view")
+    preset_control.lua   preset bar above the layer list (group "preset")
     layer_view.lua       layer list and the selected layer's detail pane
     layer_control.lua    layer actions (group "layer")
 tests/                   see Testing
@@ -110,20 +114,47 @@ storage.controllers[player_index]
     presets   {{name, layers = {[k] = Layer}}}             (layer k: … -1, 0, 1 …)
     revision  bumped on curve/layer changes (changed_tick: when)
     redraw    view needs redrawing (redraw_points: only the point markers)
-    work      jobs: plan (PlannerJob), draw progress, pending_build, build (BuildJob)
+    work      jobs: plan (PlannerJob), draw progress, pending_build, build (BuildJob or BlueprintJob)
 storage.sprites[player_index]   LuaRenderObjects: curve / control_points / preview / trash
 storage.item_filter             ItemPrototypeFilter for the layer pickers
+storage.rebuild_needed          set by migrations: rebuild derived data on next access
 ```
 
 Always go through the `state` accessors.
 
-**Changing the layout:**
-1. Bump `SCHEMA_VERSION`.
-2. Add `MIGRATIONS[old_version]`, which upgrades storage by one version.
-3. Add a case to `tests/unit/migrations.lua`.
+Upgrades follow the game's [migration
+mechanism](https://lua-api.factorio.com/latest/auxiliary/migrations.html): Lua files
+in `migrations/`. The game runs each file once per save, in byte-wise file name
+order, when a save is loaded. It also runs all of them when the mod is added to a
+save or a new game starts, right after `on_init`. Hence:
 
-`state.ensure()` runs the migrations in order. Data with no migration path
-(0.1.x, or a newer version) is discarded.
+- each file acts only when `storage.schema_version` is its starting version, and
+  sets the next one, so it does nothing on current data;
+- files use only `storage`, `game`, `rendering` and `prototypes`, never the mod's
+  modules: a migration must keep doing what it did when it was written;
+- derived data (jobs, drawings, the item filter, settings added later) isn't
+  migrated. `state.on_configuration_changed` rebuilds it. The game doesn't raise
+  `on_configuration_changed` when it only applied migrations (seen in 2.1.24 with
+  the mod version unchanged), so migrations set `storage.rebuild_needed` and the
+  first tick or event does the rebuild (`state.ensure_rebuilt`). The map editor
+  starts paused, so a GUI event may come first.
+
+Files: `0.2.0.lua` discards 0.1.x data (no `schema_version`). The
+`0.2.0-dev-N.lua` files upgrade saves from development builds; they sort before
+`0.2.0.lua` (`-` < `.`) and are to be removed before the first release (see the
+roadmap). Name later ones after the mod version that introduces them. Names sort
+byte-wise, so `0.10.0.lua` would run before `0.9.0.lua`: once versions get there,
+rename or pad accordingly.
+
+**Changing the layout:**
+1. Bump `state.SCHEMA_VERSION`.
+2. Add a migration file that upgrades from the previous version, sets the new one
+   and sets `storage.rebuild_needed = true`.
+3. Add cases to `tests/unit/migrations.lua` (it runs the files the way the game
+   does), and update the fixture in `tests/bezierio-migration-fixture` if it
+   helps.
+
+Data from a newer version of the mod is discarded (on_configuration_changed).
 
 ## Curves
 
@@ -285,11 +316,15 @@ don't depend on the layout.
 ## Testing
 
 ```sh
-tests/unit/run_all.sh                                    # all unit tests, no game needed
-tests/run.sh smoke                                       # loads, runs 120 ticks with a player
-tests/run.sh gui-flow                                    # full UI flow, builds in all modes
-tests/run.sh gui-flow space-age quality elevated-rails   # same, with DLC mods enabled
-tests/run.sh bench                                       # timing of plan / build (read the BENCH lines)
+tests/run_all.sh                                       # everything below except bench, with a summary
+tests/unit/run_all.sh                                  # all unit tests, no game needed
+tests/run.sh smoke                                     # loads, runs 120 ticks with a player
+tests/run.sh points                                    # the pointer, point list, closed loops
+tests/run.sh layers                                    # layer list and detail pane, presets, view settings
+tests/run.sh build                                     # preview, totals, builds in all modes, blueprints
+tests/run.sh build space-age quality elevated-rails    # same, with DLC mods enabled
+tests/migrate-save.sh                                  # the game applies migrations/ to a real save
+tests/run.sh bench                                     # timing (read the BENCH lines in the log)
 ```
 
 **Unit tests** (`tests/unit/`, plain Lua 5.4) load mod modules through
@@ -302,7 +337,8 @@ tests/run.sh bench                                       # timing of plan / buil
 | `plan_properties.lua` | Random curves and loops: no overlaps, an unbroken layer 0 wall line (a ring through the seam for loops), poles in reach except counted gaps, and bend warnings where they belong. Adding an underlay anywhere never moves an entity or a tile. |
 | `curve_edit.lua` | Inserting (including where a shift-click goes) and reversing points. |
 | `layers.lua` | Which layer settings survive picking another item (`registry.carry_over`). |
-| `migrations.lua` | Storage upgrades. |
+| `presets.lua` | Preset list operations; export data round trip and import validation. |
+| `migrations.lua` | The files in `migrations/`, run like the game does, on old and current data. |
 
 `helpers.plan` is the only place the tests touch the planner API.
 
@@ -316,8 +352,14 @@ tests/run.sh bench                                       # timing of plan / buil
   click elements or fire custom inputs, so `dev.lua` imitates what the engine does
   first.
 - Steps that start work wait for `dev("idle")`, i.e. for jobs to catch up.
-- To add a scenario: create `tests/bezierio-test/scenarios/<name>/control.lua` and
-  end with `script.finish_test(true|false)`.
+- Scenarios share helpers, a standard curve and layer stack, and the step runner
+  in `tests/bezierio-test/lib/flow.lua`.
+- To add a scenario: create `tests/bezierio-test/scenarios/<name>/control.lua`,
+  add steps with `flow.step` and end with `flow.run("<name>")`, and add it to
+  `tests/run_all.sh`.
+- `migrate-save.sh` creates a save with a copy of the mod that has no
+  `migrations/` folder; the `bezierio-migration-fixture` mod writes old data into
+  its storage. It then loads the save with the real mod and the fixture checks the
+  result on the first tick.
 
-The `tests/` and `python_scripts/` folders sit inside the mod folder; leave them out
-of release zips.
+The `tests/` folder sits inside the mod folder; leave it out of release zips.

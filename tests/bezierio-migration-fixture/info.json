@@ -1,0 +1,13 @@
+{
+  "name": "bezierio-migration-fixture",
+  "version": "0.0.1",
+  "title": "Bézierio migration test fixture",
+  "author": "DemonicLaxatives",
+  "factorio_version": "2.1",
+  "dependencies": [
+    "base",
+    "Bezierio",
+    "bezierio-test"
+  ],
+  "description": "Used by tests/migrate-save.sh only. Not for release."
+}

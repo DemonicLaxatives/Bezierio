@@ -17,6 +17,7 @@ local lib = {}
 --- @field preview_build boolean
 --- @field selected_point integer|nil   # control point the pointer moves (until right-click)
 --- @field selected_layer integer        # layer shown in the detail pane
+--- @field preset_mode "rename"|"export"|"import"|nil  # what the preset bar shows (window only)
 
 --- @class Preset
 --- @field name string
@@ -35,8 +36,8 @@ local lib = {}
 --- @field revision integer               # controller.revision the jobs belong to
 --- @field plan PlannerJob|nil
 --- @field draw DrawProgress
---- @field pending_build BezierioBuildMode|nil    # build requested, waiting for the plan
---- @field build BuildJob|nil
+--- @field pending_build BezierioBuildMode|"blueprint"|nil    # build requested, waiting for the plan
+--- @field build BuildJob|BlueprintJob|nil
 --- @field status string|nil              # last status line shown (to update only on change)
 --- @field totals_revision integer|nil    # revision whose totals are shown
 
@@ -90,103 +91,25 @@ function lib.default_view()
     return view
 end
 
--- Migrations ------------------------------------------------------------------
+-- Lifecycle -------------------------------------------------------------------
 
+--- Version of the layout of `storage`. Upgrades are migration files in
+--- migrations/, run by the game once per save in file name order when a save is
+--- loaded. Each acts only on its own starting version, so they are harmless on new
+--- games, which run them all after on_init.
+---
+--- Changing the layout: bump this, add migrations/<mod version>[-n].lua that
+--- upgrades from the previous version, sets the new one and sets
+--- `storage.rebuild_needed`, using only `storage`, `game`, `rendering` and
+--- `prototypes` (not this code: it will change). Add the case to
+--- tests/unit/migrations.lua.
+---
+--- The game doesn't raise on_configuration_changed when it only applied
+--- migrations (2.1.24, mod version unchanged), so `rebuild_needed` makes the next
+--- access do what on_configuration_changed does (lib.ensure_rebuilt).
 lib.SCHEMA_VERSION = 5
 
---- MIGRATIONS[v] upgrades storage from version v to v + 1. Never edit a released
---- migration; add a new one and bump SCHEMA_VERSION.
---- @type table<integer, fun()>
-local MIGRATIONS = {
-    -- 2 -> 3: groundwork refactor. Curve as {kind, points}; layer type "nil" is now
-    -- "empty"; layers no longer store `priority`; UI state renamed; jobs area.
-    [2] = function()
-        for player_index, old in pairs(storage.controllers or {}) do
-            local old_ui = old.state or {}
-            local old_curve = (old.curve_cache or {})[0] or {}
-            local curve = { points = {} }
-            for idx, point in pairs(old_curve.raw_control_points or {}) do
-                curve.points[idx] = { x = point.x, y = point.y }
-            end
-            local presets = {}
-            for i, preset in pairs(old.presets or {}) do
-                local layers = {}
-                for k, layer in pairs(preset.layers or {}) do
-                    if layer.type == "nil" then layer.type = "empty" end
-                    layer.priority = nil
-                    layers[k] = layer
-                end
-                if not layers[0] then layers[0] = registry.new_empty(0) end
-                presets[i] = { name = preset.name or "Default", layers = layers }
-            end
-            if not presets[1] then presets[1] = { name = "Default", layers = { [0] = registry.new_empty(0) } } end
-
-            storage.controllers[player_index] = {
-                ui = {
-                    preset_index = old_ui.preset_indx or 1,
-                    draw_curve = old_ui.draw_curve or false,
-                    preview_build = old_ui.preview_build or false,
-                    active_control_point = old_ui.active_control_point,
-                },
-                curve = { kind = "bezier", points = curve.points },
-                presets = presets,
-                revision = 1,
-                redraw = true,
-                work = lib.new_work(),
-            }
-        end
-    end,
-
-    -- 3 -> 4: Catmull-Rom curves. Control points become a plain list (unset and
-    -- half-entered slots are dropped), curves get a `closed` flag, and the numbered
-    -- pointers are replaced by one pointer that can hold a point.
-    [3] = function()
-        for _, controller in pairs(storage.controllers or {}) do
-            local old = controller.curve or {}
-            local slots = {}
-            for idx, point in pairs(old.points or {}) do
-                if point.x and point.y then table.insert(slots, idx) end
-            end
-            table.sort(slots)
-            local curve = curve_lib.new()
-            for _, idx in ipairs(slots) do curve_lib.append(curve, old.points[idx]) end
-            controller.curve = curve
-            controller.ui.active_control_point = nil
-            controller.ui.held_point = nil
-            controller.ui.selected_layer = 0
-            -- Layer sizes were taken from rounded collision boxes, which made 1x1
-            -- entities (e.g. small poles) 2x2. Recompute from the prototypes.
-            if prototypes then
-                for _, preset in pairs(controller.presets or {}) do
-                    for _, layer in pairs(preset.layers or {}) do
-                        local prototype = layer.name and prototypes.entity[layer.name]
-                        if prototype and layer.type ~= "tile" then
-                            layer.size = math.max(1, prototype.tile_width, prototype.tile_height)
-                            if type(layer.spacing) == "number" then layer.spacing = math.max(layer.size, layer.spacing) end
-                        end
-                    end
-                end
-            end
-            controller.revision = (controller.revision or 0) + 1
-            controller.redraw = true
-            controller.work = lib.new_work()
-        end
-    end,
-
-    -- 4 -> 5: a point picked up by the pointer stays selected after it is moved
-    -- (held_point -> selected_point); per-player view settings.
-    [4] = function()
-        for _, controller in pairs(storage.controllers or {}) do
-            controller.ui.selected_point = controller.ui.held_point
-            controller.ui.held_point = nil
-            controller.view = lib.default_view()
-            controller.redraw = true
-        end
-    end,
-}
-lib.MIGRATIONS = MIGRATIONS
-
---- Discard everything (unknown or too old data).
+--- Discard everything: a fresh, empty layout.
 local function reset()
     if rendering then rendering.clear(script.mod_name) end
     if game then
@@ -196,31 +119,46 @@ local function reset()
             end
         end
     end
+    for key in pairs(storage) do storage[key] = nil end
     storage.controllers = {}
     storage.sprites = {}
+    storage.schema_version = lib.SCHEMA_VERSION
 end
 
---- Bring `storage` to the current layout. Safe to call from any event (not on_load).
-function lib.ensure()
-    local version = storage.schema_version
-    if version == lib.SCHEMA_VERSION then return end
-
-    if version == nil or version < 2 or version > lib.SCHEMA_VERSION or not MIGRATIONS[version] then
-        -- Fresh game, 0.1.x data, or data from a newer version: start over.
-        reset()
-    else
-        while version < lib.SCHEMA_VERSION do
-            MIGRATIONS[version]()
-            version = version + 1
-        end
-        -- Anything drawn under the old layout is stale.
-        if rendering then rendering.clear(script.mod_name) end
-        storage.sprites = {}
-    end
-    storage.controllers = storage.controllers or {}
-    storage.sprites = storage.sprites or {}
+--- New game, or the mod was added to a save (script.on_init).
+function lib.init()
+    reset()
     if prototypes then storage.item_filter = registry.build_item_filter() end
-    storage.schema_version = lib.SCHEMA_VERSION
+end
+
+--- Mods, prototypes, startup settings or migrations changed
+--- (script.on_configuration_changed). Rebuild everything derived: running jobs
+--- refer to plans for prototypes that may be gone, and drawings may be stale. Fill
+--- in settings added since the data was saved.
+function lib.on_configuration_changed()
+    storage.rebuild_needed = nil
+    if storage.schema_version ~= lib.SCHEMA_VERSION then
+        -- From a newer version of the mod, or not migrated: start over.
+        reset()
+    end
+    if rendering then rendering.clear(script.mod_name) end
+    storage.sprites = {}
+    for _, controller in pairs(storage.controllers) do
+        controller.work = lib.new_work()
+        controller.redraw = true
+        controller.redraw_points = nil
+        controller.revision = (controller.revision or 0) + 1
+        controller.view = controller.view or {}
+        for key, value in pairs(palette.VIEW_DEFAULTS) do
+            if controller.view[key] == nil then controller.view[key] = value end
+        end
+    end
+    if prototypes then storage.item_filter = registry.build_item_filter() end
+end
+
+--- After migrations: rebuild once, on whatever touches storage first.
+function lib.ensure_rebuilt()
+    if storage.rebuild_needed then lib.on_configuration_changed() end
 end
 
 -- Accessors -------------------------------------------------------------------
@@ -228,7 +166,7 @@ end
 --- @param player_index integer
 --- @return Controller
 function lib.get(player_index)
-    lib.ensure()
+    lib.ensure_rebuilt()
     local controller = storage.controllers[player_index]
     if not controller then
         controller = lib.new_controller()
@@ -270,7 +208,7 @@ end
 --- @param player_index integer
 --- @return SpriteCache
 function lib.sprites(player_index)
-    lib.ensure()
+    lib.ensure_rebuilt()
     local sprites = storage.sprites[player_index]
     if not sprites then
         sprites = { curve = {}, control_points = {}, preview = {} }
@@ -301,26 +239,18 @@ end
 
 --- Build once the plan for the current curve and layers is ready.
 --- @param player_index integer
---- @param mode BezierioBuildMode
+--- @param mode BezierioBuildMode|"blueprint"
 function lib.request_build(player_index, mode)
     lib.get(player_index).work.pending_build = mode
 end
 
 --- @return ItemPrototypeFilter[]
 function lib.item_filter()
-    lib.ensure()
     return storage.item_filter
-end
-
---- Rebuild data that depends on prototypes (call from on_configuration_changed).
-function lib.refresh_prototype_data()
-    lib.ensure()
-    storage.item_filter = registry.build_item_filter()
 end
 
 --- @param player_index integer
 function lib.remove_player(player_index)
-    lib.ensure()
     local sprites = storage.sprites[player_index]
     if sprites then
         for _, cache in pairs(sprites) do

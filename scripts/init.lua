@@ -27,15 +27,15 @@ function lib.setup_player(player)
 end
 
 script.on_init(function()
-    state.ensure()
+    state.init()
     for _, player in pairs(game.players) do
         lib.setup_player(player)
     end
 end)
 
+-- Runs after the game applied any migrations/ files to this save.
 script.on_configuration_changed(function()
-    state.ensure()
-    state.refresh_prototype_data()
+    state.on_configuration_changed()
     for _, player in pairs(game.players) do
         lib.setup_player(player)
     end

@@ -18,6 +18,7 @@ local state = require("scripts.state")
 local draw = require("scripts.draw")
 local planner = require("scripts.build.planner")
 local executor = require("scripts.build.executor")
+local blueprint = require("scripts.build.blueprint")
 local curve_lib = require("scripts.curve.curve")
 local window = require("scripts.gui.window")
 
@@ -50,9 +51,23 @@ local function plan_needed(controller)
     return nil
 end
 
+--- What runs a build job: the executor (ghosts / instant), or the blueprint writer.
+--- @param job BuildJob|BlueprintJob
+local function runner(job)
+    return job.kind == "blueprint" and blueprint or executor
+end
+
 --- @param player LuaPlayer
---- @param job BuildJob
+--- @param job BuildJob|BlueprintJob
 local function report_build(player, job)
+    if job.kind == "blueprint" then
+        if job.error then
+            player.print({ "bezierio-message." .. job.error })
+        elseif job.result then
+            player.print({ "bezierio-message.blueprint-done", tostring(job.result.entities), tostring(job.result.tiles) })
+        end
+        return
+    end
     local result, plan = job.result, job.plan
     local message = job.output == "instant" and "bezierio-message.build-result-instant"
         or "bezierio-message.build-result"
@@ -68,7 +83,7 @@ end
 local function status_of(controller)
     local work = controller.work
     if work.build then
-        local pct = math.floor(executor.progress(work.build) * 100)
+        local pct = math.floor(runner(work.build).progress(work.build) * 100)
         return { "label.status-building", tostring(pct) }, "b" .. pct
     end
     local plan_job = work.plan
@@ -215,14 +230,19 @@ function lib.update(player, controller)
             for _, idx in ipairs(plan_job.plan.unsupported) do
                 player.print({ "bezierio-message.unsupported-layer", tostring(idx) })
             end
-            work.build = executor.new_job(player, plan_job.plan, work.pending_build)
+            if work.pending_build == "blueprint" then
+                local preset = controller.presets[controller.ui.preset_index]
+                work.build = blueprint.new_job(player, plan_job.plan, "Bézierio: " .. preset.name)
+            else
+                work.build = executor.new_job(player, plan_job.plan, work.pending_build)
+            end
             work.pending_build = nil
         end
     end
 
     local build = work.build
     if build and budget > 0 then
-        local done = executor.step(build, budget)
+        local done = runner(build).step(build, budget)
         if done then
             report_build(player, build)
             work.build = nil
@@ -256,7 +276,7 @@ function lib.is_idle(player_index, controller)
 end
 
 script.on_event(defines.events.on_tick, function()
-    state.ensure()
+    state.ensure_rebuilt()
     for player_index, controller in pairs(storage.controllers) do
         local player = game.get_player(player_index)
         if player and player.valid then

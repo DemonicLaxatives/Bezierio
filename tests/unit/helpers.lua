@@ -123,4 +123,24 @@ function helpers.canonical(plan)
         .. " warnings " .. #plan.warnings .. string.format(" length %.2f", plan.length)
 end
 
+--- Canonical text form of any plain table (sorted keys), to compare data.
+--- @param value any
+--- @return string
+function helpers.canonical_table(value)
+    if type(value) ~= "table" then return type(value) == "string" and string.format("%q", value) or tostring(value) end
+    local keys = {}
+    for k in pairs(value) do table.insert(keys, k) end
+    table.sort(keys, function(a, b)
+        if type(a) == type(b) then return a < b end
+        return type(a) < type(b)
+    end)
+    local parts = {}
+    for _, k in ipairs(keys) do
+        if type(value[k]) ~= "function" then
+            table.insert(parts, tostring(k) .. "=" .. helpers.canonical_table(value[k]))
+        end
+    end
+    return "{" .. table.concat(parts, ",") .. "}"
+end
+
 return helpers

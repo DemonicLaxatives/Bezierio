@@ -59,6 +59,16 @@ script.on_event(defines.events.on_tick, function(e)
     mark("ghost-start")
   elseif phase == "ghost" and dev("idle", P) then
     mark("ghost-end")
-    script.finish_test(true)
+    dev("click", P, "blueprint_build")
+    phase, started_tick = "blueprint", e.tick
+    mark("blueprint-start")
+  elseif phase == "blueprint" then
+    mark("blueprint-tick") -- per-tick timestamps: the last step writes the whole blueprint in one call
+    -- wall time of each tick, to see the one-call write at the end
+    if dev("idle", P) then
+      mark("blueprint-end")
+      log("BENCH blueprint entities=" .. player.cursor_stack.get_blueprint_entity_count())
+      script.finish_test(true)
+    end
   end
 end)

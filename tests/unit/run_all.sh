@@ -4,7 +4,7 @@ set -euo pipefail
 LUA="${1:-lua5.4}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 status=0
-for t in plan_snapshot planner_jobs migrations curve_edit layers plan_properties; do
+for t in plan_snapshot planner_jobs migrations curve_edit layers presets plan_properties; do
   printf '%-18s ' "$t"
   "$LUA" "$DIR/$t.lua" | tail -1 || status=1
 done

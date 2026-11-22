@@ -43,6 +43,14 @@ function lib.add(parent, player)
         tooltip = { "tooltip.super-force-build" },
         style = "tool_button",
     }
+    buttons.add {
+        type = "sprite-button",
+        name = "blueprint_build",
+        tags = { group = "control", action = "blueprint" },
+        sprite = "item/blueprint",
+        tooltip = { "tooltip.blueprint-build" },
+        style = "tool_button",
+    }
     view_settings.add_toggle(buttons)
     flow.add { type = "label", name = "status", caption = "" }
 
@@ -80,12 +88,12 @@ end
 
 --- Building happens in the tick loop (jobs.lua) once the plan is ready.
 --- @param player_index integer
---- @param mode BezierioBuildMode
+--- @param mode BezierioBuildMode|"blueprint"
 local function request_build(player_index, mode)
     local player = game.get_player(player_index)
     if not player then return end
     local group = player.permission_group
-    if group and not group.allows_action(defines.input_action.build) then
+    if group and mode ~= "blueprint" and not group.allows_action(defines.input_action.build) then
         player.print({ "bezierio-message.not-allowed" })
         return
     end
@@ -104,6 +112,11 @@ end
 --- @param e EventData.on_gui_click
 lib["super_build"] = function(e)
     request_build(e.player_index, "superforced")
+end
+
+--- @param e EventData.on_gui_click
+lib["blueprint"] = function(e)
+    request_build(e.player_index, "blueprint")
 end
 
 return lib
