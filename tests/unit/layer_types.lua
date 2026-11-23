@@ -150,5 +150,27 @@ check(on_grid and #gplaced >= 20 * 300 / 16 * 0.9, "grid: every 4 tiles over a 2
 mine.density = 100
 check(#of_layer(helpers.plan(long, { [0] = wall0, [1] = mine }), 1) >= 6 * 299, "density 100 fills the band")
 
+-- Side wall layers join side by side, also off to the side of a bend (where a
+-- band's cells used to meet only at a corner): a circle, two wall layers each side.
+local function wall(idx, offset) return { idx = idx, type = "wall", name = "wall", quality = "normal", radius = 1, checkerboard = 0, size = 1, offset = offset } end
+local circle = helpers.shape_curve("circle", { { x = 0.5, y = 0.5 }, { x = 0.5, y = -29.5 } })
+local walled = helpers.plan_curve(circle, { [0] = wall(0, 0), [1] = wall(1, 2), [2] = wall(2, 2), [-1] = wall(-1, 2), [-2] = wall(-2, 2) })
+local corner_only = 0
+local by_layer = {}
+for _, e in ipairs(walled.entities) do
+    by_layer[e.layer] = by_layer[e.layer] or {}
+    by_layer[e.layer][math.floor(e.position.x) .. "," .. math.floor(e.position.y)] = { math.floor(e.position.x), math.floor(e.position.y) }
+end
+for _, cells in pairs(by_layer) do
+    for _, c in pairs(cells) do
+        for _, d in ipairs({ { 1, 1 }, { 1, -1 } }) do
+            if cells[(c[1] + d[1]) .. "," .. (c[2] + d[2])] and not cells[(c[1] + d[1]) .. "," .. c[2]] and not cells[c[1] .. "," .. (c[2] + d[2])] then
+                corner_only = corner_only + 1
+            end
+        end
+    end
+end
+check(corner_only == 0, "side wall layers around a circle join side by side: " .. corner_only .. " corner-only joins")
+
 print(string.format("%d/%d layer type checks passed", checks - failures, checks))
 os.exit(failures == 0 and 0 or 1)

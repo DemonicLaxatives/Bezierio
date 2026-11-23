@@ -34,6 +34,7 @@ local lib = {}
 ---@field decorate? fun(layer: Layer, entity: PlannedEntity, info: PlacementInfo)  # spaced layers: direction, colour, ammo, ...
 ---@field attach? fun(layer: Layer, entity: PlannedEntity, ctx: FeedContext)  # spaced layers: what goes with each entity (turret feeds)
 ---@field thickness? fun(layer: Layer): number  # band width in grid units (default: footprint size)
+---@field join_corners? boolean        # band layers: cells meeting only at a corner get a corner cell (walls; not with a checkerboard)
 
 ---@class Layer
 ---@field idx integer          # 0 is centred on the curve, >0 to the right of travel, <0 to the left

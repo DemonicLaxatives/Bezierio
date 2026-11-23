@@ -225,12 +225,16 @@ Done (rails, item 5):
 - Limits: rails cover more than one tile, so wall layers right beside them get cut
   (use *Offset*).
 
-To do:
+Done (side wall layers):
 
-- Side wall layers on the inside of tight bends can be joined only diagonally (the
-  bands get squeezed there; found with belts, never checked for walls).
+- Side wall layers could meet only at a corner, not just on the inside of tight
+  bends: off to the side of any bend (a radius-40 bend, a radius-30 circle). A new
+  planner stage fills a corner cell there, the free one nearest the band. Checked
+  for every random plan and a fixed circle.
 
-
+### Followups
+- After placing unfed or undpowered entities, highlight them for the player, and let toggle it by clicking on the warning. Hide it after a configurable amount of time default - a minute
+- In the exported blueprint, add the curve and preset export strings to the description, make it togglable from player settings.
 
 ## Phase 3: release, CI and automated release
 
@@ -283,7 +287,8 @@ To do:
 ### Release hygiene for the first release (0.2.0)
 
 - GUI and controll upgrades
-  - On top of the rest of the suggestions make it more cohesive and nicer. 
+  - Closed loop toggle is an odd one out. It should be a button.
+  - On top of the rest of the suggestions make it more cohesive and nicer. Give me options on how you see fit some things should be rearanged.
   - Have the panels, and elements within them align to one another. 
   - Give the list entries alternating shaded backgrounds. 
   - The button for adding a layer should take the full width of the layer in gui, but also be shorter in height.

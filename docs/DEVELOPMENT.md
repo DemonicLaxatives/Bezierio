@@ -240,7 +240,8 @@ A layer type is one file in `scripts/layers/`, listed in `TYPE_FILES` in
   turn range and ammo categories), and `thickness(layer)` if the band width isn't
   the footprint size;
 - band layers: `keep(layer, x, y)` instead of the checkerboard (land mine density:
-  a fixed per-cell hash, exact in both integers and doubles);
+  a fixed per-cell hash, exact in both integers and doubles), and `join_corners`
+  (walls, without a checkerboard: see the joins stage);
 - spaced layers: `decorate(layer, entity, info)` adds `direction`, `color` or
   `ammo` to a planned entity. `info.outward` is the normal on the layer's side
   (layer 0: layer 1's side), `info.arc` the distance along the curve. Non-square
@@ -378,6 +379,17 @@ builds the lines one per step:
   Pumps carry `power`, so smart poles reach them.
 Undergrounds and pumps are counted in `plan.extra_counts` for the totals.
 
+**Joins** (a stage between paths and spaced). Walls only connect side by side.
+A 1-wide band is an unbroken staircase where the curve runs straight, but off to
+the side of a bend the grid distance also changes along the curve, so a side
+layer's cells can meet only at a corner (layer 0 never does). For layers with
+`join_corners` (walls without a checkerboard), the rasterizer records their cells
+in order. Wherever two meet only at a corner, the stage fills one of the two
+corner cells with the layer: the free one (no entity, no tile other than an
+underlay) whose grid distance is nearest the layer's band. It runs after paths,
+so belt and pipe corners are taken first, and before spaced layers, which find
+spots around the walls.
+
 **Rails** (`build/rails.lua`, a `rails` stage between bends and rasterize, one
 piece per step). The rail layer's band middle is sampled about once a tile into a
 line. The fit is a chain of rail ends, from `rail_data.lua`: the game's rail
@@ -512,11 +524,11 @@ tests/run.sh bench                                     # timing (read the BENCH 
 |---|---|
 | `plan_snapshot.lua` | Planner output for 30 fixed cases matches `snapshots/plans.txt`. Run with `--update` only for an intended change, and review the diff. |
 | `planner_jobs.lua` | Running the planner in tiny slices gives exactly the one-shot plan. |
-| `plan_properties.lua` | Random curves and loops: no overlaps, an unbroken layer 0 wall line (a ring through the seam for loops), poles in reach except counted gaps, and bend warnings where they belong. Adding an underlay anywhere never moves an entity or a tile. Smart poles: every powered entity is covered or counted in `plan.unpowered` (exactly), and without consumers the poles are about a wire reach apart. Circles and ellipses make an unbroken 1-wide wall ring; arcs are one piece. |
+| `plan_properties.lua` | Random curves and loops: no overlaps, wall layers never joined only at a corner where a corner cell was free, an unbroken layer 0 wall line (a ring through the seam for loops), poles in reach except counted gaps, and bend warnings where they belong. Adding an underlay anywhere never moves an entity or a tile. Smart poles: every powered entity is covered or counted in `plan.unpowered` (exactly), and without consumers the poles are about a wire reach apart. Circles and ellipses make an unbroken 1-wide wall ring; arcs are one piece. |
 | `curve_edit.lua` | Inserting (including where a shift-click goes); reversing keeps the points and samples the curve backwards. |
 | `layers.lua` | Which layer settings survive picking another item (`registry.carry_over`). |
 | `presets.lua` | Preset list operations; export data round trip and import validation. |
-| `layer_types.lua` | Turret facing (both sides, inward) and non-square footprints, ammo, lamp colours and rainbow, radar spacing, land mine density, determinism and wires. |
+| `layer_types.lua` | Turret facing (both sides, inward) and non-square footprints, ammo, lamp colours and rainbow, radar spacing, land mine density, determinism and wires; side wall layers around a circle joined side by side. |
 | `paths.lua` | Belts fed only from behind and lines continuous, undergrounds paired within reach, pipe lines connected and apart, pumps; on a gentle curve, a loop and random curves. |
 | `feeds.lua` | Fluid connection targets in every facing (straight and diagonal, against the game), inserters picking from a belt and dropping into their turret (normal and long reach, straight and curved lines), pipe stubs reaching one network. |
 | `rails.lua` | The rail data; fits stay near calm curves, circles close, elevated track has ramps at both ends and supports in reach of every joint, slanted ends warn; signal counts follow the spacing (doubled both ways). |

@@ -1,7 +1,9 @@
 local common = require("scripts.layers.common")
 
 --- Walls fill their band. With `gates`, a wall cell that lands on an existing
---- straight rail becomes a gate when building (build/executor.lua).
+--- straight rail becomes a gate when building (build/executor.lua). Walls only
+--- join side by side, so cells meeting only at a corner get a corner cell filled
+--- (`join_corners`, the planner's joins stage).
 --- @type LayerType
 return {
     name = "wall",
@@ -9,6 +11,7 @@ return {
     placement = "band",
     output = "entity",
     priority = 100,
+    join_corners = true,
     fields = {
         common.checkerboard,
         common.radius,

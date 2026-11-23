@@ -96,11 +96,27 @@ for it = 1, iterations do
       walls_by_layer[e.layer][x0 .. "," .. y0] = { x0, y0 }
     end
   end
-  local tiles = {}
+  local tiles, over_tiles = {}, {}
   for _, t in ipairs(plan.tiles) do
     local k = t.x .. "," .. t.y
     if tiles[k] then table.insert(problems, "tile overlap at " .. k) end
     tiles[k] = true
+    if not layers[t.layer].under then over_tiles[k] = true end
+  end
+  -- Wall layers (no checkerboard) never join only at a corner where a corner cell
+  -- was free: walls connect side by side only.
+  for idx, cells in pairs(walls_by_layer) do
+    if (layers[idx].checkerboard or 0) == 0 then
+      for _, c in pairs(cells) do
+        for _, d in ipairs({ { 1, 1 }, { 1, -1 } }) do
+          local a, b = (c[1] + d[1]) .. "," .. c[2], c[1] .. "," .. (c[2] + d[2])
+          if cells[(c[1] + d[1]) .. "," .. (c[2] + d[2])] and not cells[a] and not cells[b] then
+            local function free(k) return not occupied[k] and not over_tiles[k] end
+            if free(a) or free(b) then table.insert(problems, "wall layer " .. idx .. " joins only at a corner at " .. c[1] .. "," .. c[2]) end
+          end
+        end
+      end
+    end
   end
   -- Pole chains: consecutive poles within wire reach, except where there was no
   -- room for a pole in between; those gaps must be counted in plan.gaps.

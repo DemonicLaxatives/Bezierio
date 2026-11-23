@@ -89,7 +89,7 @@ lib.COST = {
 --- @field hi number
 --- @field under boolean   # underlay tile band: shares its cells with the other bands
 
---- @alias PlannerStage "sample"|"tangents"|"fill"|"normals"|"bands"|"bends"|"rails"|"rasterize"|"paths"|"spaced"|"done"
+--- @alias PlannerStage "sample"|"tangents"|"fill"|"normals"|"bands"|"bends"|"rails"|"rasterize"|"paths"|"joins"|"spaced"|"done"
 
 --- @class PlannerJob
 --- @field stage PlannerStage
@@ -112,6 +112,9 @@ lib.COST = {
 --- @field outer_plus number              # outermost built distance on the + side (grid units)
 --- @field outer_minus number             # ... on the - side
 --- @field last_warning Vector|nil
+--- @field join_cells {x: integer, y: integer, band: LayerBand}[]|nil  # cells of layers that join corners, in order
+--- @field join_at table<string, integer>|nil  # cell -> layer index, for those layers
+--- @field tiled table<string, true>|nil       # cells with a (non-underlay) tile
 --- @field plan BuildPlan
 
 --- @param x integer
@@ -565,14 +568,33 @@ link_to_nearby = function(job, layer, index)
     if #recent > lib.LINK_WINDOW then table.remove(recent, 1) end
 end
 
---- Place a band layer's tile or entity in a cell (if its checkerboard keeps it).
+--- A band layer's entity in a free cell.
 --- @param job PlannerJob
 --- @param layer Layer
 --- @param x integer
 --- @param y integer
+--- @param key string
+local function band_entity(job, layer, x, y, key)
+    local plan = job.plan
+    plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
+    job.occupied[key] = true
+    table.insert(plan.entities, {
+        name = layer.name, quality = layer.quality,
+        position = { x = x + 0.5, y = y + 0.5 }, size = 1, layer = layer.idx,
+        gate = (layer.gates ~= false and layer.gate_name) or nil,
+    })
+    if (layer.red_wire or layer.green_wire) and layer.circuit_distance then link_to_nearby(job, layer, #plan.entities) end
+end
+
+--- Place a band layer's tile or entity in a cell (if its checkerboard keeps it).
+--- @param job PlannerJob
+--- @param band LayerBand
+--- @param x integer
+--- @param y integer
 --- @param key string    # cell_key(x, y)
 --- @return boolean  # whether a tile was placed
-local function emit_cell(job, layer, x, y, key)
+local function emit_cell(job, band, x, y, key)
+    local layer = band.layer
     local def = registry.type_of(layer)
     if def.placement ~= "band" then return false end
     if def.keep then
@@ -582,18 +604,22 @@ local function emit_cell(job, layer, x, y, key)
     end
     local plan = job.plan
     if def.output ~= "tile" and job.occupied[key] then return false end -- (rails)
-    plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
     if def.output == "tile" then
+        plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
         table.insert(plan.tiles, { name = layer.name, x = x, y = y, layer = layer.idx })
+        if not band.under then
+            job.tiled = job.tiled or {}
+            job.tiled[key] = true
+        end
         return true
     end
-    job.occupied[key] = true
-    table.insert(plan.entities, {
-        name = layer.name, quality = layer.quality,
-        position = { x = x + 0.5, y = y + 0.5 }, size = 1, layer = layer.idx,
-        gate = (layer.gates ~= false and layer.gate_name) or nil,
-    })
-    if (layer.red_wire or layer.green_wire) and layer.circuit_distance then link_to_nearby(job, layer, #plan.entities) end
+    band_entity(job, layer, x, y, key)
+    if def.join_corners and (layer.checkerboard or 0) == 0 then
+        job.join_cells = job.join_cells or {}
+        job.join_at = job.join_at or {}
+        job.join_cells[#job.join_cells + 1] = { x = x, y = y, band = band }
+        job.join_at[key] = layer.idx
+    end
     return false
 end
 
@@ -627,7 +653,7 @@ local function rasterize_frame(job, f, shift)
                         if registry.type_of(band.layer).placement == "path" then
                             collect_path_cell(job, band, x, y, key, u, j)
                         else
-                            placed_tile = emit_cell(job, band.layer, x, y, key)
+                            placed_tile = emit_cell(job, band, x, y, key)
                         end
                         break
                     end
@@ -635,7 +661,7 @@ local function rasterize_frame(job, f, shift)
                 if not placed_tile then
                     for _, band in ipairs(bands) do
                         if band.under and u >= band.lo and u < band.hi then
-                            emit_cell(job, band.layer, x, y, key)
+                            emit_cell(job, band, x, y, key)
                             break
                         end
                     end
@@ -939,6 +965,54 @@ local function stage_paths(job, budget)
     if not job.path_queue[job.cursor] and not job.path_emits then
         job.path_queue, job.line_cells, job.line_of, job.line_layer = nil, nil, nil, nil
         job.belt_cells, job.locked, job.routes, job.reroutes = nil, nil, nil, nil
+        job.stage, job.cursor = "joins", 1
+    end
+    return used
+end
+
+local DIAGONALS = { { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } }
+
+--- Walls join only side by side. Off to the side of a bend, a band's cells can
+--- meet only at a corner: a 1-wide band is an unbroken staircase where the curve
+--- runs straight, but away from it the grid distance also changes along the
+--- curve. Where two cells of a layer meet only at a corner, fill one of the two
+--- corner cells with the layer: the free one nearest its band (belts, pipes and
+--- rails have theirs already; spaced layers come after).
+--- @param job PlannerJob
+--- @param budget number
+local function stage_joins(job, budget)
+    local used = 0
+    local cells, at = job.join_cells or {}, job.join_at or {}
+    while used < budget and cells[job.cursor] do
+        local c = cells[job.cursor]
+        local idx = c.band.layer.idx
+        used = used + 4
+        for _, d in ipairs(DIAGONALS) do
+            local ox, oy = c.x + d[1], c.y + d[2]
+            if at[cell_key(ox, oy)] == idx and at[cell_key(ox, c.y)] ~= idx and at[cell_key(c.x, oy)] ~= idx then
+                local best, best_off
+                for _, corner in ipairs({ { ox, c.y }, { c.x, oy } }) do
+                    local key = cell_key(corner[1], corner[2])
+                    if not job.occupied[key] and not (job.tiled and job.tiled[key]) then
+                        used = used + lib.COST.cell
+                        local u = geometry.grid_distance(job.frames, job.index, { x = corner[1] + 0.5, y = corner[2] + 0.5 })
+                        local off = u and math.max(c.band.lo - u, u - c.band.hi, 0) or math.huge
+                        if not best_off or off < best_off then best, best_off = corner, off end
+                    end
+                end
+                if best then
+                    local key = cell_key(best[1], best[2])
+                    band_entity(job, c.band.layer, best[1], best[2], key)
+                    at[key] = idx
+                    -- (the new cell can meet another only at a corner in turn)
+                    cells[#cells + 1] = { x = best[1], y = best[2], band = c.band }
+                end
+            end
+        end
+        job.cursor = job.cursor + 1
+    end
+    if not cells[job.cursor] then
+        job.join_cells, job.join_at, job.tiled = nil, nil, nil
         job.stage, job.cursor = "spaced", 1
     end
     return used
@@ -1279,6 +1353,7 @@ local STAGES = {
     rails = stage_rails,
     rasterize = stage_rasterize,
     paths = stage_paths,
+    joins = stage_joins,
     spaced = stage_spaced,
 }
 
@@ -1311,7 +1386,7 @@ function lib.progress(job)
     if stage == "tangents" or stage == "fill" or stage == "normals" or stage == "bands" then return 0.05 end
     if stage == "bends" then return 0.05 + 0.05 * job.cursor / n end
     if stage == "rasterize" then return 0.1 + 0.7 * job.cursor / n end
-    if stage == "paths" then return 0.8 end
+    if stage == "paths" or stage == "joins" then return 0.8 end
     local spaced = math.max(1, #job.spaced)
     local within = job.walk and job.walk.i / n or 0
     return 0.8 + 0.2 * ((job.spaced_cursor - 1) + within) / spaced
