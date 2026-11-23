@@ -1,5 +1,5 @@
 --- Finding things in Bézierio's windows (the main window, the settings window, the
---- layer settings window). Element names are unique across them, so code (and
+--- layer settings window, the import / export window). Element names are unique across them, so code (and
 --- tests) can find elements by name regardless of layout.
 local lib = {}
 
@@ -23,7 +23,7 @@ end
 lib.find_in = find_in
 
 --- The windows, searched in this order.
-lib.WINDOWS = { "bezierio_window", "bezierio_settings_window", "bezierio_layer_window" }
+lib.WINDOWS = { "bezierio_window", "bezierio_settings_window", "bezierio_layer_window", "bezierio_string_window" }
 
 --- @param player LuaPlayer
 --- @param name string

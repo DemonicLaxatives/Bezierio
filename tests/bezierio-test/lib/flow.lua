@@ -31,7 +31,7 @@ end
 
 --- An element of the main window by name.
 function flow.el(player, name)
-  for _, window in ipairs({ "bezierio_window", "bezierio_settings_window", "bezierio_layer_window" }) do
+  for _, window in ipairs({ "bezierio_window", "bezierio_settings_window", "bezierio_layer_window", "bezierio_string_window" }) do
     local root = player.gui.screen[window]
     local found = root and flow.find_named(root, name)
     if found then return found end

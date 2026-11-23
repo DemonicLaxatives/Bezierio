@@ -9,6 +9,7 @@ lib["curve"]   = require("scripts.gui.curve_control")
 lib["layer"]   = require("scripts.gui.layer_control")
 lib["view"]    = require("scripts.gui.view_settings")
 lib["preset"]  = require("scripts.gui.preset_control")
+lib["strings"] = require("scripts.gui.string_window")
 
 --- Which element types each event is routed for. Every element raises on_gui_click,
 --- but e.g. a click on a choose-elem-button must not run its "value changed" action
@@ -62,10 +63,14 @@ script.on_event(defines.events.on_gui_closed,
         if not (e.element and e.element.valid) then return end
         local controller = storage.controllers and storage.controllers[e.player_index]
         if e.element.name == "bezierio_window" then
-            -- (pinning, or opening a layer's settings, lets go of the window as the
-            -- opened GUI, which raises this too)
+            -- (pinning, or opening a layer's settings or the import / export
+            -- window, lets go of the window as the opened GUI, which raises this too)
             if controller and (controller.ui.pinned or controller.ui.editing) then return end
+            local player = game.get_player(e.player_index)
+            if player and player.gui.screen.bezierio_string_window then return end
             lib["main"]["close"](e)
+        elseif e.element.name == "bezierio_string_window" then
+            lib["strings"]["close"](e)
         elseif e.element.name == "bezierio_layer_window" then
             -- Esc (or another GUI opening): as Cancel
             if controller and controller.ui.editing then

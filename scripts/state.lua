@@ -21,7 +21,7 @@ local lib = {}
 --- @field preview_build boolean
 --- @field selected_point integer|nil   # control point the pointer moves (until right-click)
 --- @field selected_layer integer        # layer shown in the detail pane
---- @field preset_mode "rename"|"export"|"import"|nil  # what the preset bar shows (window only)
+--- @field preset_mode "rename"|nil  # the preset bar shows the rename box (window only)
 --- @field pointer_mode "move"|nil        # clicks move the curve (until right-click)
 --- @field narrow boolean|nil            # the window is narrowed (everyday controls only)
 --- @field pinned boolean|nil            # the window stays open when other GUIs open

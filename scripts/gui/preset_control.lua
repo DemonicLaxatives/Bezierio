@@ -4,6 +4,7 @@ local presets = require("scripts.presets")
 local state = require("scripts.state")
 local window = require("scripts.gui.window")
 local layer_view = require("scripts.gui.layer_view")
+local string_window = require("scripts.gui.string_window")
 
 local lib = {}
 
@@ -70,33 +71,13 @@ local function fill(frame, player)
     tool_button(bar, "preset_copy", "utility/copy", "preset-copy", "copy")
     tool_button(bar, "preset_delete", "utility/trash", #controller.presets > 1 and "preset-delete" or "preset-delete-last",
         "delete", { enabled = #controller.presets > 1 })
+    -- (export / import: the import / export window; pressed while it shows them)
+    local open = string_window.get(player)
+    local open_mode = open and open.tags.kind == "preset" and open.tags.mode
     tool_button(bar, "preset_export", "utility/export", "preset-export", "toggle_export",
-        { auto_toggle = true, toggled = mode == "export" })
+        { auto_toggle = true, toggled = open_mode == "export" })
     tool_button(bar, "preset_import", "utility/import", "preset-import", "toggle_import",
-        { auto_toggle = true, toggled = mode == "import" })
-
-    if mode == "export" or mode == "import" then
-        frame.add { type = "label", caption = { "label.preset-" .. mode } }
-        local box = frame.add {
-            type = "text-box",
-            name = mode == "export" and "preset_string" or "preset_import_text",
-            text = mode == "export" and presets.export(controller.presets[ui.preset_index]) or "",
-        }
-        box.word_wrap = true
-        box.style.width = 300
-        box.style.height = 80
-        box.focus()
-        if mode == "export" then
-            box.select_all()
-        else
-            frame.add {
-                type = "button",
-                name = "preset_import_confirm",
-                caption = { "button.preset-import" },
-                tags = { group = "preset", action = "import" },
-            }
-        end
-    end
+        { auto_toggle = true, toggled = open_mode == "import" })
 end
 
 --- @param parent LuaGuiElement
@@ -116,6 +97,9 @@ end
 --- @param player LuaPlayer
 local function preset_changed(player)
     layer_view.accept(player)
+    -- (a preset's export string would be out of date)
+    local open = string_window.get(player)
+    if open and open.tags.kind == "preset" then string_window.close_window(player) end
     local ui = state.ui(player.index)
     ui.selected_layer = 0
     ui.preset_mode = nil
@@ -133,7 +117,7 @@ lib["switch"] = function(e)
 end
 
 --- @param player LuaPlayer
---- @param mode "rename"|"export"|"import"
+--- @param mode "rename"
 local function toggle_mode(player, mode)
     local ui = state.ui(player.index)
     ui.preset_mode = ui.preset_mode ~= mode and mode or nil
@@ -149,13 +133,13 @@ end
 --- @param e EventData.on_gui_click
 lib["toggle_export"] = function(e)
     local player = game.get_player(e.player_index)
-    if player then toggle_mode(player, "export") end
+    if player then string_window.toggle(player, "preset", "export") end
 end
 
 --- @param e EventData.on_gui_click
 lib["toggle_import"] = function(e)
     local player = game.get_player(e.player_index)
-    if player then toggle_mode(player, "import") end
+    if player then string_window.toggle(player, "preset", "import") end
 end
 
 --- @param e EventData.on_gui_confirmed

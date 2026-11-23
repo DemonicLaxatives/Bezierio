@@ -9,6 +9,7 @@ local curve_control = require("scripts.gui.curve_control")
 local layer_view = require("scripts.gui.layer_view")
 local view_settings = require("scripts.gui.view_settings")
 local preset_control = require("scripts.gui.preset_control")
+local string_window = require("scripts.gui.string_window")
 local state = require("scripts.state")
 
 local lib = {}
@@ -113,6 +114,7 @@ end
 local function rebuild(player)
     layer_view.accept(player)
     view_settings.close_window(player)
+    string_window.close_window(player)
     local window = player.gui.screen.bezierio_window
     local location = window and window.location
     if window then window.destroy() end
@@ -125,6 +127,7 @@ lib["close"] = function(e)
     if player and player.gui.screen.bezierio_window then
         layer_view.accept(player)
         view_settings.close_window(player)
+        string_window.close_window(player)
         player.gui.screen.bezierio_window.destroy()
     end
 end

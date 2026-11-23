@@ -256,7 +256,7 @@ title bar. Groups: a) layout, shading, alignment, loop button, add bars, no
 mirror, new preset, pin, narrow mode, layer settings window, settings window
 (the view settings plus the former per-user mod settings, the gear in the title
 bar), sunken list and summary panes, wider button spacing (done); b) import /
-export windows; c) job status and queue, disabling a layer, turret targeting
+export windows (done); c) job status and queue, disabling a layer, turret targeting
 priorities, facing tooltips.
 
   - Closed loop toggle is an odd one out. It should be a button.

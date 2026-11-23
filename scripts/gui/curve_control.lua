@@ -5,6 +5,7 @@ local curve_lib = require("scripts.curve.curve")
 local shapes = require("scripts.curve.shapes")
 local state = require("scripts.state")
 local window = require("scripts.gui.window")
+local string_window = require("scripts.gui.string_window")
 
 local lib = {}
 
@@ -223,7 +224,6 @@ function lib.add(parent, player)
             }
         end
     end
-    frame.add { type = "flow", name = "curve_io", direction = "vertical", visible = false }
 
     -- The list in its own sunken pane.
     local sunken = frame.add { type = "frame", name = "points_frame", direction = "vertical", style = "inside_deep_frame" }
@@ -242,49 +242,18 @@ function lib.add(parent, player)
     return frame
 end
 
---- Show the export string, the import box, or neither.
---- @param player LuaPlayer
---- @param mode "export"|"import"|nil
-local function show_io(player, mode)
-    local io = window.find(player, "curve_io")
-    if not io then return end
-    io.clear()
-    io.visible = mode ~= nil
-    for _, other in ipairs({ "export", "import" }) do
-        local button = window.find(player, "curve_" .. other)
-        if button then button.toggled = other == mode end
-    end
-    if not mode then return end
-    io.add { type = "label", caption = { "label.curve-" .. mode } }
-    local box = io.add {
-        type = "text-box",
-        name = mode == "export" and "curve_string" or "curve_import_text",
-        text = mode == "export" and helpers.encode_string(helpers.table_to_json(curve_lib.to_data(state.curve(player.index)))) or "",
-    }
-    box.word_wrap = true
-    box.style.width = 300
-    box.style.height = 80
-    box.focus()
-    if mode == "export" then
-        box.select_all()
-    else
-        io.add {
-            type = "button", name = "curve_import_confirm", caption = { "button.curve-import" },
-            tooltip = { "tooltip.curve-import-confirm" }, tags = { group = "curve", action = "import" },
-        }
-    end
-end
-
+--- The curve's string to copy, in the import / export window (or close it).
 --- @param e EventData.on_gui_click
 lib["toggle_export"] = function(e)
     local player = game.get_player(e.player_index)
-    if player then show_io(player, e.element.toggled and "export" or nil) end
+    if player then string_window.toggle(player, "curve", "export") end
 end
 
+--- A box to paste a curve string into, in the import / export window.
 --- @param e EventData.on_gui_click
 lib["toggle_import"] = function(e)
     local player = game.get_player(e.player_index)
-    if player then show_io(player, e.element.toggled and "import" or nil) end
+    if player then string_window.toggle(player, "curve", "import") end
 end
 
 --- Replace the whole curve (every kind's points) with one from an export string.
@@ -302,7 +271,7 @@ function lib.load(player, text)
     local controller = state.get(player.index)
     controller.curve = curve
     controller.ui.selected_point = nil
-    show_io(player, nil)
+    string_window.close_window(player)
     local kind = window.find(player, "curve_kind")
     if kind then
         for i, k in ipairs(curve_lib.KINDS) do if k == curve.kind then kind.selected_index = i end end

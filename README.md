@@ -48,8 +48,9 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
    The curve passes through every point, in order. The **closed loop** button (the
    circular arrows) joins the last point back to the first; the ⇄ button reverses the curve's direction, leaving the points as they are
    (so the layers swap sides; for a circle, inside and outside). The point list in the
-   window shows each point's coordinates (the export / import buttons copy the
-   whole curve as a string, e.g. to share it or report a problem): click a point's name to select it, type
+   window shows each point's coordinates (the export / import buttons open a
+   window with the whole curve as a string to copy, e.g. to share it or report a
+   problem, or a box to paste one into): click a point's name to select it, type
    new coordinates and press <kbd>Enter</kbd>, or remove a point with its ✕. The
    trash button removes all points.
 3. Toggle **Draw** to see the curve and its points.
@@ -59,7 +60,8 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
    **Cancel** (or <kbd>Esc</kbd>) puts the layer back as it was (a new layer goes
    away). The main window is locked meanwhile. Layer stacks are saved as **presets**: the bar above the list
    switches between them, and copies, renames, deletes, exports or imports them
-   (export gives a string to share; import takes one), or starts a new one (**+**).
+   (export shows a string to share in a window of its own; import takes one), or
+   starts a new one (**+**).
    - **Layer 0** runs along the middle of the curve.
    - **Layers 1, 2, …** stack to the right of the direction of travel (P1 → last
      point), **layers −1, −2, …** to the left. Use the **+** bars to add layers

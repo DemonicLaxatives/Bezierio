@@ -165,7 +165,7 @@ step("presets", function(player)
   -- export, then import the string as a new preset
   dev("click", P, "preset_export")
   local text = el(player, "preset_string").text
-  check(#text > 20, "export string shown")
+  check(#text > 20 and player.gui.screen.bezierio_string_window and el(player, "preset_export").toggled, "export string shown in its own window")
   dev("click", P, "preset_import")
   check(not el(player, "preset_string") and el(player, "preset_import_text"), "import box replaces export box")
   el(player, "preset_import_text").text = "not a preset"
@@ -174,6 +174,7 @@ step("presets", function(player)
   el(player, "preset_import_text").text = text
   dev("click", P, "preset_import_confirm")
   check(#presets() == 3 and controller().ui.preset_index == 3 and presets()[3].name == "Default 2", "imported and selected")
+  check(not player.gui.screen.bezierio_string_window and not el(player, "preset_import").toggled, "window closed after the import")
   local a, b = presets()[1].layers, presets()[3].layers
   check(b[2].type == "electric-turret" and b[2].spacing == a[2].spacing and b[-1].radius == a[-1].radius
     and b[1].red_wire == true and b[1].green_wire == true, "import matches the export")

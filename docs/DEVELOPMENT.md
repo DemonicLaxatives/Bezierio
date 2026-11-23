@@ -51,6 +51,7 @@ scripts/
     curve_control.lua    Curve section: pointer button, closed loop, reverse, point list (group "curve")
     view_settings.lua    settings window: colours, curve width, preview opacity, mark time, blueprint source (group "view")
     preset_control.lua   preset bar above the layer list (group "preset")
+    string_window.lua    import / export window for curve and preset strings (group "strings")
     layer_view.lua       layer list and the selected layer's detail pane
     layer_control.lua    layer actions (group "layer")
 tests/                   see Testing
@@ -503,8 +504,8 @@ list) and Build. All sections share the column's width (`WIDE_WIDTH`,
 the summary pane shows the progress and a bar instead of the summary
 (`jobs.lua`, `show_progress`); the summary comes back when it's done.
 
-Two more windows, found by `window.find` like the main one (element names are
-unique across all three):
+Three more windows, found by `window.find` like the main one (element names are
+unique across all of them):
 
 - **Layer settings** (`bezierio_layer_window`, `layer_view.open_settings`): a
   layer's item or settings button opens it, so does a new layer. It becomes
@@ -518,6 +519,11 @@ unique across all three):
   (`state.SETTING_DEFAULTS`, read with `state.setting`: missing ones read as
   their default, so old saves need nothing). They were per-user mod settings
   before.
+- **Import / export** (`bezierio_string_window`): the curve's and the preset
+  bar's export and import buttons open it, one at a time (another replaces it;
+  the same button again closes it). It becomes `player.opened`, so Esc closes it,
+  but the main window stays usable. A successful import closes it; switching
+  presets closes a preset's.
 
 - **Narrow** (`ui.narrow`, the chevrons in the title bar) rebuilds the window
   where it was. Each section then shows only its everyday controls: the points as
