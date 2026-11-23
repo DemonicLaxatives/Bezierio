@@ -140,6 +140,12 @@ local function step_entities(job, budget)
             -- the curve and preset, for loading them back
             tags = (i == 1 and job.source) and { bezierio = { curve = job.source.curve, preset = job.source.preset } } or nil,
         }
+        if e.priority_targets then
+            local list = {}
+            for k, name in ipairs(e.priority_targets) do list[k] = { index = k, name = name } end
+            entry["priority-list"] = list
+            entry["ignore-unprioritised"] = e.ignore_unprioritised == true or nil
+        end
         if e.ammo then
             entry.items = { {
                 id = { name = e.ammo.name, quality = e.ammo.quality },

@@ -168,13 +168,23 @@ lib["set_value"] = function(e)
 end
 
 --- Show or hide a layer in the build preview (only the drawing changes).
---- @param e EventData.on_gui_checked_state_changed
+--- @param e EventData.on_gui_click
 lib["toggle_preview"] = function(e)
     local idx = tonumber(e.element.tags.idx)
     local layer = idx and state.layers(e.player_index)[idx]
     if not layer then return end
-    if e.element.state then layer.preview = nil else layer.preview = false end
+    if e.element.toggled then layer.preview = nil else layer.preview = false end
     state.request_redraw(e.player_index)
+end
+
+--- Place a layer or not (not placed: it keeps its room, builds nothing).
+--- @param e EventData.on_gui_click
+lib["toggle_place"] = function(e)
+    local idx = tonumber(e.element.tags.idx)
+    local layer = idx and state.layers(e.player_index)[idx]
+    if not (layer and layer.placed_by) then return end
+    if e.element.toggled then layer.place = nil else layer.place = false end
+    layers_changed(e.player_index)
 end
 
 --- A drop-down setting (e.g. turret facing, lamp colour).
@@ -223,6 +233,29 @@ lib["set_flag"] = function(e)
     local field = registry.field(layer, field_name)
     if not (field and field.widget == "checkbox") then return end
     layer[field_name] = element.state
+    -- (placed is the default: stored only when off)
+    if field_name == "place" and element.state then layer.place = nil end
+    layers_changed(e.player_index)
+end
+
+--- A turret's priority list: one picker changed (cleared ones close the gap).
+--- @param e EventData.on_gui_elem_changed
+lib["set_target"] = function(e)
+    local element = e.element
+    local field_name = element.tags.field --[[@as string]]
+    local idx = tonumber(element.tags.idx)
+    local index = tonumber(element.tags.index)
+    local layer = idx and state.layers(e.player_index)[idx]
+    local field = layer and registry.field(layer, field_name)
+    if not (field and field.widget == "targets" and index) then return end
+    local list = {}
+    for i, name in ipairs(layer[field_name] or {}) do list[i] = name end
+    list[index] = element.elem_value --[[@as string?]]
+    local compact = {}
+    for i = 1, registry.MAX_TARGETS do
+        if list[i] then compact[#compact + 1] = list[i] end
+    end
+    layer[field_name] = #compact > 0 and compact or nil
     layers_changed(e.player_index)
 end
 

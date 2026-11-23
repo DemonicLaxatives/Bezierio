@@ -235,10 +235,18 @@ A layer type is one file in `scripts/layers/`, listed in `TYPE_FILES` in
 - `fields`: editable settings. The GUI builds its controls from these:
   - `widget`: `"slider"` (min/max as numbers or functions of the layer, optional
     word labels), `"checkbox"`, `"choice"` (a drop-down of `options`, labels from
-    `label_prefix`) or `"item"` (an item picker with `item_filters`; `valid(layer,
-    value)` refuses items the layer can't use, e.g. the wrong ammo);
+    `label_prefix`), `"item"` (an item picker with `item_filters`; `valid(layer,
+    value)` refuses items the layer can't use, e.g. the wrong ammo) or
+    `"targets"` (a list of entity pickers, at most `registry.MAX_TARGETS`: turret
+    targeting priorities, carried to ghosts, built turrets and blueprints as
+    `priority-list` / `ignore-unprioritised`);
   - `default`, `visible_if(layer)` (hide when irrelevant, e.g. facing for turrets
     that turn all the way round), `disabled_by` (a checkbox that makes it moot);
+- every layer with an item can be placed or not: the build toggle in its row of
+  the layer list (`place`, `registry.place_field`, stored only when false; the
+  eye next to it is `preview`, the drawing only). The planner swaps a layer that
+  isn't placed for an empty stand-in of the same width (`stage_bands`), so the
+  layers outside it don't move;
 - `init(layer, prototype)` for derived values (e.g. pole wire reach, a turret's
   turn range and ammo categories), and `thickness(layer)` if the band width isn't
   the footprint size;
@@ -502,7 +510,11 @@ list) and Build. All sections share the column's width (`WIDE_WIDTH`,
 `NARROW_WIDTH`). Lists (points, layers) and the build summary sit in sunken panes
 (`inside_deep_frame`); buttons in a row are 8 px apart. While planning or building,
 the summary pane shows the progress and a bar instead of the summary
-(`jobs.lua`, `show_progress`); the summary comes back when it's done.
+(`jobs.lua`, `show_progress`); the summary comes back when it's done. The
+progress line names the running build and the queued command
+(`work.pending_build`, which waits while a build runs), with a cancel button
+that drops both (`control.cancel_build`; the executor flushes its tile batch
+every step, so stopping between ticks loses nothing).
 
 Three more windows, found by `window.find` like the main one (element names are
 unique across all of them):

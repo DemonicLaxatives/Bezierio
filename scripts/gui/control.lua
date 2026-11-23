@@ -60,7 +60,22 @@ function lib.add(parent, player)
     totals.style.horizontally_stretchable = true
     totals.style.padding = 8
     totals.style.top_margin = 8
-    totals.add { type = "label", name = "totals_length", caption = "", style = "bold_label" }
+    -- The first row: the length (or what's happening, with a cancel button for builds).
+    local head = totals.add { type = "flow", name = "totals_head", direction = "horizontal" }
+    head.style.vertical_align = "center"
+    local length = head.add { type = "label", name = "totals_length", caption = "", style = "bold_label" }
+    length.style.single_line = false
+    length.style.horizontally_stretchable = true
+    local cancel = head.add {
+        type = "sprite-button",
+        name = "build_cancel",
+        sprite = "utility/close",
+        tooltip = { "tooltip.build-cancel" },
+        tags = { group = "control", action = "cancel_build" },
+        style = "tool_button",
+        visible = false,
+    }
+    cancel.style.size = 24
     -- (while planning or building: the progress above, this bar, no summary)
     local bar = totals.add { type = "progressbar", name = "totals_progress", value = 0, visible = false }
     bar.style.horizontally_stretchable = true
@@ -168,6 +183,17 @@ lib["blueprint_load"] = function(e)
     local preset_ok = preset_control.load(player, source.preset)
     state.changed(player.index)
     if curve_ok and preset_ok then player.print({ "bezierio-message.blueprint-loaded" }) end
+end
+
+--- Cancel the queued command and stop the running build (what's built stays, one
+--- undo step).
+--- @param e EventData.on_gui_click
+lib["cancel_build"] = function(e)
+    local player = game.get_player(e.player_index)
+    local work = state.get(e.player_index).work
+    local had = work.build ~= nil or work.pending_build ~= nil
+    work.pending_build, work.build = nil, nil
+    if player and had then player.print({ "bezierio-message.build-cancelled" }) end
 end
 
 --- Building happens in the tick loop (jobs.lua) once the plan is ready.

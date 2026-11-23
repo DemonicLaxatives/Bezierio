@@ -8,7 +8,7 @@ local lib = {}
 
 ---@class LayerField
 ---@field name string                                        # key in the layer table
----@field widget "slider"|"checkbox"|"choice"|"item"
+---@field widget "slider"|"checkbox"|"choice"|"item"|"targets"  # targets: a list of entity names (turret priorities)
 ---@field options? string[]                              # choice: the values, in menu order (labels: label_prefix .. value)
 ---@field label_prefix? string                           # choice: locale section for the option labels
 ---@field item_filters? table                            # item: elem_filters for the picker
@@ -81,6 +81,13 @@ local tile_type = nil
 --- @type LayerField
 lib.offset_field = { name = "offset", widget = "slider", min = 0, max = 10, default = 0 }
 
+--- Every layer with an item: placed (default) or not. A layer that isn't placed
+--- still takes up its room in the plan, so the layers outside it stay where they are.
+lib.place_field = { name = "place", widget = "checkbox", default = true }
+
+--- Most entries in a turret's targeting priority list.
+lib.MAX_TARGETS = 8
+
 --- @param def LayerType
 function lib.register(def)
     assert(not lib.types[def.name], "layer type registered twice: " .. def.name)
@@ -124,6 +131,7 @@ end
 --- @return LayerField|nil
 function lib.field(layer, field_name)
     if field_name == "offset" then return lib.offset_field end
+    if field_name == "place" then return lib.place_field end
     for _, field in ipairs(lib.type_of(layer).fields) do
         if field.name == field_name then return field end
     end
@@ -147,8 +155,25 @@ end
 function lib.carry_over(layer, old)
     if not old then return end
     if type(old.offset) == "number" then layer.offset = old.offset end
+    if old.place == false and layer.placed_by then layer.place = false end
     for _, field in ipairs(lib.type_of(layer).fields) do
         local value = old[field.name]
+        if field.widget == "targets" then
+            -- A list of entity names: only strings, at most MAX_TARGETS, ones that exist.
+            local list = nil
+            if type(value) == "table" then
+                list = {}
+                for _, name in ipairs(value) do
+                    if type(name) == "string" and #list < lib.MAX_TARGETS
+                        and (not prototypes or prototypes.entity[name]) then
+                        list[#list + 1] = name
+                    end
+                end
+                if #list == 0 then list = nil end
+            end
+            value = nil
+            layer[field.name] = list
+        end
         if field.widget == "item" and value ~= nil and field.valid and not field.valid(layer, value) then
             value = nil
         end

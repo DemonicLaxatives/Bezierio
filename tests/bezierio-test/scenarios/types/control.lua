@@ -49,6 +49,16 @@ step("pick the new types", function(player)
   check(layers()[-1].ammo == "firearm-magazine" and el(player, "ammo_count_slider"), "magazines accepted, count shown")
   dev("set_value", P, "ammo_count_slider", 25)
   dev("set_value", P, "spacing_slider", 6)
+  -- targeting priorities: a slot per entry, one more to add
+  check(el(player, "priority_targets_1") and not el(player, "priority_targets_2") and not el(player, "ignore_unprioritised"), "one empty priority slot")
+  dev("set_elem", P, "priority_targets_1", "small-biter")
+  dev("set_elem", P, "priority_targets_2", "medium-spitter")
+  check(layers()[-1].priority_targets[2] == "medium-spitter" and el(player, "priority_targets_3"), "two targets, a third slot")
+  dev("set_elem", P, "priority_targets_1", nil)
+  check(#layers()[-1].priority_targets == 1 and layers()[-1].priority_targets[1] == "medium-spitter", "clearing a slot closes the gap")
+  dev("set_elem", P, "priority_targets_2", "small-biter")
+  dev("set_checked", P, "ignore_unprioritised", true)
+  check(layers()[-1].ignore_unprioritised == true, "only these targets")
 
   -- L2: red lamps; L-2: wired mines
   dev("click", P, "add_layer_above")
@@ -95,6 +105,8 @@ step("ghosts face, request ammo, are wired", function(player)
   for _, g in pairs(guns) do
     local req = g.item_requests[1]
     check(req and req.name == "firearm-magazine" and req.count == 25, "gun turret ghost requests 25 magazines")
+    local targets = g.priority_targets
+    check(#targets == 2 and targets[1].name == "medium-spitter" and targets[2].name == "small-biter" and g.ignore_unprioritised_targets, "ghost has the priorities")
   end
   local mines = s.find_entities_filtered { ghost_name = "land-mine" }
   check(#mines > 20, "mine ghosts: " .. #mines)
@@ -119,6 +131,7 @@ step("instant: loaded turrets, red lamps", function(player)
   check(#guns > 5, "gun turrets built")
   for _, t in pairs(guns) do
     check(t.get_item_count("firearm-magazine") == 25, "loaded with 25 magazines: " .. t.get_item_count("firearm-magazine"))
+    check(#t.priority_targets == 2 and t.ignore_unprioritised_targets, "built with the priorities")
   end
   for _, lamp in pairs(s.find_entities_filtered { name = "small-lamp" }) do
     check(lamp.color and lamp.color.r > 0.9 and lamp.color.g < 0.2, "lamp is red")
@@ -140,6 +153,10 @@ step("blueprint keeps facing, ammo and colour", function(player)
     if e.name == "gun-turret" and e.items and e.items[1] and e.items[1].id.name == "firearm-magazine" then loaded = loaded + 1 end
     if e.name == "small-lamp" and e.color and e.color.r > 0.9 then colored = colored + 1 end
     if e.name == "land-mine" and e.wires and #e.wires > 0 then wired = wired + 1 end
+    if e.name == "gun-turret" then
+      local list = e["priority-list"]
+      check(list and #list == 2 and list[1].name == "medium-spitter" and e["ignore-unprioritised"] == true, "priorities in the blueprint")
+    end
   end
   check(faced > 5 and loaded > 5 and wired > 10, string.format("facing %d, ammo %d, wired mines %d", faced, loaded, wired))
   log("blueprint lamps with colour: " .. colored)
@@ -169,6 +186,24 @@ step("diagonal flamethrowers built where planned", function(player)
     check(built and built.direction == defines.direction.southwest, "built at " .. e.position.x .. "," .. e.position.y .. ", facing south-west")
   end
   player.cheat_mode = false
+end)
+
+step("a layer that isn't placed keeps its room", function(player)
+  local before = dev("plan", P)
+  if player.gui.screen.bezierio_layer_window then dev("click", P, "layer_ok") end
+  check(el(player, "layer_place_1").toggled and not el(player, "place"), "placed by default, toggled in the list")
+  dev("click", P, "layer_place_1")
+  local after = dev("plan", P)
+  check(#on_layer(before, 1) > 5 and #on_layer(after, 1) == 0, "nothing planned on it")
+  local a, b = on_layer(before, 2), on_layer(after, 2)
+  local same = #a == #b
+  for i = 1, #a do same = same and b[i] and a[i].position.x == b[i].position.x and a[i].position.y == b[i].position.y end
+  check(same and #a > 0, "the layer outside it where it was")
+  local caption = el(player, "layer_label_1").caption
+  check(type(caption) == "table" and caption[4] and caption[4][1] == "label.layer-not-placed", "the list says so")
+  check(not el(player, "layer_place_1").toggled, "the toggle shows it")
+  dev("click", P, "layer_place_1")
+  check(layers()[1].place == nil and #on_layer(dev("plan", P), 1) > 5, "placed again")
 end)
 
 flow.run("types")

@@ -78,14 +78,15 @@ end)
 
 step("hide a layer in the preview", function(player)
   storage.shown = dev("render_count")
-  dev("set_checked", P, "layer_preview_-1", false)
-  check(layers()[-1].preview == false and controller().work.plan ~= nil, "hidden, no replanning")
+  check(el(player, "layer_preview_-1").toggled, "the eye is pressed: shown")
+  dev("click", P, "layer_preview_-1")
+  check(layers()[-1].preview == false and not el(player, "layer_preview_-1").toggled and controller().work.plan ~= nil, "hidden, no replanning")
 end, "idle")
 
 step("hidden layer not drawn, shown again", function(player)
   local now = dev("render_count")
   check(now < storage.shown - 20, "fewer objects with the tiles hidden: " .. now .. " < " .. storage.shown)
-  dev("set_checked", P, "layer_preview_-1", true)
+  dev("click", P, "layer_preview_-1")
   check(layers()[-1].preview == nil, "shown again")
   -- With the quality mod, the layer button shows the layer's quality.
   if prototypes.quality["rare"] then
@@ -264,6 +265,38 @@ step("smart poles power every turret", function(player)
   dev("set_checked", P, "smart", false)
   dev("click", P, "layer_select_0")
   flow.clear_build(s)
+end)
+
+step("queue: a command waits for the running build", function(player)
+  flow.clear_build(player.surface)
+  dev("set_budget", 200) -- (a build over several ticks)
+end, "idle")
+
+step("... force build", function(player)
+  dev("click", P, "build")
+end)
+
+step("... a build running, Blueprint queued behind it", function(player)
+  local w = controller().work
+  check(w.build ~= nil, "build running: pending " .. tostring(w.pending_build) .. " plan " .. tostring(w.plan and w.plan.plan.done) .. " preview " .. tostring(controller().ui.preview_build))
+  dev("click", P, "blueprint_build")
+  check(controller().work.pending_build == "blueprint" and controller().work.build.kind ~= "blueprint", "blueprint queued, the build carries on")
+end)
+
+step("...", function(player) end)
+
+step("... the progress line names both, cancel stops them", function(player)
+  local caption = el(player, "totals_length").caption
+  check(type(caption) == "table" and caption[4] and caption[4][1] == "label.status-next", "the next command shown: " .. serpent.line(caption))
+  check(el(player, "build_cancel").visible and el(player, "totals_progress").visible, "progress bar and cancel button shown")
+  dev("click", P, "build_cancel")
+  check(controller().work.build == nil and controller().work.pending_build == nil, "cancelled")
+  dev("set_budget", 1000)
+end, "idle")
+
+step("... cancelled: the summary is back", function(player)
+  check(not el(player, "build_cancel").visible and el(player, "totals_length").caption[1] == "label.totals", "summary back, no cancel button")
+  check(not player.cursor_stack.valid_for_read, "no blueprint made")
 end)
 
 step("blueprint", function(player)

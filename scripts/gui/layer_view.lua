@@ -129,8 +129,50 @@ local function add_choice_field(flow, layer, field)
         name = field.name,
         items = items,
         selected_index = selected,
+        tooltip = { "tooltip." .. key },
         tags = { group = "layer", action = "set_choice", field = field.name, idx = layer.idx },
     }
+end
+
+--- What a turret's priority list may hold: enemies and asteroids. (Types a game
+--- doesn't have are left out of the filter, since the picker refuses them.)
+--- @return table
+local function target_filters()
+    local types = {}
+    for _, t in ipairs({ "unit", "unit-spawner", "turret", "spider-unit", "segmented-unit", "asteroid" }) do
+        local ok, found = pcall(prototypes.get_entity_filtered, { { filter = "type", type = t } })
+        if ok and found and #found > 0 then types[#types + 1] = t end
+    end
+    return { { filter = "type", type = types } }
+end
+
+--- A list of entity pickers (turret targeting priorities), in order, with an empty
+--- one after the last to add another. Names: <field>_<i>.
+--- @param flow LuaGuiElement
+--- @param layer Layer
+--- @param field LayerField
+local function add_targets_field(flow, layer, field)
+    local key = locale_key(field.name)
+    local frame = flow.add { type = "flow", name = field.name .. "_frame", direction = "horizontal" }
+    frame.style.vertical_align = "center"
+    local label = frame.add { type = "label", caption = { "slider-caption." .. key }, tooltip = { "tooltip." .. key } }
+    label.style.width = 110
+    local slots = frame.add { type = "table", name = field.name .. "_slots", column_count = 5 }
+    slots.style.horizontal_spacing = 4
+    slots.style.vertical_spacing = 4
+    local list = layer[field.name] or {}
+    local filters = target_filters()
+    for i = 1, math.min(#list + 1, registry.MAX_TARGETS) do
+        local picker = slots.add {
+            type = "choose-elem-button",
+            name = field.name .. "_" .. i,
+            elem_type = "entity",
+            elem_filters = filters,
+            tooltip = { "tooltip." .. key },
+            tags = { group = "layer", action = "set_target", field = field.name, idx = layer.idx, index = i },
+        }
+        picker.elem_value = list[i]
+    end
 end
 
 --- A captioned item picker (e.g. ammo). Name: <field> (the picker).
@@ -191,6 +233,8 @@ local function fill_detail(detail, layer)
             add_choice_field(detail, layer, field)
         elseif field.widget == "item" then
             add_item_field(detail, layer, field)
+        elseif field.widget == "targets" then
+            add_targets_field(detail, layer, field)
         end
     end
 end
@@ -200,21 +244,38 @@ end
 --- Height of the layer list before it scrolls (about eight rows).
 lib.LIST_HEIGHT = 340
 
---- One layer: a row of cells in the layer table. Narrow: just the preview
---- checkbox, the item and the layer number.
+--- One layer: a row of cells in the layer table: placed / shown in the preview
+--- toggles, the item, the layer number and its settings. Wide: also move up / down
+--- and delete.
 --- @param list LuaGuiElement  # the table
 --- @param layer Layer
 --- @param selected boolean
 --- @param narrow boolean
 local function add_row(list, layer, selected, narrow)
     local k = layer.idx
-    list.add {
-        type = "checkbox",
-        name = "layer_preview_" .. k,
-        state = layer.preview ~= false,
-        tooltip = { "tooltip.layer-preview" },
-        tags = { group = "layer", action = "toggle_preview", idx = k },
+    local place = list.add {
+        type = "sprite-button",
+        name = "layer_place_" .. k,
+        sprite = "bezierio-force-build",
+        tooltip = { "tooltip.place" },
+        auto_toggle = true,
+        toggled = layer.place ~= false,
+        enabled = layer.placed_by ~= nil,
+        tags = { group = "layer", action = "toggle_place", idx = k },
+        style = "tool_button",
     }
+    place.style.size = 24
+    local eye = list.add {
+        type = "sprite-button",
+        name = "layer_preview_" .. k,
+        sprite = "bezierio-eye",
+        tooltip = { "tooltip.layer-preview" },
+        auto_toggle = true,
+        toggled = layer.preview ~= false,
+        tags = { group = "layer", action = "toggle_preview", idx = k },
+        style = "tool_button",
+    }
+    eye.style.size = 24
     local select = list.add {
         type = "sprite-button",
         name = "layer_select_" .. k,
@@ -231,8 +292,15 @@ local function add_row(list, layer, selected, narrow)
         caption = narrow and ("L" .. k)
             or registry.is_underlay(layer) and { "label.layer-row-under", tostring(k), tostring(registry.thickness(layer)) }
             or { "label.layer-row", tostring(k), tostring(registry.thickness(layer)) },
+        tooltip = layer.place == false and { "tooltip.layer-not-placed" } or nil,
     }
-    label.style.font_color = palette.layer_color(k)
+    -- (a layer that isn't placed: greyed, struck through in the caption)
+    if layer.place == false then
+        label.caption = { "", label.caption, " ", { "label.layer-not-placed" } }
+        label.style.font_color = { r = 0.5, g = 0.5, b = 0.5 }
+    else
+        label.style.font_color = palette.layer_color(k)
+    end
     label.style.horizontally_stretchable = true
     local settings = list.add {
         type = "sprite-button",
@@ -306,7 +374,7 @@ function lib.fill(column, player_index)
     local list = rows.add {
         type = "table",
         name = "layer_table",
-        column_count = narrow and 4 or 7,
+        column_count = narrow and 5 or 8,
         style = "bezierio_striped_table",
     }
     list.style.vertical_align = "center"

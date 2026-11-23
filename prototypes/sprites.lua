@@ -15,6 +15,15 @@ local function cursor_icon(name, file)
 end
 
 data:extend {
+  {
+    -- The layer list's preview toggle.
+    type = "sprite",
+    name = "bezierio-eye",
+    filename = "__Bezierio__/graphics/icons/eye.png",
+    size = 32,
+    scale = 0.5,
+    flags = { "gui-icon" },
+  },
   cursor_icon("bezierio-force-build", "cursor-ghost.png"),
   cursor_icon("bezierio-super-force-build", "cursor-super-force-ghost.png"),
   {

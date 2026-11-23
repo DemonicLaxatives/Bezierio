@@ -54,6 +54,8 @@ lib.COST = {
 --- @field gate string|nil         # walls: the gate to build instead where a rail crosses
 --- @field track {from: Vector, to: Vector}|nil  # rails: the piece's two ends (for the preview)
 --- @field rail_layer "elevated"|nil  # signals on elevated track
+--- @field priority_targets string[]|nil  # turrets: what to shoot first, in order
+--- @field ignore_unprioritised boolean|nil  # turrets: shoot nothing else
 
 --- @class PlannedTile
 --- @field name string
@@ -329,6 +331,13 @@ end
 --- @param job PlannerJob
 local function stage_bands(job)
     local bands = lib.bands(job.layers)
+    -- Layers that aren't placed keep their room: an empty stand-in in their band.
+    for _, band in ipairs(bands) do
+        local layer = band.layer
+        if layer.place == false then
+            band.layer = { idx = layer.idx, type = "empty", size = registry.thickness(layer), offset = layer.offset, priority = 0 }
+        end
+    end
     job.bands = bands
     job.umin, job.umax = math.huge, -math.huge
     for _, band in ipairs(bands) do

@@ -32,6 +32,11 @@ return {
             rail_layer = entity.rail_layer and defines.rail_layer[entity.rail_layer] or nil,
             force = job.force, player = player, raise_built = true, undo_index = undo_index,
         }
+        -- Targeting priorities: ghosts keep them, and so does the turret built from one.
+        if ghost and entity.priority_targets then
+            for i, name in ipairs(entity.priority_targets) do ghost.set_priority_target(i, name) end
+            ghost.ignore_unprioritised_targets = entity.ignore_unprioritised == true
+        end
         -- Ammo arrives with the robots that build it.
         if ghost and entity.ammo then
             local ammo = entity.ammo

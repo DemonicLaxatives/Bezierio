@@ -82,7 +82,11 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
      **radars**, **solar panels**, **accumulators** and **lamps** are placed every
      *Spacing* tiles too.
      - Turrets that can't turn all the way round (flamethrower, railgun) face
-       *Outward* (away from the curve) or *Inward*, diagonally too.
+       *Outward* (away from the curve, on the layer's side; layer 0: towards layer
+       1's side) or *Inward*, diagonally too.
+     - Turrets (not artillery) can have *Targets first*: enemies they shoot
+       before anything else, in order, and optionally *Only these targets*.
+       Ghosts, built turrets and blueprints keep them.
      - Ammo turrets can request *Ammo*: ghosts get it delivered with them; in the
        map editor or cheat mode they're loaded straight away. The totals include it.
      - Ammo turrets can get an *Inserter* each, taking ammo from a belt layer: put
@@ -114,8 +118,10 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
    - **Land mines** cover their band (up to 63 tiles wide), *Scattered* (*Density*
      is the share of cells that get one, the same cells every time) or on a
      *Grid* (every *Spacing* tiles). *Red wire* / *Green wire* connect them.
-   - The checkbox in front of a layer shows or hides it in the preview (it's
-     built either way).
+   - The two toggles in front of a layer: the build icon places the layer or
+     not (not placed, it keeps its room in the plan but builds nothing, so the
+     layers outside it stay where they are), the eye shows it in the preview or
+     not (only the drawing; it's built either way).
    - *Offset* leaves a gap between a layer and the one inside it. An empty layer
      acts as a 1-tile spacer.
    - Picking another item (or quality) for a layer keeps its settings where the
@@ -134,6 +140,10 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
 
    Robots, or you, then build the ghosts. A whole build is one undo step
    (<kbd>Ctrl</kbd>+<kbd>Z</kbd>).
+
+   While planning or building, the summary shows the progress, what's being built
+   and what's queued next (a build clicked while another runs waits its turn).
+   Its ✕ stops the build and drops the queued one; what was built so far stays.
 
    After a build, entities that won't get power (*N unpowered*) or ammo/fluid
    (*N unfed*) from it are marked on the map for a minute. Click those warnings in

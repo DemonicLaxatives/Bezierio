@@ -17,6 +17,8 @@ return {
             default = function(layer) return layer.size end,
         },
         common.facing,
+        common.priority_targets,
+        common.ignore_unprioritised,
     },
     init = common.init_turret,
     decorate = common.decorate_turret,

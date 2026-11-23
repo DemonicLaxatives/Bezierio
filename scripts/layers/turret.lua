@@ -16,6 +16,8 @@ return {
     fields = {
         common.spacing(function() return 20 end),
         common.facing,
+        common.priority_targets,
+        common.ignore_unprioritised,
         {
             name = "ammo", widget = "item", default = nil,
             item_filters = { { filter = "type", type = "ammo" } },

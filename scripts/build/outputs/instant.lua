@@ -37,6 +37,10 @@ return {
             force = job.force, player = player, raise_built = true, move_stuck_players = true,
             undo_index = undo_index,
         }
+        if built and entity.priority_targets then
+            for i, name in ipairs(entity.priority_targets) do built.set_priority_target(i, name) end
+            built.ignore_unprioritised_targets = entity.ignore_unprioritised == true
+        end
         if built and entity.ammo then
             local ammo = entity.ammo
             built.insert { name = ammo.name, quality = ammo.quality, count = ammo.count }

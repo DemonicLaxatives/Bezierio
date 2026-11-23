@@ -124,6 +124,10 @@ remote.add_interface("bezierio-dev", {
     schema_version = function()
         return state.SCHEMA_VERSION
     end,
+    --- The work budget map setting (the mod's own, so it may change it).
+    set_budget = function(value)
+        settings.global["bezierio-work-budget"] = { value = value }
+    end,
     --- A per-player setting (as the settings window sets it).
     set_setting = function(player_index, name, value)
         state.set_setting(player_index, name, value)

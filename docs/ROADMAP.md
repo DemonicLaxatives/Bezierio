@@ -257,7 +257,7 @@ mirror, new preset, pin, narrow mode, layer settings window, settings window
 (the view settings plus the former per-user mod settings, the gear in the title
 bar), sunken list and summary panes, wider button spacing (done); b) import /
 export windows (done); c) job status and queue, disabling a layer, turret targeting
-priorities, facing tooltips.
+priorities, facing tooltips (done).
 
   - Closed loop toggle is an odd one out. It should be a button.
   - Have the panels, and elements within them align to one another. 
@@ -338,6 +338,8 @@ priorities, facing tooltips.
 - Update the changelog
 - Cleanup the completed roadmap, no need to summaraize everything that's done on main, git history will still be there.
 - Add some default presets to ship it with.
+- Shorten tooltips, some of them are far too verbose.
+- Make a markdown document for the mod page. It will link against images in the actual mod page, once we have them there.
 
 ## Testing to add along the way
 

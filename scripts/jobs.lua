@@ -110,17 +110,25 @@ end
 --- @return LocalisedString, string, number|nil  # caption, a key to detect changes, and progress (0..1) while planning or building
 local function status_of(controller)
     local work = controller.work
+    local pending = work.pending_build
+    -- the queued command, after what's happening
+    local function with_queue(caption, word)
+        if not pending then return caption end
+        return { "", caption, " · ", { word, { "label.command-" .. pending } } }
+    end
     if work.build then
         local pct = math.floor(runner(work.build).progress(work.build) * 100)
-        return { "label.status-building", tostring(pct) }, "b" .. pct, pct / 100
+        local running = work.build.kind == "blueprint" and "blueprint" or work.build.mode
+        local caption = { "", { "label.status-building", tostring(pct) }, " (", { "label.command-" .. running }, ")" }
+        return with_queue(caption, "label.status-next"), "b" .. pct .. running .. (pending or ""), pct / 100
     end
     local plan_job = work.plan
-    if (work.pending_build or controller.ui.preview_build) and plan_job and not plan_job.plan.done then
+    if (pending or controller.ui.preview_build) and plan_job and not plan_job.plan.done then
         local pct = math.floor(planner.progress(plan_job) * 100)
-        return { "label.status-planning", tostring(pct) }, "p" .. pct, pct / 100
+        return with_queue({ "label.status-planning", tostring(pct) }, "label.status-then"), "p" .. pct .. (pending or ""), pct / 100
     end
     if work.revision ~= controller.revision and plan_needed(controller) then
-        return { "label.status-planning", "0" }, "p0", 0
+        return with_queue({ "label.status-planning", "0" }, "label.status-then"), "p0" .. (pending or ""), 0
     end
     if controller.ui.preview_build and work.draw.preview_count >= draw.MAX_PREVIEW_OBJECTS then
         return { "label.status-preview-partial" }, "cap"
@@ -188,12 +196,16 @@ local function show_progress(player, caption, fraction)
     if not pane then return end
     pane.visible = true
     for _, child in pairs(pane.children) do
-        child.visible = child.name == "totals_length" or child.name == "totals_progress"
+        child.visible = child.name == "totals_head" or child.name == "totals_progress"
     end
     local length = window.find(player, "totals_length")
     if length then length.caption, length.tooltip = caption, "" end
     local bar = window.find(player, "totals_progress")
     if bar then bar.value = fraction end
+    -- Cancel: only with a build running or queued.
+    local work = state.get(player.index).work
+    local cancel = window.find(player, "build_cancel")
+    if cancel then cancel.visible = work.build ~= nil or work.pending_build ~= nil end
 end
 
 --- @param player LuaPlayer
@@ -217,6 +229,8 @@ local function show_totals(player, controller, plan)
     end
     local bar, warning_row = window.find(player, "totals_progress"), window.find(player, "totals_warnings")
     if bar then bar.visible = false end
+    local cancel = window.find(player, "build_cancel")
+    if cancel then cancel.visible = false end
     if warning_row then warning_row.visible = true end
     if not plan then
         length.caption, items.caption, items.tooltip, length.tooltip = "", "", "", ""
@@ -318,7 +332,8 @@ function lib.update(player, controller)
         end
     end
 
-    if work.pending_build and settled then
+    -- (a command waits for a build already running)
+    if work.pending_build and settled and not work.build then
         if not curve_lib.is_drawable(controller.curve) then
             player.print({ "bezierio-message.need-two-points" })
             work.pending_build = nil

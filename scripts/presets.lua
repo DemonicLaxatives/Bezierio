@@ -28,14 +28,17 @@ end
 
 --- @param layers table<integer, Layer>
 --- @return table<integer, Layer>
+local function deep_copy(value)
+    if type(value) ~= "table" then return value end
+    local out = {}
+    for k, v in pairs(value) do out[k] = deep_copy(v) end
+    return out
+end
+
+--- @param layers table<integer, Layer>
+--- @return table<integer, Layer>
 local function copy_layers(layers)
-    local copy = {}
-    for k, layer in pairs(layers) do
-        local c = {}
-        for field, value in pairs(layer) do c[field] = value end
-        copy[k] = c
-    end
-    return copy
+    return deep_copy(layers)
 end
 
 --- @param name string
@@ -123,6 +126,7 @@ function lib.to_data(preset)
         if layer.placed_by then
             entry.item = layer.placed_by
             entry.quality = layer.quality
+            if layer.place == false then entry.place = false end
             for _, field in ipairs(registry.type_of(layer).fields) do
                 entry[field.name] = layer[field.name]
             end

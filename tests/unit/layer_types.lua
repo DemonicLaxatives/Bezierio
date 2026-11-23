@@ -172,5 +172,32 @@ for _, cells in pairs(by_layer) do
 end
 check(corner_only == 0, "side wall layers around a circle join side by side: " .. corner_only .. " corner-only joins")
 
+-- A layer that isn't placed builds nothing, and the layers outside it stay put.
+local function walls(place)
+    local l1 = wall(1, 1); l1.place = place
+    return { [0] = wall(0, 0), [1] = l1, [2] = wall(2, 1) }
+end
+local placed, unplaced = helpers.plan(line, walls(nil)), helpers.plan(line, walls(false))
+local function cells(plan, idx)
+    local out = {}
+    for _, e in ipairs(of_layer(plan, idx)) do out[#out + 1] = e.position.x .. "," .. e.position.y end
+    table.sort(out)
+    return table.concat(out, " ")
+end
+check(#of_layer(placed, 1) > 50 and #of_layer(unplaced, 1) == 0, "not placed: nothing on layer 1")
+check(cells(unplaced, 2) == cells(placed, 2) and cells(unplaced, 0) == cells(placed, 0), "layers 0 and 2 where they were")
+check((unplaced.counts[1] or 0) == 0, "and nothing counted for it")
+
+-- Turrets carry their targeting priorities (not artillery: can_prioritise unset)
+local prio = turret(1, { can_prioritise = true, priority_targets = { "small-biter", "big-worm-turret" }, ignore_unprioritised = true })
+local pplan = helpers.plan(line, { [0] = wall0, [1] = prio })
+local all = #of_layer(pplan, 1) > 3
+for _, e in ipairs(of_layer(pplan, 1)) do
+    if not (e.priority_targets and e.priority_targets[2] == "big-worm-turret" and e.ignore_unprioritised) then all = false end
+end
+check(all, "turrets carry the priority list")
+local art = helpers.plan(line, { [0] = wall0, [1] = turret(1, { priority_targets = { "small-biter" } }) })
+check(of_layer(art, 1)[1] and of_layer(art, 1)[1].priority_targets == nil, "no list where the turret can't have one")
+
 print(string.format("%d/%d layer type checks passed", checks - failures, checks))
 os.exit(failures == 0 and 0 or 1)

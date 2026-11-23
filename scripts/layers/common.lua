@@ -79,6 +79,20 @@ lib.facing = {
     visible_if = function(layer) return layer.turn_limited == true end,
 }
 
+--- Turrets' targeting priorities: what they shoot first, in order (entity names),
+--- and whether they shoot anything else at all. Not for artillery (the game has no
+--- priority list for it).
+--- @type LayerField
+lib.priority_targets = {
+    name = "priority_targets", widget = "targets", default = nil,
+    visible_if = function(layer) return layer.can_prioritise == true end,
+}
+--- @type LayerField
+lib.ignore_unprioritised = {
+    name = "ignore_unprioritised", widget = "checkbox", default = false,
+    visible_if = function(layer) return layer.can_prioritise == true and layer.priority_targets ~= nil end,
+}
+
 --- Derived values for turrets: whether they turn all the way round, in how many
 --- directions they can be built, and what ammo they take.
 --- @param layer Layer
@@ -88,6 +102,7 @@ function lib.init_turret(layer, prototype)
     layer.turn_limited = attack ~= nil and (attack.turn_range or 1) < 1 or nil
     layer.directions = (prototype.flags and prototype.flags["building-direction-8-way"]) and 8 or 4
     layer.tile_w, layer.tile_h = prototype.tile_width, prototype.tile_height
+    layer.can_prioritise = prototype.type ~= "artillery-turret" or nil
 end
 
 --- Facing and footprint for turrets: rotate limited ones to face outward (or
@@ -102,6 +117,10 @@ end
 --- @param info PlacementInfo
 --- @param directions integer|nil  # limit to this many directions (fed fluid turrets: 4)
 function lib.decorate_turret(layer, entity, info, directions)
+    if layer.can_prioritise and layer.priority_targets then
+        entity.priority_targets = layer.priority_targets
+        entity.ignore_unprioritised = layer.ignore_unprioritised == true
+    end
     local direction = 0
     if layer.turn_limited then
         local v = info.outward

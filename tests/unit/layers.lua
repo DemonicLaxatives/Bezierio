@@ -66,5 +66,32 @@ check(new.offset == 2 and new.type == "empty", "cleared layer keeps the offset")
 registry.carry_over(new, nil)
 check(new.offset == 2, "no old layer: nothing changes")
 
+-- Not placed: carried over (to another item too); placed is the default
+old = wall(1, "normal"); old.place = false
+new = pole(1, 7)
+registry.carry_over(new, old)
+check(new.place == false, "not placed carried over")
+new = pole(1, 7)
+registry.carry_over(new, wall(1, "normal"))
+check(new.place == nil, "placed by default")
+
+-- Turret targeting priorities: strings only, at most MAX_TARGETS
+local function turret(idx)
+    return { idx = idx, type = "turret", name = "gun-turret", placed_by = "gun-turret", quality = "normal", size = 2, offset = 0,
+        spacing = 4, facing = "outward", ignore_unprioritised = false, can_prioritise = true }
+end
+old = turret(1)
+old.priority_targets = { "small-biter", 5, "medium-biter", "a", "b", "c", "d", "e", "f", "g", "h" }
+old.ignore_unprioritised = true
+new = turret(1)
+registry.carry_over(new, old)
+check(#new.priority_targets == registry.MAX_TARGETS and new.priority_targets[1] == "small-biter" and new.priority_targets[2] == "medium-biter",
+    "priority list cleaned: " .. #new.priority_targets)
+check(new.ignore_unprioritised == true and new.priority_targets ~= old.priority_targets, "kept, as a copy")
+old.priority_targets = "nonsense"
+new = turret(1)
+registry.carry_over(new, old)
+check(new.priority_targets == nil, "not a list: none")
+
 print(string.format("%d/%d layer checks passed", checks - failures, checks))
 os.exit(failures == 0 and 0 or 1)
