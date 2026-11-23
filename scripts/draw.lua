@@ -19,7 +19,11 @@ lib.MAX_PREVIEW_OBJECTS = 50000
 lib.CURVE_SEGMENT = 0.5
 
 --- Work units per render object, for budgeting.
-lib.COST = { line = 2, rectangle = 2, destroy = 1, circle = 2, cell = 0.5 }
+lib.COST = { line = 2, rectangle = 2, destroy = 1, circle = 2, cell = 0.5, arrow = 2 }
+
+--- Directed entities (belts, turrets facing a way) share an arrow per straight run
+--- of at most this many cells.
+lib.ARROW_RUN = 8
 
 --- Retire render objects: they are destroyed a budgeted number per tick by
 --- `lib.step_trash`, so clearing a big preview doesn't cost one long tick. They
@@ -226,13 +230,17 @@ end
 --- @return integer
 local function run_end(list, i, cell)
     local first = list[i]
-    if first.size and first.size ~= 1 then return i end
+    if (first.size and first.size ~= 1) or first.w then return i end
+    local limit = first.direction and lib.ARROW_RUN or math.huge
     local px, py = cell(first)
     local dx, dy
     local j = i + 1
     while list[j] do
         local item = list[j]
-        if item.layer ~= first.layer or (item.size and item.size ~= 1) then break end
+        if item.layer ~= first.layer or (item.size and item.size ~= 1) or item.w
+            or item.direction ~= first.direction or item.name ~= first.name or j - i >= limit then
+            break
+        end
         local x, y = cell(item)
         local sx, sy = x - px, y - py
         if math.abs(sx) + math.abs(sy) ~= 1 then break end
@@ -256,6 +264,30 @@ local function run_box(list, i, j, cell)
         { x = math.max(x1, x2) + 0.95, y = math.max(y1, y2) + 0.95 }
 end
 
+--- An arrow (a filled triangle) at `center` pointing in `direction` (0..15).
+--- @param player LuaPlayer
+--- @param sprites LuaRenderObject[]
+--- @param center Vector
+--- @param direction integer
+--- @param scale number
+--- @param alpha number
+local function draw_arrow(player, sprites, center, direction, scale, alpha)
+    local a = direction / 16 * 2 * math.pi
+    local d = { x = math.sin(a), y = -math.cos(a) }
+    local p = { x = -d.y, y = d.x }
+    local tip = { x = center.x + d.x * 0.35 * scale, y = center.y + d.y * 0.35 * scale }
+    local back = { x = center.x - d.x * 0.25 * scale, y = center.y - d.y * 0.25 * scale }
+    local params = base_params(player)
+    params.color = { r = 0, g = 0, b = 0, a = alpha }
+    params.vertices = {
+        tip,
+        { x = back.x + p.x * 0.25 * scale, y = back.y + p.y * 0.25 * scale },
+        { x = back.x - p.x * 0.25 * scale, y = back.y - p.y * 0.25 * scale },
+    }
+    params.draw_on_ground = true
+    table.insert(sprites, rendering.draw_polygon(params))
+end
+
 --- @param player LuaPlayer
 --- @param view ViewSettings
 --- @param progress DrawProgress
@@ -271,6 +303,7 @@ local function step_preview(player, view, progress, plan, hidden, budget)
     local rect = base_params(player)
     rect.filled = true
     rect.draw_on_ground = true
+    local arrow -- an entity's direction, drawn on top of its rectangle
 
     while used < budget and progress.preview_count < lib.MAX_PREVIEW_OBJECTS do
         if progress.preview_tiles < #plan.tiles then
@@ -298,26 +331,40 @@ local function step_preview(player, view, progress, plan, hidden, budget)
             local i = progress.preview_entities + 1
             local entity = plan.entities[i]
             rect.color = palette.layer_color(entity.layer, entity_alpha)
-            if entity.size == 1 then
+            arrow = nil
+            if entity.size == 1 and not entity.w then
                 local j = run_end(plan.entities, i, entity_cell)
                 rect.left_top, rect.right_bottom = run_box(plan.entities, i, j, entity_cell)
                 progress.preview_entities = j
                 used = used + (j - i + 1) * lib.COST.cell
                 if hidden[entity.layer] then goto continue end
+                if entity.direction then
+                    local a, b = plan.entities[i].position, plan.entities[j].position
+                    arrow = { center = { x = (a.x + b.x) / 2, y = (a.y + b.y) / 2 }, direction = entity.direction, scale = 1 }
+                end
             elseif hidden[entity.layer] then
                 progress.preview_entities = i
                 used = used + lib.COST.cell
                 goto continue
             else
-                local half = entity.size / 2 - 0.05
-                rect.left_top = vect.sub(entity.position, { x = half, y = half })
-                rect.right_bottom = vect.add(entity.position, { x = half, y = half })
+                local hw, hh = (entity.w or entity.size) / 2 - 0.05, (entity.h or entity.size) / 2 - 0.05
+                rect.left_top = vect.sub(entity.position, { x = hw, y = hh })
+                rect.right_bottom = vect.add(entity.position, { x = hw, y = hh })
                 progress.preview_entities = i
+                if entity.direction then
+                    arrow = { center = entity.position, direction = entity.direction, scale = math.min(entity.w or entity.size, entity.h or entity.size) }
+                end
             end
         else
             break
         end
         table.insert(sprites, rendering.draw_rectangle(rect))
+        if arrow then
+            draw_arrow(player, sprites, arrow.center, arrow.direction, arrow.scale, math.min(1, entity_alpha + 0.4))
+            progress.preview_count = progress.preview_count + 1
+            used = used + lib.COST.arrow
+            arrow = nil
+        end
         progress.preview_count = progress.preview_count + 1
         used = used + lib.COST.rectangle
         ::continue::

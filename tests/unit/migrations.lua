@@ -96,7 +96,7 @@ check(layers[1].type == "empty", "nil layer -> empty")
 check(layers[2].size == 1 and layers[2].spacing == 1, "small pole resized to 1x1 from the prototype")
 check(type(c.revision) == "number" and c.redraw == true and type(c.work) == "table" and c.work.draw, "jobs rebuilt")
 check(next(storage.sprites) == nil, "stale sprite references dropped")
-check(storage.item_filter[1].name[1] == "stone-wall", "item filter rebuilt")
+check(storage.item_filter == nil and state.item_filter()[1].name[1] == "stone-wall", "item filter not stored, derived")
 check(layers[2].wire_distance == 7 and layers[2].reach == 2.5 and layers[2].needs_power == nil, "pole values derived from its prototype")
 check(layers[0].needs_power == nil, "walls need no power")
 

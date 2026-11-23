@@ -399,7 +399,7 @@ function lib.step(job, walk, band, budget, h)
         while walk.i <= #entities and used < budget do
             local e = entities[walk.i]
             local owner = layers[e.layer]
-            if owner and owner.needs_power then
+            if owner and (owner.needs_power or e.power) then
                 -- Where along the curve it was placed (spaced layers record it); the
                 -- nearest sample could be on another stretch where the curve crosses itself.
                 local j = e.frame or geometry.nearest_frame(frames, job.index, e.position)

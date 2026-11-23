@@ -22,6 +22,30 @@ lib.radius = { name = "radius", widget = "slider", min = 1, max = 10, default = 
 lib.red_wire = { name = "red_wire", widget = "checkbox", default = false }
 lib.green_wire = { name = "green_wire", widget = "checkbox", default = false }
 
+--- Path layers (belts, pipes): how many parallel lines.
+--- @type LayerField
+lib.lines = { name = "lines", widget = "slider", min = 1, max = 8, default = 1 }
+
+--- Path layers: which way along the curve things flow.
+--- @type LayerField
+lib.flow = { name = "flow", widget = "choice", options = { "forward", "backward" }, label_prefix = "bezierio-flow", default = "forward" }
+
+--- Path layers: the lines side by side, `line_gap` empty cells between them.
+--- @param layer Layer
+--- @return number
+function lib.path_thickness(layer)
+    local lines = layer.lines or 1
+    return lines + (lines - 1) * (layer.line_gap or 0)
+end
+
+--- The item that builds an entity (for the totals), if any.
+--- @param prototype LuaEntityPrototype
+--- @return string|nil
+function lib.item_for(prototype)
+    local items = prototype.items_to_place_this
+    return items and items[1] and items[1].name or nil
+end
+
 --- A spacing slider: from the entity's size up to `max(layer)`.
 --- @param max fun(layer: Layer): integer
 --- @param default fun(layer: Layer): integer|nil

@@ -76,6 +76,13 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
      - Radar spacing defaults to a bit less than the area a radar keeps revealed.
      - Lamps keep their own colour, take one colour, or a *Rainbow* that cycles
        along the curve.
+   - **Belts and pipes** run as continuous lines along the curve, *Lines* of them
+     side by side with a *Gap* between (pipes keep at least one empty cell, or
+     neighbouring lines would join). Belts flow along or against the curve
+     (*Flow*). *Undergrounds* takes long straight runs underground. Pipes can get
+     *Pumps* every *Pump spacing* tiles (at most the pipe's pipeline extent limit),
+     so long pipelines keep flowing (in the
+     *Flow* direction). Undergrounds and pumps are in the totals.
    - **Land mines** cover their band (up to 63 tiles wide), *Scattered* (*Density*
      is the share of cells that get one, the same cells every time) or on a
      *Grid* (every *Spacing* tiles). *Red wire* / *Green wire* connect them.
@@ -85,7 +92,8 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
      acts as a 1-tile spacer.
    - Picking another item (or quality) for a layer keeps its settings where the
      new item has the same ones.
-5. Toggle **Preview** to see what would be placed, coloured by layer. The window
+5. Toggle **Preview** to see what would be placed, coloured by layer, with arrows
+   for which way belts flow and turrets face. The window
    shows the curve's length and how many of each item (and quality) the build
    needs; hover it for the count per layer. Red circles mark bends too tight for
    the layers on their inside (those layers split there). The colour picker

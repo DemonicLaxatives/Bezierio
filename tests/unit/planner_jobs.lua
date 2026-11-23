@@ -29,6 +29,8 @@ local special = {
     [2] = { idx = 2, type = "electric-turret", name = "turret", quality = "normal", size = 2, offset = 1, spacing = 7, needs_power = true },
     [-1] = { idx = -1, type = "land-mine", name = "mine", quality = "normal", size = 1, offset = 0, radius = 3, density = 20, red_wire = true, circuit_distance = 9 },
     [-2] = { idx = -2, type = "lamp", name = "lamp", quality = "normal", size = 1, offset = 0, spacing = 5, color = "rainbow", rainbow_length = 30 },
+    [3] = { idx = 3, type = "belt", name = "belt", quality = "normal", size = 1, offset = 0, lines = 2, line_gap = 0, flow = "forward", undergrounds = true, underground_name = "ug", underground_distance = 5 },
+    [-3] = { idx = -3, type = "pipe", name = "pipe", quality = "normal", size = 1, offset = 0, lines = 2, line_gap = 1, undergrounds = true, underground_name = "ptg", underground_distance = 10, pumps = true, pump_name = "pump", pump_spacing = 25 },
 }
 local extra = 0
 for i = 1, 8 do

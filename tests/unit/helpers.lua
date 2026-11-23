@@ -140,6 +140,7 @@ function helpers.canonical(plan)
         if e.direction then extra = extra .. ":d" .. e.direction end
         if e.color then extra = extra .. string.format(":c%.2f,%.2f,%.2f", e.color.r, e.color.g, e.color.b) end
         if e.ammo then extra = extra .. ":a" .. e.ammo.name .. "x" .. e.ammo.count end
+        if e.belt_type then extra = extra .. ":" .. e.belt_type end
         entities[#entities + 1] = string.format("%s/%s@%g,%g:%d:L%d", e.name, e.quality or "-", e.position.x, e.position.y, e.size, e.layer) .. extra
     end
     for _, t in ipairs(plan.tiles) do

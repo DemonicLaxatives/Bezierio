@@ -153,6 +153,7 @@ end
 function lib.grid_distance(frames, index, c, closed)
     local j0, d0 = lib.nearest_frame(frames, index, c)
     local best_u = frame_u(frames, j0, c)
+    local best_j = j0
 
     local radius = math.sqrt(d0) * 1.415 + 0.05
     local radius2 = radius * radius
@@ -167,7 +168,7 @@ function lib.grid_distance(frames, index, c, closed)
                             local u, along = frame_u(frames, j, c)
                             if u and math.abs(along) <= FOOT_TOLERANCE
                                 and (best_u == nil or math.abs(u) < math.abs(best_u)) then
-                                best_u = u
+                                best_u, best_j = u, j
                             end
                         end
                     end
@@ -176,7 +177,7 @@ function lib.grid_distance(frames, index, c, closed)
         end
     end
     if not best_u then return nil end
-    return math.floor(best_u * U_QUANTUM + 0.5) / U_QUANTUM
+    return math.floor(best_u * U_QUANTUM + 0.5) / U_QUANTUM, best_j
 end
 
 --- The point at grid distance u from frame f (on the normal through it).

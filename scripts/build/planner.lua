@@ -17,6 +17,7 @@ local geometry = require("scripts.build.geometry")
 local curve_lib = require("scripts.curve.curve")
 local registry = require("scripts.layers.registry")
 local smart_poles = require("scripts.build.smart_poles")
+local paths = require("scripts.build.paths")
 
 local lib = {}
 
@@ -45,6 +46,10 @@ lib.COST = {
 --- @field direction integer|nil  # defines.direction (0..15), if not north
 --- @field color Color|nil        # lamps
 --- @field ammo {name: string, quality: string, count: integer, inventory: string}|nil  # turrets: ammo to request
+--- @field belt_type "input"|"output"|nil  # underground belts
+--- @field w integer|nil          # footprint when not size x size (pumps)
+--- @field h integer|nil
+--- @field power boolean|nil      # needs power although its layer doesn't (pumps)
 
 --- @class PlannedTile
 --- @field name string
@@ -63,7 +68,8 @@ lib.COST = {
 --- @field unsupported integer[]   # layer indices whose type can't be built yet
 --- @field skipped integer         # spaced entities that found no free spot
 --- @field length number           # curve length in tiles
---- @field counts table<integer, integer>   # placements per layer index
+--- @field counts table<integer, integer>   # placements per layer index (of the layer's own item)
+--- @field extra_counts table<integer, table<string, integer>>  # other items per layer (undergrounds, pumps)
 --- @field chains table<integer, PlanChain> # pole layers: poles in order, for wiring
 --- @field links {a: integer, b: integer, red: boolean, green: boolean}[]  # other wires (indices into entities): land mines
 --- @field gaps integer           # consecutive poles out of wire reach (no room for a pole between)
@@ -143,7 +149,7 @@ function lib.new_job(curve, layers)
         last_warning = nil,
         plan = {
             entities = {}, tiles = {}, unsupported = {}, skipped = 0,
-            length = 0, counts = {}, chains = {}, links = {}, gaps = 0, unpowered = 0, warnings = {},
+            length = 0, counts = {}, extra_counts = {}, chains = {}, links = {}, gaps = 0, unpowered = 0, warnings = {},
             closed = curve_lib.is_closed(curve),
             done = sampler == nil,
         },
@@ -366,6 +372,7 @@ local function stage_bends(job, budget)
 end
 
 local link_to_nearby
+local collect_path_cell
 
 --- How many of a layer's latest band entities a new one looks at for a wire partner.
 lib.LINK_WINDOW = 40
@@ -447,13 +454,17 @@ local function rasterize_frame(job, f, shift)
         if not seen[key] then
             seen[key] = true
             used = used + lib.COST.cell
-            local u = geometry.grid_distance(job.frames, job.index, { x = x + 0.5, y = y + 0.5 })
+            local u, j = geometry.grid_distance(job.frames, job.index, { x = x + 0.5, y = y + 0.5 })
             if u then
                 -- The cell's own band first; then an underlay, unless that placed a tile.
                 local placed_tile = false
                 for _, band in ipairs(bands) do
                     if not band.under and u >= band.lo and u < band.hi then
-                        placed_tile = emit_cell(job, band.layer, x, y, key)
+                        if registry.type_of(band.layer).placement == "path" then
+                            collect_path_cell(job, band, x, y, key, u, j)
+                        else
+                            placed_tile = emit_cell(job, band.layer, x, y, key)
+                        end
                         break
                     end
                 end
@@ -504,6 +515,265 @@ local function stage_rasterize(job, budget)
         job.cursor = job.cursor + 1
     end
     if job.cursor > #frames then
+        job.stage, job.cursor = "paths", 1
+    end
+    return used
+end
+
+--- Path layers (belts, pipes): a cell of the band belongs to line k when it lies in
+--- that line's one-cell sub-band; cells in the gaps between lines stay empty.
+--- @param job PlannerJob
+--- @param band LayerBand
+--- @param x integer
+--- @param y integer
+--- @param key string
+--- @param u number
+--- @param j integer
+collect_path_cell = function(job, band, x, y, key, u, j)
+    local layer = band.layer
+    local step = 1 + (layer.line_gap or 0)
+    local rel = u - band.lo
+    local k = math.floor(rel / step)
+    if rel - k * step >= 1 or k >= (layer.lines or 1) then return end
+    job.occupied[key] = true
+    job.path_cells = job.path_cells or {}
+    local by_line = job.path_cells[layer.idx]
+    if not by_line then
+        by_line = {}
+        job.path_cells[layer.idx] = by_line
+    end
+    local cells = by_line[k + 1]
+    if not cells then
+        cells = {}
+        by_line[k + 1] = cells
+    end
+    cells[#cells + 1] = { x = x, y = y, j = j }
+end
+
+--- Item counts beyond the layer's own item (undergrounds, pumps), for the totals.
+--- @param plan BuildPlan
+--- @param idx integer
+--- @param item string|nil
+local function count_extra(plan, idx, item)
+    if not item then return end
+    plan.extra_counts[idx] = plan.extra_counts[idx] or {}
+    plan.extra_counts[idx][item] = (plan.extra_counts[idx][item] or 0) + 1
+end
+
+-- Path layers are built in two phases, a line per step: first every line is
+-- routed (ordered into segments, diagonal steps joined through corner cells),
+-- then the routes become entities. A belt line may take a corner cell from
+-- another line of its layer (on the inside of a bend the bands get squeezed, and
+-- which side is inside changes along the curve); the taken cell is locked to it,
+-- and the other line is routed again (a few times at most).
+
+lib.MAX_REROUTES = 4
+
+--- Pieces of a line shorter than this are dropped when the line has a stretch at
+--- least five times as long.
+lib.MIN_SCRAP = 4
+
+--- Route one line: its current cells as continuous segments.
+--- @param job PlannerJob
+--- @param item {idx: integer, k: integer, line: string}
+--- @return number used
+local function route_path_line(job, item)
+    local layer = job.layers[item.idx]
+    local line = item.line
+    local pipes = registry.type_of(layer).name == "pipe"
+    local cells = {}
+    for key, c in pairs(job.line_cells[line]) do cells[#cells + 1] = c end
+    table.sort(cells, function(a, b)
+        if a.j ~= b.j then return a.j < b.j end
+        if a.x ~= b.x then return a.x < b.x end
+        return a.y < b.y
+    end)
+    -- A corner cell may be free (and, for pipes, not touch another pipe line), or
+    -- (belts) belong to another line of this layer, unless it was taken already.
+    local function usable(x, y)
+        local key = cell_key(x, y)
+        local owner = job.line_of[key]
+        local rank = 1
+        if job.occupied[key] then
+            if pipes or not owner or owner == line or job.locked[key]
+                or job.line_layer[owner] ~= item.idx then
+                return false
+            end
+            rank = 2
+        end
+        if pipes then
+            for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+                local other = job.line_of[cell_key(x + d[1], y + d[2])]
+                if other and other ~= line then return false end
+            end
+        end
+        return rank
+    end
+    local function use(x, y)
+        local key = cell_key(x, y)
+        local owner = job.line_of[key]
+        local c = { x = x, y = y, j = 0 }
+        if owner and owner ~= line then
+            c.j = job.line_cells[owner][key].j
+            job.line_cells[owner][key] = nil
+            job.locked[key] = true
+            -- That line has to go round the cell now.
+            if job.routes[owner] and (job.reroutes[owner] or 0) < lib.MAX_REROUTES then
+                job.reroutes[owner] = (job.reroutes[owner] or 0) + 1
+                job.routes[owner] = nil
+                table.insert(job.path_queue, { idx = job.line_layer[owner], line = owner, phase = "route" })
+            end
+        end
+        job.occupied[key] = true
+        job.line_of[key] = line
+        job.line_cells[line][key] = c
+        if not pipes then job.belt_cells[key] = true end
+    end
+    local joined = {}
+    for _, segment in ipairs(paths.segments(cells, job.closed and #job.frames or nil)) do
+        for _, piece in ipairs(paths.join_corners(segment, usable, use)) do joined[#joined + 1] = piece end
+    end
+    if job.closed then
+        -- Close a loop whose ends meet only diagonally.
+        for _, segment in ipairs(joined) do
+            local first, last = segment[1], segment[#segment]
+            if #segment >= 3 and math.abs(first.x - last.x) == 1 and math.abs(first.y - last.y) == 1 then
+                for _, corner in ipairs({ { x = first.x, y = last.y }, { x = last.x, y = first.y } }) do
+                    if math.abs(segment[#segment].x - first.x) + math.abs(segment[#segment].y - first.y) == 2
+                        and usable(corner.x, corner.y) then
+                        use(corner.x, corner.y)
+                        segment[#segment + 1] = { x = corner.x, y = corner.y, j = last.j }
+                    end
+                end
+            end
+        end
+    end
+    job.routes[line] = joined
+    return #cells * lib.COST.place
+end
+
+--- Turn one routed line into belts or pipes (and undergrounds, pumps).
+--- @param job PlannerJob
+--- @param item {idx: integer, line: string}
+--- @return number used
+local function emit_path_line(job, item)
+    local plan = job.plan
+    local layer = job.layers[item.idx]
+    local pipes = registry.type_of(layer).name == "pipe"
+    local used = 0
+    local route = job.routes[item.line] or {}
+    -- Scraps a few cells long beside a long stretch of the line (left over where a
+    -- loop's ends meet, or at a tight corner) would be belts going nowhere.
+    local longest = 0
+    for _, segment in ipairs(route) do longest = math.max(longest, #segment) end
+    for _, segment in ipairs(route) do
+      if #segment >= lib.MIN_SCRAP or longest < 5 * lib.MIN_SCRAP then
+        -- Cells taken by another line after this route was made are left out.
+        local kept, current = {}, {}
+        for _, c in ipairs(segment) do
+            if job.line_of[cell_key(c.x, c.y)] == item.line then
+                current[#current + 1] = c
+            elseif #current > 0 then
+                kept[#kept + 1] = current
+                current = {}
+            end
+        end
+        if #current > 0 then kept[#kept + 1] = current end
+        for _, part in ipairs(kept) do
+            used = used + #part * lib.COST.place
+            if #part >= 2 then
+                if layer.flow == "backward" then
+                    local reversed = {}
+                    for i = #part, 1, -1 do reversed[#reversed + 1] = part[i] end
+                    part = reversed
+                end
+                local first, last = part[1], part[#part]
+                local loop = job.closed and math.abs(first.x - last.x) + math.abs(first.y - last.y) == 1
+                local pieces, missing = paths.pieces(part, {
+                    undergrounds = layer.undergrounds and layer.underground_name and layer.underground_distance or nil,
+                    pipes = pipes,
+                    pump_spacing = pipes and layer.pumps and layer.pump_name and layer.pump_spacing or nil,
+                    loop = loop,
+                    taken = not pipes and function(x, y) return job.belt_cells[cell_key(x, y)] == true end or nil,
+                })
+                plan.skipped = plan.skipped + missing
+                for _, piece in ipairs(pieces) do
+                    local entity = {
+                        name = layer.name, quality = layer.quality, position = { x = piece.x, y = piece.y },
+                        size = 1, layer = layer.idx,
+                    }
+                    if piece.kind == "line" then
+                        if not pipes then entity.direction = piece.direction end
+                        plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
+                    elseif piece.kind == "pump" then
+                        entity.name, entity.size, entity.w, entity.h = layer.pump_name, 2, piece.w, piece.h
+                        entity.direction, entity.power = piece.direction, true
+                        count_extra(plan, layer.idx, layer.pump_item)
+                    else
+                        entity.name, entity.direction = layer.underground_name, piece.direction
+                        if not pipes then entity.belt_type = piece.kind == "underground_in" and "input" or "output" end
+                        count_extra(plan, layer.idx, layer.underground_item)
+                    end
+                    table.insert(plan.entities, entity)
+                end
+            end
+        end
+      end
+    end
+    return used
+end
+
+--- Path layers: route every line, then make the entities, a line per step.
+--- @param job PlannerJob
+--- @param budget number
+local function stage_paths(job, budget)
+    local used = 0
+    if not job.path_queue then
+        job.path_queue, job.line_cells, job.line_of, job.line_layer = {}, {}, {}, {}
+        job.belt_cells, job.locked, job.routes, job.reroutes = {}, {}, {}, {}
+        local emits = {}
+        for _, band in ipairs(job.bands) do
+            local lines = job.path_cells and job.path_cells[band.layer.idx]
+            if lines then
+                local belts = registry.type_of(band.layer).name == "belt"
+                for k = 1, band.layer.lines or 1 do
+                    if lines[k] then
+                        local line = band.layer.idx .. ":" .. k
+                        job.line_layer[line] = band.layer.idx
+                        job.line_cells[line] = {}
+                        for _, c in ipairs(lines[k]) do
+                            local key = cell_key(c.x, c.y)
+                            job.line_cells[line][key] = c
+                            job.line_of[key] = line
+                            if belts then job.belt_cells[key] = true end
+                        end
+                        table.insert(job.path_queue, { idx = band.layer.idx, line = line, phase = "route" })
+                        table.insert(emits, { idx = band.layer.idx, line = line, phase = "emit" })
+                    end
+                end
+            end
+        end
+        job.path_emits = emits
+        job.path_cells = nil
+    end
+    while used < budget do
+        local item = job.path_queue[job.cursor]
+        if not item then
+            if not job.path_emits then break end
+            -- Routing done (re-routes included): now the entities.
+            for _, e in ipairs(job.path_emits) do table.insert(job.path_queue, e) end
+            job.path_emits = nil
+        elseif item.phase == "route" then
+            if not job.routes[item.line] then used = used + route_path_line(job, item) end
+            job.cursor = job.cursor + 1
+        else
+            used = used + emit_path_line(job, item) + 1
+            job.cursor = job.cursor + 1
+        end
+    end
+    if not job.path_queue[job.cursor] and not job.path_emits then
+        job.path_queue, job.line_cells, job.line_of, job.line_layer = nil, nil, nil, nil
+        job.belt_cells, job.locked, job.routes, job.reroutes = nil, nil, nil, nil
         job.stage, job.cursor = "spaced", 1
     end
     return used
@@ -737,6 +1007,7 @@ local STAGES = {
     bands = stage_bands,
     bends = stage_bends,
     rasterize = stage_rasterize,
+    paths = stage_paths,
     spaced = stage_spaced,
 }
 
@@ -769,6 +1040,7 @@ function lib.progress(job)
     if stage == "tangents" or stage == "fill" or stage == "normals" or stage == "bands" then return 0.05 end
     if stage == "bends" then return 0.05 + 0.05 * job.cursor / n end
     if stage == "rasterize" then return 0.1 + 0.7 * job.cursor / n end
+    if stage == "paths" then return 0.8 end
     local spaced = math.max(1, #job.spaced)
     local within = job.walk and job.walk.i / n or 0
     return 0.8 + 0.2 * ((job.spaced_cursor - 1) + within) / spaced

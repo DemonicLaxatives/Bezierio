@@ -99,6 +99,17 @@ cases[#cases + 1] = {
     },
 }
 
+-- Belts (two lines, undergrounds) and pipes (two lines, gap, pumps, undergrounds)
+cases[#cases + 1] = {
+    name = "belts and pipes",
+    points = { { x = 0.5, y = 0.5 }, { x = 50.5, y = 8.5 }, { x = 80.5, y = 50.5 } },
+    layers = {
+        [0] = wall(0, 1),
+        [1] = { idx = 1, type = "belt", name = "belt", quality = "normal", size = 1, offset = 0, priority = 90, lines = 2, line_gap = 0, flow = "forward", undergrounds = true, underground_name = "ug", underground_distance = 5 },
+        [-1] = { idx = -1, type = "pipe", name = "pipe", quality = "normal", size = 1, offset = 0, priority = 90, lines = 2, line_gap = 1, undergrounds = true, underground_name = "ptg", underground_distance = 10, pumps = true, pump_name = "pump", pump_spacing = 40 },
+    },
+}
+
 local lines = {}
 for _, case in ipairs(cases) do
     lines[#lines + 1] = "## " .. case.name

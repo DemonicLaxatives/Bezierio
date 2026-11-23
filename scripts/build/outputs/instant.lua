@@ -32,7 +32,7 @@ return {
     create_entity = function(job, player, entity, undo_index)
         local built = job.surface.create_entity {
             name = entity.name, position = entity.position, quality = entity.quality,
-            direction = entity.direction, color = entity.color,
+            direction = entity.direction, color = entity.color, type = entity.belt_type,
             force = job.force, player = player, raise_built = true, move_stuck_players = true,
             undo_index = undo_index,
         }

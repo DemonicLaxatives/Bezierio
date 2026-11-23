@@ -108,6 +108,13 @@ for _ in pairs(distinct) do n = n + 1 end
 check(n >= 6, "rainbow: colours change along the curve (" .. n .. ")")
 check(rainbow[1].color.r == 1 and rainbow[1].color.g == 0 and rainbow[7].color.r == 1 and rainbow[7].color.g == 0, "rainbow repeats every 24 tiles (6 lamps)")
 
+-- Pump spacing stops at the pipeline extent, less the pump
+local pipe_def = registry.types["pipe"]
+local spacing_field
+for _, f in ipairs(pipe_def.fields) do if f.name == "pump_spacing" then spacing_field = f end end
+check(spacing_field.max({ pipeline_extent = 320 }) == 318 and spacing_field.max({ pipeline_extent = 100 }) == 98
+    and spacing_field.default({ pipeline_extent = 100 }) == 98, "pump spacing from the pipeline extent")
+
 -- Radar spacing follows the reveal range
 local radar_def = registry.types["radar"]
 local radar = { size = 3, reveal_chunks = 3 }

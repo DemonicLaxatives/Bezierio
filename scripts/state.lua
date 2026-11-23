@@ -4,7 +4,11 @@
 --- storage.schema_version   integer, see MIGRATIONS
 --- storage.controllers[i]   per-player Controller
 --- storage.sprites[i]       per-player render objects (SpriteCache)
---- storage.item_filter      filter for the layer item pickers
+---
+--- Nothing that can be derived from the mod's code and the prototypes is kept in
+--- storage (the item picker filter, layer values like sizes and wire reach are
+--- recomputed), so a code update needs no migration for it: a save made before a
+--- new layer type was added still offers it.
 local registry = require("scripts.layers.registry")
 local curve_lib = require("scripts.curve.curve")
 local palette = require("scripts.palette")
@@ -129,7 +133,6 @@ end
 --- New game, or the mod was added to a save (script.on_init).
 function lib.init()
     reset()
-    if prototypes then storage.item_filter = registry.build_item_filter() end
 end
 
 --- Mods, prototypes, startup settings or migrations changed
@@ -144,20 +147,9 @@ function lib.on_configuration_changed()
     end
     if rendering then rendering.clear(script.mod_name) end
     storage.sprites = {}
+    storage.item_filter = nil -- (kept in storage before schema 9; now derived on use)
     for _, controller in pairs(storage.controllers) do
-        -- Values layers derive from prototypes (sizes, wire reach, power) may have
-        -- changed with the mods; layers whose prototype is gone become empty.
-        if prototypes then
-            for _, preset in pairs(controller.presets) do
-                for idx, layer in pairs(preset.layers) do
-                    if not registry.types[layer.type] or not registry.refresh(layer) then
-                        local empty = registry.new_empty(idx)
-                        empty.offset = layer.offset or 0
-                        preset.layers[idx] = empty
-                    end
-                end
-            end
-        end
+        for _, preset in pairs(controller.presets) do lib.refresh_layers(preset.layers) end
         controller.work = lib.new_work()
         controller.redraw = true
         controller.redraw_points = nil
@@ -167,7 +159,22 @@ function lib.on_configuration_changed()
             if controller.view[key] == nil then controller.view[key] = value end
         end
     end
-    if prototypes then storage.item_filter = registry.build_item_filter() end
+end
+
+--- Recompute the values layers derive from their prototypes (sizes, wire reach,
+--- power, undergrounds, ...): mods may have changed them, and newer code may derive
+--- more. Layers whose prototype or type is gone become empty. Called on
+--- configuration changes and before every plan.
+--- @param layers table<integer, Layer>
+function lib.refresh_layers(layers)
+    if not prototypes then return end
+    for idx, layer in pairs(layers) do
+        if not registry.types[layer.type] or not registry.refresh(layer) then
+            local empty = registry.new_empty(idx)
+            empty.offset = layer.offset or 0
+            layers[idx] = empty
+        end
+    end
 end
 
 --- After migrations: rebuild once, on whatever touches storage first.
@@ -259,8 +266,16 @@ function lib.request_build(player_index, mode)
 end
 
 --- @return ItemPrototypeFilter[]
+--- The layer item pickers' filter: built from the layer types and the prototypes,
+--- so it's the same on every machine and kept out of storage (a save made before a
+--- layer type existed offers it all the same).
+--- @type ItemPrototypeFilter[]|nil
+local item_filter_cache = nil
+
+--- @return ItemPrototypeFilter[]
 function lib.item_filter()
-    return storage.item_filter
+    if not item_filter_cache then item_filter_cache = registry.build_item_filter() end
+    return item_filter_cache
 end
 
 --- @param player_index integer

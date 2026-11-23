@@ -4,6 +4,7 @@
 
 ```
 info.json, data.lua, control.lua   mod entry points
+data-final-fixes.lua     records each pipe's max_pipeline_extent (not readable at runtime) in mod-data
 settings.lua             map setting: work budget per tick
 migrations/              storage upgrades, run by the game once per save (see Storage)
 prototypes/
@@ -147,6 +148,14 @@ Files: `0.2.0.lua` discards 0.1.x data (no `schema_version`). The
 roadmap). Name later ones after the mod version that introduces them. Names sort
 byte-wise, so `0.10.0.lua` would run before `0.9.0.lua`: once versions get there,
 rename or pad accordingly.
+
+**Keep derived data out of storage.** Anything computed from the mod's code and
+the prototypes (the item picker filter, layer values like sizes and wire reach)
+is recomputed instead of stored: the filter is a per-session cache
+(`state.item_filter`), and layers are refreshed (`state.refresh_layers`) on
+configuration changes and before every plan. Otherwise a code update without a
+migration leaves saves with stale data: a save from before belts existed didn't
+offer them in the picker.
 
 **Changing the layout:**
 1. Bump `state.SCHEMA_VERSION`.
@@ -305,6 +314,40 @@ clamped to the new range, plus the offset.
      crosses itself. Pole layers run last (lowest priority), so every consumer is
      already planned.
 
+**Path layers** (belts, pipes; `build/paths.lua`). Each line is a one-cell
+sub-band of the layer's band (`lines` of them, `line_gap` empty cells between).
+The rasterizer collects each line's cells with the curve sample they belong to
+(`grid_distance` returns it), and a `paths` stage (between rasterize and spaced)
+builds the lines one per step:
+- `paths.segments` orders the cells by walking from neighbour to neighbour,
+  preferring the way that continues along the curve over a dead end (a spur
+  at a bend) and refusing neighbours from another stretch of a curve that comes
+  back near itself. It steps diagonally only when it must.
+- Lines are routed (segments + corners) for every line first, and only then made
+  into entities. A belt line may take a corner from another line of its layer
+  (preferring a free cell); the cell is locked to it and the other line is routed
+  again (`MAX_REROUTES`), so no corner can appear in front of a belt that already
+  chose its direction. On a closed curve, distances along the curve are measured
+  around the loop, and a loop whose ends meet diagonally is closed through a corner.
+  Pieces shorter than `MIN_SCRAP` beside a long stretch are dropped.
+- `paths.join_corners` fills a diagonal step with a corner cell. Bands get
+  squeezed on the inside of bends, so a one-cell line isn't always 4-connected
+  there. A corner may be a free cell or, for belts, a cell of a line of the same
+  layer not built yet (that line goes round it). Pipe corners must not touch
+  another pipe line. A step with no usable corner splits the line.
+- `paths.pieces` makes the entities: belts point at the next cell (the last
+  one straight on or away from other belts, so it never feeds one from the side,
+  and line ends hemmed in by belts are dropped). Undergrounds go on straight
+  runs, the entrance fed from behind and the exit feeding a cell that continues
+  in line, chained for long runs. Pumps (pipes) go every `pump_spacing` cells
+  on the next stretch straight enough for a pump with pipe in line at both ends.
+  The spacing is capped at the pipeline's extent limit less the pump's two
+  cells: `FluidBox::max_pipeline_extent`, the smallest of the pipe's and its
+  underground's, recorded by `data-final-fixes.lua` in the
+  `bezierio-pipeline-extent` mod-data because the runtime API doesn't expose it.
+  Pumps carry `power`, so smart poles reach them.
+Undergrounds and pumps are counted in `plan.extra_counts` for the totals.
+
 Values a layer derives from its prototype (size, wire reach, supply area,
 `needs_power` = has an electric energy source) are set by `registry.refresh`, for new
 layers and again on every configuration change; layers whose prototype is gone
@@ -384,6 +427,7 @@ tests/run.sh points                                    # the pointer, point list
 tests/run.sh layers                                    # layer list and detail pane, presets, view settings
 tests/run.sh build                                     # preview, totals, builds in all modes, blueprints
 tests/run.sh types                                     # turrets, lamps, mines, radars, solar panels, accumulators
+tests/run.sh paths                                     # belts and pipes: real entities flow, undergrounds pair, pumps split segments
 tests/run.sh build space-age quality elevated-rails    # same, with DLC mods enabled
 tests/migrate-save.sh                                  # the game applies migrations/ to a real save
 tests/run.sh bench                                     # timing (read the BENCH lines in the log)
@@ -401,6 +445,7 @@ tests/run.sh bench                                     # timing (read the BENCH 
 | `layers.lua` | Which layer settings survive picking another item (`registry.carry_over`). |
 | `presets.lua` | Preset list operations; export data round trip and import validation. |
 | `layer_types.lua` | Turret facing (both sides, inward) and non-square footprints, ammo, lamp colours and rainbow, radar spacing, land mine density, determinism and wires. |
+| `paths.lua` | Belts fed only from behind and lines continuous, undergrounds paired within reach, pipe lines connected and apart, pumps; on a gentle curve, a loop and random curves. |
 | `shapes.lua` | What the handles mean; samples exactly on circles, (rotated) ellipses and arcs; direction; editing shapes and moving curves. |
 | `migrations.lua` | The files in `migrations/`, run like the game does, on old and current data. |
 

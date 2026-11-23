@@ -130,6 +130,12 @@ local function items_of(controller, plan)
             local item, count = item_text(layer), plan.counts[idx]
             if not totals[item] then table.insert(order, item) end
             totals[item] = (totals[item] or 0) + count
+            -- Undergrounds, pumps.
+            for extra, n in pairs(plan.extra_counts and plan.extra_counts[idx] or {}) do
+                local text = string.format("[item=%s]", extra)
+                if not totals[text] then table.insert(order, text) end
+                totals[text] = (totals[text] or 0) + n
+            end
             -- Ammo the turrets request.
             if layer.ammo and layer.ammo_inventory then
                 local ammo = string.format("[item=%s]", layer.ammo)
@@ -221,7 +227,9 @@ function lib.update(player, controller)
     local settled = work.revision == controller.revision
     local needed = plan_needed(controller)
     if settled and needed and not work.plan and curve_lib.is_drawable(controller.curve) then
-        work.plan = planner.new_job(controller.curve, state.layers_of(controller))
+        local layers = state.layers_of(controller)
+        state.refresh_layers(layers)
+        work.plan = planner.new_job(controller.curve, layers)
     end
 
     local plan_job = work.plan

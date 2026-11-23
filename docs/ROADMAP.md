@@ -178,20 +178,40 @@ Group c1 follow-ups (done):
 - The curve can be exported and imported as a string (for sharing, and for bug
   reports).
 
+Done (group c2):
+
+4. **Belts and pipes:** continuous lines following the curve (one-cell sub-bands
+   ordered along the curve, diagonal steps joined through corner cells, spurs
+   and doubled-back cells left out), several lines side by side with a gap (pipes
+   at least one cell, so lines don't join), belts flowing along or against the
+   curve and never feeding each other from the side, undergrounds on straight
+   runs, pumps every N tiles for long pipelines. Known limit: where the curve folds
+   back on itself, or a squeezed bend leaves no free corner, a line splits.
+
+Group c2 follow-ups (done):
+
+- Closed loops with several belt lines lost their inner lines: a loop's line end
+  looked hemmed in by its own start, and trimming it ate the line. Loops now close
+  (around the seam, through a corner when the ends meet diagonally), lines are
+  routed all together before any entity is made (a line may take a corner from
+  another, which then goes round it), and lines continue across the inside of a
+  tight bend. The reported 8-line loop is a regression test.
+- Preview arrows (black) for belts, undergrounds, pumps and turrets facing a way.
+- Pump spacing stops at the pipe's `max_pipeline_extent` (less the pump), read in
+  the data stage.
+- The item picker filter and layer values are derived on use instead of stored
+  (an old save didn't offer belts and pipes).
+
 To do:
 
-4. **More layer types**, prioritised by defence use:
-   - pipes and belts 
-      - directional: needs the tangent → direction mapping
-      - skip sharp kinks - ensure a continuos line;
-      - allow placing multiple parralel lines;
-      - avoiding cross connections, especially for pipes, as adjecent pipes will always connect;
-      - respect pipe extent limits, place pumps to account for them;
-      - Parameter to maximize underground placement where possible, like long straight stretches.
+- Side wall layers on the inside of tight bends can be joined only diagonally (the
+  bands get squeezed there; found with belts, never checked for walls).
+
+4. **More layer types**, continued (group c3):
    - turrets, still to do (after belts and pipes, group c3):
       - ammo turrets: optional infeed belt with inserters - respect inserter pickup/placement locations, ignoring mods that let the user change them at  will, maybe worth considering it at a later stage, but not now.
       - fluid turrets with pipes
-   - gates where a rail or belt crosses a wall.
+   - gates where a planned wall crosses an existing rail, later when we'll be building rails, it should also work the other way around. It should be a toggle on the wall/rail config.
 5. **Rails.** Fit 2.0 rail pieces (straight, half-diagonal, curved-a/b) to the
    curve, plus signals at a spacing measured in wagons (fields already exist).
    This is the largest item: it needs a search over rail-piece sequences that stays
@@ -250,7 +270,7 @@ To do:
 
 ### Release hygiene for the first release (0.2.0)
 
-- GUI upgrades
+- GUI and controll upgrades
   - On top of the rest of the suggestions make it more cohesive and nicer. 
   - Have the panels, and elements within them align to one another. 
   - Give the list entries alternating shaded backgrounds. 
@@ -262,13 +282,13 @@ To do:
   - In the turrets config panel give the user a way to set the targeting priorities
   - Give tooltips to the turret facing paramater, so that it's clear what which direction means
   - Add a button to add a new preset.
+  - curve/preset imports/exports should open their own windows with the text fields.
+  - layer config panels should be in their own windows, which, untill accepted, would lock the main gui.
 - `debug.lua` `lib.debug = false` (enforced by the release check above).
 - New screenshots for the README and mod portal. The current ones show the 0.1
   curve projector.
-- Quality: build with a non-normal quality under the `quality` mod and check the
-  ghost quality.
 - A real multiplayer test: a manual session with two players (everything is per
-  player and in `storage`, but nothing has run two players at once yet).
+  player and in `storage`, but nothing has run two players at once yet). Lay out a plan for what and how should be tested.
 - Remove the dev-migrations, they're usefull for seamless testing but serve no purpose for the end user on initial release.
 - A storage migration test ground work, there will be no migrations for release: create a save with schema N, load it with N+1, check
   nothing crashes (`--test-save`). Releases are when old saves start to matter. 

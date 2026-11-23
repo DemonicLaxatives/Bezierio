@@ -25,7 +25,7 @@ local lib = {}
 ---@field entity_types? string[]        # entity prototype types this layer type is used for
 ---@field tile? boolean                  # used for tiles
 ---@field hidden? boolean                # not offered in the item picker (not buildable yet)
----@field placement "band"|"spaced"|"none"|"unsupported"
+---@field placement "band"|"spaced"|"path"|"none"|"unsupported"
 ---@field output? "entity"|"tile"
 ---@field priority integer                  # higher priority layers claim contested cells first
 ---@field fields LayerField[]               # editable settings, in GUI order
@@ -63,6 +63,8 @@ local TYPE_FILES = {
     "scripts.layers.radar",
     "scripts.layers.lamp",
     "scripts.layers.land_mine",
+    "scripts.layers.belt",
+    "scripts.layers.pipe",
     "scripts.layers.rail",
 }
 
