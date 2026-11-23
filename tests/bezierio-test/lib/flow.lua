@@ -42,12 +42,14 @@ end
 function flow.prepare_ground(surface)
   surface.request_to_generate_chunks({ 0, 0 }, 4)
   surface.force_generate_chunk_requests()
-  local area = { { -60, -60 }, { 60, 60 } }
+  -- (as far as the scenarios clear and build: beyond, map generation is random,
+  -- and water there blocked a ramp at the end of a track now and then)
+  local area = { { -100, -100 }, { 100, 100 } }
   for _, e in pairs(surface.find_entities_filtered { area = area }) do
     if e.type ~= "character" then e.destroy() end
   end
   local tiles = {}
-  for x = -60, 59 do for y = -60, 59 do table.insert(tiles, { name = "grass-1", position = { x, y } }) end end
+  for x = -100, 99 do for y = -100, 99 do table.insert(tiles, { name = "grass-1", position = { x, y } }) end end
   surface.set_tiles(tiles)
 end
 

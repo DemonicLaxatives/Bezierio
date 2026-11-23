@@ -14,7 +14,7 @@ lib["preset"]  = require("scripts.gui.preset_control")
 --- but e.g. a click on a choose-elem-button must not run its "value changed" action
 --- (that rebuilt the row and destroyed the picker before it could open).
 lib.routed_types = {
-    [defines.events.on_gui_click] = {["button"] = true, ["sprite-button"] = true},
+    [defines.events.on_gui_click] = {["button"] = true, ["sprite-button"] = true, ["label"] = true},
     [defines.events.on_gui_elem_changed] = {["choose-elem-button"] = true},
     [defines.events.on_gui_confirmed] = {["textfield"] = true},
     [defines.events.on_gui_value_changed] = {["slider"] = true},

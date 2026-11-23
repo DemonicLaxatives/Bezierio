@@ -235,18 +235,17 @@ lib["toggle_import"] = function(e)
     if player then show_io(player, e.element.toggled and "import" or nil) end
 end
 
---- Replace the whole curve (every kind's points) with the pasted one.
---- @param e EventData.on_gui_click
-lib["import"] = function(e)
-    local player = game.get_player(e.player_index)
-    local box = player and window.find(player, "curve_import_text")
-    if not (player and box) then return end
-    local text = box.text:gsub("%s", "")
+--- Replace the whole curve (every kind's points) with one from an export string.
+--- @param player LuaPlayer
+--- @param text string
+--- @return boolean ok  # (otherwise the player was told why)
+function lib.load(player, text)
+    text = tostring(text or ""):gsub("%s", "")
     local json = text ~= "" and helpers.decode_string(text)
     local curve, err = curve_lib.from_data(json and helpers.json_to_table(json))
     if not curve then
         player.print({ "bezierio-message.curve-" .. (err or "not-a-curve") })
-        return
+        return false
     end
     local controller = state.get(player.index)
     controller.curve = curve
@@ -265,6 +264,16 @@ lib["import"] = function(e)
     if reverse then reverse.toggled = curve_lib.is_reversed(curve) end
     state.request_point_redraw(player.index)
     lib.points_changed(player)
+    return true
+end
+
+--- The pasted curve.
+--- @param e EventData.on_gui_click
+lib["import"] = function(e)
+    local player = game.get_player(e.player_index)
+    local box = player and window.find(player, "curve_import_text")
+    if not (player and box) then return end
+    lib.load(player, box.text)
 end
 
 --- Rebuild the point list (after points were added, moved or removed).

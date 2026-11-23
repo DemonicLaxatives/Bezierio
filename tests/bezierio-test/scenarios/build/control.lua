@@ -282,9 +282,53 @@ step("blueprint in the cursor, snaps onto the plan", function(player)
   check(missing == 0, "ghosts on the planned spots, missing " .. missing .. "/" .. #plan.entities)
   local tile_ghosts = #s.find_entities_filtered { type = "tile-ghost" }
   check(tile_ghosts == #plan.tiles, "tile ghosts on the plan: " .. tile_ghosts .. "/" .. #plan.tiles)
-  player.clear_cursor()
+  -- The curve and preset it was made from: tags on the first entity, and a note.
+  local source = stack.get_blueprint_entity_tag(1, "bezierio")
+  local curve_data = source and helpers.json_to_table(helpers.decode_string(source.curve))
+  local preset_data = source and helpers.json_to_table(helpers.decode_string(source.preset))
+  check(curve_data and curve_data.format == "bezierio-curve" and #curve_data.points == #controller().curve.points, "curve carried in the blueprint")
+  check(preset_data and preset_data.format == "bezierio-preset" and #preset_data.layers > 1, "preset carried in the blueprint")
+  check(stack.blueprint_description:find("Bézierio", 1, true), "a note in the description")
   flow.clear_build(s)
-end)
+  -- Load them back: the curve replaced, the preset added and selected.
+  storage.points = #controller().curve.points
+  storage.preset_count = #controller().presets
+  dev("click", P, "control_points_clear")
+  check(#controller().curve.points == 0, "curve cleared")
+  dev("click", P, "blueprint_load")
+  check(#controller().curve.points == storage.points, "curve loaded from the blueprint")
+  check(#controller().presets == storage.preset_count + 1 and controller().ui.preset_index == storage.preset_count + 1, "preset added and selected")
+  dev("click", P, "preset_delete")
+  -- ... also from inside a blueprint book
+  local scratch = game.create_inventory(1)
+  scratch[1].set_stack { name = "blueprint-book", count = 1 }
+  check(scratch[1].get_inventory(defines.inventory.item_main).insert(stack) == 1, "blueprint put in a book")
+  player.cursor_stack.set_stack(scratch[1])
+  scratch.destroy()
+  dev("click", P, "control_points_clear")
+  dev("click", P, "blueprint_load")
+  check(#controller().curve.points == storage.points and #controller().presets == storage.preset_count + 1, "loaded from the book's blueprint")
+  dev("click", P, "preset_delete")
+  player.clear_cursor()
+  dev("click", P, "blueprint_load")
+  dev("set_player_setting", P, "bezierio-blueprint-source", false)
+  dev("click", P, "blueprint_build")
+end, "idle")
+
+step("blueprint without curve and preset when turned off", function(player)
+  local stack = player.cursor_stack
+  check(stack.valid_for_read and stack.is_blueprint_setup(), "blueprint in cursor")
+  check(stack.get_blueprint_entity_tag(1, "bezierio") == nil, "no tags")
+  check(stack.blueprint_description == "", "no description: " .. stack.blueprint_description)
+  local presets = #controller().presets
+  dev("click", P, "blueprint_load")
+  check(#controller().presets == presets, "nothing to load")
+  dev("set_player_setting", P, "bezierio-blueprint-source", true)
+  player.clear_cursor()
+  -- back to the preset the rest of the test uses
+  dev("click", P, "preset_delete")
+  check(controller().ui.preset_index == 1 and #controller().presets == storage.preset_count, "back to the first preset")
+end, "idle")
 
 step("no build without permission", function(player)
   local group = game.permissions.create_group("no-build")

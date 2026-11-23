@@ -131,14 +131,14 @@ return {
             if spot then
                 ctx.add({ name = layer.inserter_name, x = spot.x, y = spot.y, direction = spot.direction, power = layer.inserter_power, item = layer.inserter })
             else
-                ctx.unfed()
+                ctx.unfed(entity, "ammo")
             end
         elseif layer.pipe_feed and layer.fluid_ports then
             local stub = feeds.pipe_stub(ctx, feeds.fluid_targets(entity, layer.fluid_ports))
             if stub then
                 for _, c in ipairs(stub) do ctx.add_pipe(c.x, c.y) end
             else
-                ctx.unfed()
+                ctx.unfed(entity, "fluid")
             end
         end
     end,

@@ -232,9 +232,38 @@ Done (side wall layers):
   planner stage fills a corner cell there, the free one nearest the band. Checked
   for every random plan and a fixed circle.
 
-### Followups
-- After placing unfed or undpowered entities, highlight them for the player, and let toggle it by clicking on the warning. Hide it after a configurable amount of time default - a minute
-- In the exported blueprint, add the curve and preset export strings to the description, make it togglable from player settings.
+### Followups (done)
+- After a build, unpowered and unfed entities are marked on the map (a frame and an
+  icon each) for a per-player time, default a minute (0: until hidden); clicking
+  the warning in the window shows or hides them. They go with the warnings when
+  an edit drops the plan. The totals and warnings also show after a build with
+  the preview off.
+- Blueprints carry the curve and preset they were made from. A description holds
+  at most 500 characters, too few for both, so they are tags on the blueprint's
+  first entity, with a note in the description; **Load from blueprint** reads them
+  back (from the cursor, a book or the blueprint library). A per-player setting
+  turns it off.
+- Test ground covers the whole area the scenarios clear: water from random map
+  generation sometimes blocked a ramp at the end of the elevated test track.
+
+## Phase pre-3: GUI and controll upgrades
+  - Closed loop toggle is an odd one out. It should be a button.
+  - Have the panels, and elements within them align to one another. 
+  - Give the list entries alternating shaded backgrounds. 
+  - The button for adding a layer should take the full width of the layer in gui, but also be shorter in height.
+  - Give the user the option to collapse some parts of the gui, like the point coordinates, layer controls, etc. and in the collapsed mode hide some of the buttons and controls. 
+  - Disable a layer's placement (plan for it).
+  - show the status of  the job, as well as the queued commands, like force build
+  - get rid of the layer mirroring button.
+  - In the turrets config panel give the user a way to set the targeting priorities
+  - Give tooltips to the turret facing paramater, so that it's clear what which direction means
+  - Add a button to add a new preset.
+  - curve/preset imports/exports should open their own windows with the text fields.
+  - layer config panels should be in their own windows, which, untill accepted, would lock the main gui.
+  - On top of the rest of the suggestions make it more cohesive and nicer. Give me options on how you see fit some things should be rearanged.
+
+## Phase post-pre-3:
+- A full review.
 
 ## Phase 3: release, CI and automated release
 
@@ -286,21 +315,6 @@ Done (side wall layers):
 
 ### Release hygiene for the first release (0.2.0)
 
-- GUI and controll upgrades
-  - Closed loop toggle is an odd one out. It should be a button.
-  - On top of the rest of the suggestions make it more cohesive and nicer. Give me options on how you see fit some things should be rearanged.
-  - Have the panels, and elements within them align to one another. 
-  - Give the list entries alternating shaded backgrounds. 
-  - The button for adding a layer should take the full width of the layer in gui, but also be shorter in height.
-  - Give the user the option to collapse some parts of the gui, like the point coordinates, layer controls, etc. and in the collapsed mode hide some of the buttons and controls. 
-  - Disable a layer's placement (plan for it).
-  - show the status of  the job, as well as the queued commands, like force build
-  - get rid of the layer mirroring button.
-  - In the turrets config panel give the user a way to set the targeting priorities
-  - Give tooltips to the turret facing paramater, so that it's clear what which direction means
-  - Add a button to add a new preset.
-  - curve/preset imports/exports should open their own windows with the text fields.
-  - layer config panels should be in their own windows, which, untill accepted, would lock the main gui.
 - `debug.lua` `lib.debug = false` (enforced by the release check above).
 - New screenshots for the README and mod portal. The current ones show the 0.1
   curve projector.
@@ -308,8 +322,9 @@ Done (side wall layers):
   player and in `storage`, but nothing has run two players at once yet). Lay out a plan for what and how should be tested.
 - Remove the dev-migrations, they're usefull for seamless testing but serve no purpose for the end user on initial release.
 - A storage migration test ground work, there will be no migrations for release: create a save with schema N, load it with N+1, check
-  nothing crashes (`--test-save`). Releases are when old saves start to matter. 
-- A full review.
+  nothing crashes (`--test-save`). Releases are when old saves start to matter.
+- Update the changelog
+- Cleanup the completed roadmap, no need to summaraize everything that's done on main, git history will still be there.
 
 ## Testing to add along the way
 

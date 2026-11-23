@@ -15,6 +15,7 @@ scripts/
   state.lua              the definition of `storage`, accessors, migrations (start here)
   jobs.lua               per-tick runner: planning, drawing, building, within a budget
   draw.lua               rendering: control points, curve, build preview, bend warnings
+  highlight.lua          marks on unpowered / unfed entities after a build, toggled from the window
   presets.lua            named layer stacks: copy, rename, delete, export/import strings
   palette.lua            one colour per layer; named colours and defaults for the view settings
   init.lua               on_init / on_configuration_changed / players, mod-gui button
@@ -469,7 +470,23 @@ It then hands off to an output module:
 - `instant` (map editor or cheat mode) builds real entities, removes obstacles,
   revives matching ghosts and batches tiles into `set_tiles`.
 
-A blueprint output would be a third module.
+The blueprint writer (`build/blueprint.lua`) is the third, run by `jobs.lua`
+in place of the executor. Unless the player's *bezierio-blueprint-source* setting
+is off, the blueprint's first entity carries a `bezierio` tag with the curve and
+preset export strings (a description holds at most 500 characters: too few), and
+the description a note. **Load from blueprint** (`gui/control.lua`) reads the tag
+from the held blueprint (cursor item, the active one in a book, or a library
+record) and loads both through the import paths (`curve_control.load`,
+`preset_control.load`).
+
+After an executor build, `jobs.lua` marks the plan's unpowered and unfed entities
+(`plan.unpowered_at`, `plan.unfed_at`, recorded by `smart_poles.lua` and the feed
+context) with `highlight.lua`: a frame and an icon each, drawn a budgeted number
+per tick from `work.highlight`, with `time_to_live` from the player's
+*bezierio-highlight-seconds*. They live in `storage.sprites[i].highlight_<kind>`,
+which a redraw of the preview leaves alone. They belong to the plan whose totals
+and warnings are shown: when an edit drops that plan, they are hidden with it
+(`highlight.hide_all`). Clicking the warning label toggles them.
 
 Placement is checked with the real entity name and
 `build_check_type.manual_ghost, forced = true`. Don't check with
@@ -481,7 +498,7 @@ west/north of existing walls.
 `gui/interactions.lua` sends each GUI event to `lib[tags.group][tags.action]`, but
 only for the element types listed in `routed_types`:
 
-- clicks → buttons;
+- clicks → buttons, and labels with tags (the unpowered / unfed warnings);
 - elem changed → choose-elem-buttons;
 - confirmed → textfields;
 - value changed → sliders;

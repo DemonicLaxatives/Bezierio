@@ -112,7 +112,8 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
 5. Toggle **Preview** to see what would be placed, coloured by layer, with arrows
    for which way belts flow and turrets face. The window
    shows the curve's length and how many of each item (and quality) the build
-   needs; hover it for the count per layer. Red circles mark bends too tight for
+   needs (also after a build without the preview, until the next edit); hover it
+   for the count per layer. Red circles mark bends too tight for
    the layers on their inside (those layers split there). The colour picker
    button opens the view settings: colours, curve width and preview opacity.
 6. **Build.**
@@ -124,9 +125,19 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
    Robots, or you, then build the ghosts. A whole build is one undo step
    (<kbd>Ctrl</kbd>+<kbd>Z</kbd>).
 
+   After a build, entities that won't get power (*N unpowered*) or ammo/fluid
+   (*N unfed*) from it are marked on the map for a minute. Click those warnings in
+   the window to show or hide the marks; how long they stay is a per-player mod
+   setting (0: until hidden). They go with the warnings when you edit the curve
+   or layers.
+
    - **Blueprint** puts the build in your cursor as a blueprint instead. It snaps
      onto the preview, so the first click places it exactly there, and further
      copies line up end to end. Rotate, share or store it like any blueprint.
+     It also carries the curve and preset it was made from: hold it (from your
+     inventory, a blueprint book or the blueprint library) and click **Load from
+     blueprint** to get them back, the preset added as a new one. A per-player mod
+     setting turns this off.
 
    In the map editor or with cheat mode on, both buttons build the real entities
    and tiles straight away. Trees, rocks and (with super force) your buildings in

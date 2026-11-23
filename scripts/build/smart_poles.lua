@@ -406,7 +406,7 @@ function lib.step(job, walk, band, budget, h)
                 local lateral = math.sqrt((e.position.x - walk.xs[j]) ^ 2 + (e.position.y - walk.ys[j]) ^ 2)
                 walk.reach_window = math.max(walk.reach_window, lateral + e.size + (layer.reach or 0) + 1)
                 table.insert(walk.consumers, {
-                    x = e.position.x, y = e.position.y, half = e.size / 2 - lib.MARGIN, s = walk.arc[j],
+                    x = e.position.x, y = e.position.y, half = e.size / 2 - lib.MARGIN, size = e.size, s = walk.arc[j],
                     done = false, powered = false, order = walk.i,
                 })
                 used = used + h.COST.cell
@@ -461,7 +461,10 @@ function lib.step(job, walk, band, budget, h)
                     break
                 end
             end
-            if not powered then job.plan.unpowered = job.plan.unpowered + 1 end
+            if not powered then
+                job.plan.unpowered = job.plan.unpowered + 1
+                table.insert(job.plan.unpowered_at, { x = c.x, y = c.y, size = c.size })
+            end
         end
     end
     return used, walk.phase == "done"

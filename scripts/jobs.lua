@@ -21,6 +21,8 @@ local executor = require("scripts.build.executor")
 local blueprint = require("scripts.build.blueprint")
 local curve_lib = require("scripts.curve.curve")
 local window = require("scripts.gui.window")
+local highlight = require("scripts.highlight")
+local presets = require("scripts.presets")
 
 local lib = {}
 
@@ -58,8 +60,9 @@ local function runner(job)
 end
 
 --- @param player LuaPlayer
+--- @param controller Controller
 --- @param job BuildJob|BlueprintJob
-local function report_build(player, job)
+local function report_build(player, controller, job)
     if job.kind == "blueprint" then
         if job.error then
             player.print({ "bezierio-message." .. job.error })
@@ -78,6 +81,29 @@ local function report_build(player, job)
     if plan.unpowered > 0 then
         player.print({ "bezierio-message.unpowered", tostring(plan.unpowered) })
     end
+    if (plan.unfed or 0) > 0 then
+        player.print({ "bezierio-message.unfed", tostring(plan.unfed) })
+    end
+    -- Mark them on the map (fading after the player's highlight setting).
+    local kinds = {}
+    if plan.unpowered > 0 then kinds[#kinds + 1] = "unpowered" end
+    if (plan.unfed or 0) > 0 then kinds[#kinds + 1] = "unfed" end
+    if #kinds > 0 then highlight.show(player, controller, plan, kinds, job.surface) end
+end
+
+--- What the blueprint carries to load the curve and preset back (as import
+--- strings), unless the player turned that off.
+--- @param player LuaPlayer
+--- @param controller Controller
+--- @param preset Preset
+--- @return BlueprintSource|nil
+local function blueprint_source(player, controller, preset)
+    local setting = player.mod_settings["bezierio-blueprint-source"]
+    if setting and setting.value == false then return nil end
+    return {
+        curve = helpers.encode_string(helpers.table_to_json(curve_lib.to_data(controller.curve))) --[[@as string]],
+        preset = presets.export(preset),
+    }
 end
 
 --- The status line: what's happening right now.
@@ -192,8 +218,10 @@ local function update_window(player, controller)
         local label = window.find(player, "status")
         if label then label.caption = caption end
     end
+    -- Totals and warnings for any finished plan: the preview's, or the one a build
+    -- just used (with the preview off).
     local plan_job = work.plan
-    if plan_job and plan_job.plan.done and controller.ui.preview_build then
+    if plan_job and plan_job.plan.done then
         if work.totals_revision ~= work.revision then
             work.totals_revision = work.revision
             show_totals(player, controller, plan_job.plan)
@@ -218,6 +246,8 @@ function lib.update(player, controller)
         work.revision = controller.revision
         work.plan = nil
         controller.redraw = true
+        -- The totals and warnings go with the plan, and so do the marks.
+        highlight.hide_all(player, controller)
     end
     if controller.redraw then
         controller.redraw, controller.redraw_points = false, nil
@@ -255,7 +285,8 @@ function lib.update(player, controller)
             end
             if work.pending_build == "blueprint" then
                 local preset = controller.presets[controller.ui.preset_index]
-                work.build = blueprint.new_job(player, plan_job.plan, "Bézierio: " .. preset.name)
+                work.build = blueprint.new_job(player, plan_job.plan, "Bézierio: " .. preset.name,
+                    blueprint_source(player, controller, preset))
             else
                 work.build = executor.new_job(player, plan_job.plan, work.pending_build)
             end
@@ -267,9 +298,13 @@ function lib.update(player, controller)
     if build and budget > 0 then
         local done = runner(build).step(build, budget)
         if done then
-            report_build(player, build)
+            report_build(player, controller, build)
             work.build = nil
         end
+    end
+
+    if work.highlight and budget > 0 then
+        budget = budget - highlight.step(player, controller, budget)
     end
 
     update_window(player, controller)
@@ -282,7 +317,7 @@ end
 function lib.is_idle(player_index, controller)
     local work = controller.work
     if controller.redraw or controller.redraw_points or work.revision ~= controller.revision then return false end
-    if work.pending_build or work.build then return false end
+    if work.pending_build or work.build or highlight.pending(controller) then return false end
     local sprites = storage.sprites and storage.sprites[player_index]
     if sprites and sprites.trash and #sprites.trash > 0 then return false end
     local needed = plan_needed(controller)

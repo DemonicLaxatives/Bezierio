@@ -45,6 +45,7 @@ local lib = {}
 --- @field build BuildJob|BlueprintJob|nil
 --- @field status string|nil              # last status line shown (to update only on change)
 --- @field totals_revision integer|nil    # revision whose totals are shown
+--- @field highlight HighlightQueue|nil    # unpowered / unfed marks being drawn (highlight.lua)
 
 --- @class Controller
 --- @field ui InterfaceState
@@ -61,6 +62,8 @@ local lib = {}
 --- @field curve LuaRenderObject[]
 --- @field control_points LuaRenderObject[]
 --- @field preview LuaRenderObject[]
+--- @field highlight_unpowered LuaRenderObject[]|nil  # marks (highlight.lua): kept when the drawing is redone
+--- @field highlight_unfed LuaRenderObject[]|nil
 --- @field trash LuaRenderObject[]|nil   # retired, destroyed a few per tick
 
 --- @return DrawProgress

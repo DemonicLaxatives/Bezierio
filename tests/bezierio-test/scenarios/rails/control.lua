@@ -179,7 +179,7 @@ step("elevated: built on its supports", function(player)
   local n = storage.elevated
   check(s.count_entities_filtered { name = ELEVATED } == n.rails, "elevated rails built: " .. s.count_entities_filtered { name = ELEVATED } .. "/" .. n.rails)
   check(s.count_entities_filtered { name = "rail-support" } == n.supports, "supports built")
-  check(s.count_entities_filtered { name = "rail-ramp" } == n.ramps, "ramps built")
+  check(s.count_entities_filtered { name = "rail-ramp" } == n.ramps, "ramps built: " .. s.count_entities_filtered { name = "rail-ramp" } .. "/" .. n.ramps)
   local signals = s.find_entities_filtered { name = "rail-signal" }
   check(#signals == n.signals, "signals built: " .. #signals .. "/" .. n.signals)
   for _, sig in pairs(signals) do check(sig.rail_layer == defines.rail_layer.elevated, "signal on the elevated track") end

@@ -61,6 +61,12 @@ lib.COST = {
 --- @field y integer
 --- @field layer integer
 
+--- @class PlanMark
+--- @field x number      # entity centre
+--- @field y number
+--- @field size number
+--- @field icon string|nil  # "ammo" or "fluid" (unfed)
+
 --- @class PlanChain
 --- @field red boolean          # connect consecutive members with red wire too
 --- @field green boolean        # ... and green
@@ -79,6 +85,8 @@ lib.COST = {
 --- @field gaps integer           # consecutive poles out of wire reach (no room for a pole between)
 --- @field unpowered integer      # powered entities no smart pole line could reach
 --- @field unfed integer          # turrets set to be fed that no belt or pipe line reaches
+--- @field unpowered_at PlanMark[]  # where the unpowered ones are
+--- @field unfed_at PlanMark[]      # ... and the unfed ones
 --- @field warnings Vector[]       # where a bend is tighter than the layers on its inside
 --- @field closed boolean        # the curve is a loop (pole chains close too)
 --- @field done boolean
@@ -168,6 +176,7 @@ function lib.new_job(curve, layers)
         plan = {
             entities = {}, tiles = {}, unsupported = {}, skipped = 0,
             length = 0, counts = {}, extra_counts = {}, chains = {}, links = {}, gaps = 0, unpowered = 0, unfed = 0, warnings = {},
+            unpowered_at = {}, unfed_at = {},
             closed = curve_lib.is_closed(curve),
             done = sampler == nil,
         },
@@ -1078,7 +1087,7 @@ end
 --- @field pipe_line fun(x: integer, y: integer): string|nil # the pipe line there, if any
 --- @field add fun(spec: {name: string, x: integer, y: integer, direction: integer|nil, power: boolean|nil, item: string|nil})
 --- @field add_pipe fun(x: integer, y: integer)             # a stub joining the line it touches
---- @field unfed fun()
+--- @field unfed fun(entity: PlannedEntity, icon: "ammo"|"fluid")  # the turret gets no feed
 
 --- What a turret layer's attach hook may look at and add (its feed).
 --- @param job PlannerJob
@@ -1112,7 +1121,10 @@ feed_context = function(job, layer)
             add({ name = name, x = x, y = y, item = name })
             if job.feed_pipes and stub_line then job.feed_pipes[cell_key(x, y)] = stub_line end
         end,
-        unfed = function() plan.unfed = plan.unfed + 1 end,
+        unfed = function(entity, icon)
+            plan.unfed = plan.unfed + 1
+            table.insert(plan.unfed_at, { x = entity.position.x, y = entity.position.y, size = entity.size, icon = icon })
+        end,
     }
 end
 

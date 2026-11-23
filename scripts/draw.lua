@@ -29,12 +29,13 @@ lib.ARROW_RUN = 8
 --- `lib.step_trash`, so clearing a big preview doesn't cost one long tick. They
 --- stay visible until then (a tick or two at the default budget).
 --- @param player LuaPlayer
---- @param key "curve"|"control_points"|"preview"|nil  # nil clears everything
+--- @param key string|nil  # a SpriteCache key; nil clears the drawing (not highlights)
 function lib.delete_sprites(player, key)
     local sprites = state.sprites(player.index)
     sprites.trash = sprites.trash or {}
     for cache_key, cache in pairs(sprites) do
-        if cache_key ~= "trash" and (key == nil or key == cache_key) then
+        local highlight = string.sub(cache_key, 1, 10) == "highlight_"
+        if cache_key ~= "trash" and (key == cache_key or (key == nil and not highlight)) then
             for _, obj in pairs(cache) do
                 if obj.valid then table.insert(sprites.trash, obj) end
             end

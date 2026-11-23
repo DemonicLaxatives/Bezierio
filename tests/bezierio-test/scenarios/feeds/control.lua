@@ -136,4 +136,73 @@ step("superforced: gate ghosts, rails not deconstructed", function(player)
   end
 end)
 
+-- Unfed turrets are marked on the map after a build; the warning toggles the marks.
+--- The mod's marks: icon sprites by name.
+local function marks(icon)
+  local n, ttl = 0, nil
+  for _, o in pairs(rendering.get_all_objects("Bezierio")) do
+    if o.valid and o.type == "sprite" and o.sprite == icon then n, ttl = n + 1, o.time_to_live end
+  end
+  return n, ttl
+end
+
+step("unfed: no belt, so the gun turrets go without", function(player)
+  clear_all(player.surface)
+  -- (with the preview off: a build shows the totals and warnings all the same)
+  dev("click", P, "preview_build")
+  check(not el(player, "preview_build").toggled, "preview off")
+  dev("click", P, "layer_select_1")
+  dev("set_elem", P, "layer_type", { name = "stone-wall", quality = "normal" })
+  dev("click", P, "layer_select_0")
+  player.cheat_mode = true
+  dev("click", P, "build")
+end, "idle")
+
+step("unfed turrets marked for a minute", function(player)
+  local plan = dev("plan", P)
+  check(plan.unfed > 5 and #plan.unfed_at == plan.unfed, "unfed turrets recorded: " .. plan.unfed)
+  local n, ttl = marks("utility/ammo_icon")
+  check(n == plan.unfed, "an ammo mark on each: " .. n .. "/" .. plan.unfed)
+  check(ttl and ttl > 3000 and ttl <= 3600, "they fade after a minute: " .. tostring(ttl))
+  check(el(player, "totals_unfed").visible, "the warning is shown, preview off")
+  check(el(player, "totals_items").caption ~= "", "the totals too")
+  player.cheat_mode = false
+  dev("click", P, "totals_unfed")
+end, "idle")
+
+step("clicking the warning hides them", function(player)
+  check(marks("utility/ammo_icon") == 0, "marks gone")
+  dev("set_player_setting", P, "bezierio-highlight-seconds", 0)
+  dev("click", P, "totals_unfed")
+end, "idle")
+
+step("... and shows them again (0 seconds: until hidden)", function(player)
+  local n, ttl = marks("utility/ammo_icon")
+  check(n == dev("plan", P).unfed and (ttl == nil or ttl == 0), "marks back, not fading: " .. n .. ", ttl " .. tostring(ttl))
+  dev("set_player_setting", P, "bezierio-highlight-seconds", 60)
+  -- (the view settings redraw everything, but the plan stays)
+  dev("click", P, "view_reset")
+end, "idle")
+
+step("marks stay when only the drawing is redone", function(player)
+  check(marks("utility/ammo_icon") > 0 and el(player, "totals_unfed").visible, "marks and warning kept")
+  dev("set_value", P, "radius_slider", 1)
+end, "idle")
+
+step("an edit drops the plan: warning and marks go together", function(player)
+  -- (edited with the preview off: no plan, so no totals until the next build)
+  check(not el(player, "totals_unfed").visible, "warning gone with the edit")
+  check(marks("utility/ammo_icon") == 0, "marks gone with it")
+  dev("click", P, "preview_build")
+end, "idle")
+
+step("preview on again: the warning is back, marks on a click", function(player)
+  check(el(player, "totals_unfed").visible and marks("utility/ammo_icon") == 0, "warning shown, no marks yet")
+  dev("click", P, "totals_unfed")
+end, "idle")
+
+step("clicked: marked", function(player)
+  check(marks("utility/ammo_icon") == dev("plan", P).unfed, "marks for the new plan")
+end)
+
 flow.run("feeds")

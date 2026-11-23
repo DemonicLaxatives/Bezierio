@@ -177,20 +177,29 @@ lib["delete"] = function(e)
     if player and presets.delete(state.get(e.player_index)) then preset_changed(player) end
 end
 
---- @param e EventData.on_gui_click
-lib["import"] = function(e)
-    local player = game.get_player(e.player_index)
-    local box = player and window.find(player, "preset_import_text")
-    if not (player and box) then return end
-    local ok, result = presets.import(state.get(e.player_index), box.text)
+--- Add a preset from an export string and select it.
+--- @param player LuaPlayer
+--- @param text string
+--- @return boolean ok  # (otherwise the player was told why)
+function lib.load(player, text)
+    local ok, result = presets.import(state.get(player.index), text)
     if not ok then
         player.print({ "bezierio-message.preset-" .. result })
-        return
+        return false
     end
     if #result > 0 then
         player.print({ "bezierio-message.preset-missing-items", table.concat(result, ", ") })
     end
     preset_changed(player)
+    return true
+end
+
+--- @param e EventData.on_gui_click
+lib["import"] = function(e)
+    local player = game.get_player(e.player_index)
+    local box = player and window.find(player, "preset_import_text")
+    if not (player and box) then return end
+    lib.load(player, box.text)
 end
 
 return lib

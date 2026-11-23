@@ -136,6 +136,10 @@ for it = 1, iterations do
     table.insert(problems, string.format("%d pole pairs out of reach, but plan.gaps = %d", out_of_reach, plan.gaps))
   end
   if plan.gaps > 0 then gap_plans = gap_plans + 1 end
+  -- Where the unpowered and unfed ones are (for marking them on the map).
+  if #plan.unpowered_at ~= plan.unpowered or #plan.unfed_at ~= plan.unfed then
+    table.insert(problems, string.format("marks: %d unpowered at %d spots, %d unfed at %d", plan.unpowered, #plan.unpowered_at, plan.unfed, #plan.unfed_at))
+  end
 
   -- (Rails claim their tiles first: a rail layer next to the wall can cut it.)
   if walls_by_layer[0] and not has_rails then

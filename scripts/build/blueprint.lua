@@ -2,10 +2,17 @@
 --- job: the blueprint data is collected a budgeted amount per tick, and the last
 --- step writes it into the cursor.
 ---
+--- With a source, the blueprint carries the curve and preset it was made from:
+--- tags on its first entity (a description holds at most 500 characters), and a
+--- note in the description; the Load button reads them back (gui/control.lua).
+---
 --- The blueprint uses absolute snapping with a grid the size of the build, offset
 --- so that it snaps exactly onto where the plan was previewed (and stamps further
 --- copies end to end).
 local lib = {}
+
+--- The description of a blueprint that carries its curve and preset.
+lib.NOTE = "Made with Bézierio. To get its curve and preset back, hold this blueprint and click Load from blueprint in the Bézierio window."
 
 --- Work units per item, for budgeting.
 lib.COST = { entity = 1, tile = 1, wire = 1, write = 0.5 }
@@ -15,6 +22,11 @@ lib.COST = { entity = 1, tile = 1, wire = 1, write = 0.5 }
 --- @field player_index integer
 --- @field plan BuildPlan
 --- @field label string
+--- @field source BlueprintSource|nil
+
+--- @class BlueprintSource
+--- @field curve string    # curve export string
+--- @field preset string   # preset export string
 --- @field stage "bounds"|"entities"|"tiles"|"wires"|"write"|"done"
 --- @field cursor integer
 --- @field chain_keys integer[]
@@ -29,8 +41,9 @@ lib.COST = { entity = 1, tile = 1, wire = 1, write = 0.5 }
 --- @param player LuaPlayer
 --- @param plan BuildPlan  # must be done
 --- @param label string
+--- @param source BlueprintSource|nil
 --- @return BlueprintJob
-function lib.new_job(player, plan, label)
+function lib.new_job(player, plan, label, source)
     local chain_keys = {}
     for idx in pairs(plan.chains) do table.insert(chain_keys, idx) end
     table.sort(chain_keys)
@@ -39,6 +52,7 @@ function lib.new_job(player, plan, label)
         player_index = player.index,
         plan = plan,
         label = label,
+        source = source,
         stage = "bounds",
         cursor = 1,
         chain_keys = chain_keys,
@@ -123,6 +137,8 @@ local function step_entities(job, budget)
             color = e.color,
             type = e.belt_type,
             rail_layer = e.rail_layer,
+            -- the curve and preset, for loading them back
+            tags = (i == 1 and job.source) and { bezierio = { curve = job.source.curve, preset = job.source.preset } } or nil,
         }
         if e.ammo then
             entry.items = { {
@@ -217,6 +233,7 @@ local function write(job, player)
     stack.set_blueprint_entities(job.entities, false)
     stack.set_blueprint_tiles(job.tiles)
     stack.label = job.label
+    if job.source and job.result.entities > 0 then stack.blueprint_description = lib.NOTE end
     stack.preview_icons = stack.default_icons
     local size, origin = job.size, job.origin
     stack.blueprint_snap_to_grid = { x = size.x, y = size.y }
