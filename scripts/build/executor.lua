@@ -155,8 +155,50 @@ end
 --- @param player LuaPlayer
 --- @param output BuildOutput
 --- @param entity PlannedEntity
+--- Entity types a rail is made of (a gate goes over them; never cleared for one).
+local RAIL_TYPES = { "straight-rail", "half-diagonal-rail", "curved-rail-a", "curved-rail-b", "rail-ramp", "legacy-straight-rail", "legacy-curved-rail" }
+local IS_RAIL = {}
+for _, t in ipairs(RAIL_TYPES) do IS_RAIL[t] = true end
+
+--- A wall planned where a straight rail crosses: the gate to build instead, if one
+--- fits over the rail (gates only go over straight, axis-aligned rails).
+--- @param job BuildJob
+--- @param entity PlannedEntity
+--- @return PlannedEntity|nil
+local function gate_instead(job, entity)
+    local p = entity.position
+    local area = { { p.x - 0.4, p.y - 0.4 }, { p.x + 0.4, p.y + 0.4 } }
+    if not job.surface.find_entities_filtered { area = area, type = "straight-rail", limit = 1 }[1] then return nil end
+    for _, direction in ipairs({ defines.direction.north, defines.direction.east }) do
+        -- (A forced check refuses gates over rails.)
+        if job.surface.can_place_entity {
+                name = entity.gate, position = p, direction = direction, force = job.force,
+                build_check_type = defines.build_check_type.manual_ghost,
+            } then
+            return { name = entity.gate, quality = entity.quality, position = p, size = 1, layer = entity.layer, direction = direction }
+        end
+    end
+    return nil
+end
+
 local function build_entity(job, player, output, entity)
     local surface, force, result = job.surface, job.force, job.result
+    if entity.gate then
+        if surface.find_entity(entity.gate, entity.position)
+            or surface.find_entities_filtered { ghost_name = entity.gate, position = entity.position, limit = 1 }[1] then
+            result.existing = result.existing + 1
+            return
+        end
+        local gate = gate_instead(job, entity)
+        if gate then
+            if with_undo(job, player, output.create_entity, gate) then
+                result.placed = result.placed + 1
+            else
+                result.blocked = result.blocked + 1
+            end
+            return
+        end
+    end
     local prototype = prototypes.entity[entity.name]
     if not prototype then
         result.blocked = result.blocked + 1
@@ -189,7 +231,7 @@ local function build_entity(job, player, output, entity)
             if other.valid then
                 if other.type == "entity-ghost" then
                     other.destroy()
-                elseif not IGNORED_IN_THE_WAY[other.type]
+                elseif not IGNORED_IN_THE_WAY[other.type] and not (entity.gate and IS_RAIL[other.type])
                     and (other.force == force or other.force.name == "neutral") then
                     with_undo(job, player, output.clear, other)
                 end

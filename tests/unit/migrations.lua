@@ -26,7 +26,9 @@ prototypes = {
             get_supply_area_distance = function() return 2.5 end,
         },
         ["laser-turret"] = { type = "electric-turret", tile_width = 2, tile_height = 2, electric_energy_source_prototype = {} },
+        ["gate"] = { type = "gate", name = "gate", tile_width = 1, tile_height = 1 },
     },
+    get_entity_filtered = function() return {} end,
     tile = {},
     get_item_filtered = function() return { ["stone-wall"] = true } end,
 }
@@ -99,6 +101,7 @@ check(next(storage.sprites) == nil, "stale sprite references dropped")
 check(storage.item_filter == nil and state.item_filter()[1].name[1] == "stone-wall", "item filter not stored, derived")
 check(layers[2].wire_distance == 7 and layers[2].reach == 2.5 and layers[2].needs_power == nil, "pole values derived from its prototype")
 check(layers[0].needs_power == nil, "walls need no power")
+check(layers[0].gate_name == "gate", "walls know their gate")
 
 -- 3 -> 4 on its own: sparse slots with a gap
 storage = { schema_version = 3, sprites = {}, controllers = { [2] = {

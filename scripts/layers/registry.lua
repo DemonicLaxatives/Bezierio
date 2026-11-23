@@ -32,6 +32,7 @@ local lib = {}
 ---@field init? fun(layer: Layer, prototype: LuaEntityPrototype|LuaTilePrototype)  # derived values
 ---@field keep? fun(layer: Layer, x: integer, y: integer): boolean  # band layers: whether a cell gets one (default: the checkerboard)
 ---@field decorate? fun(layer: Layer, entity: PlannedEntity, info: PlacementInfo)  # spaced layers: direction, colour, ammo, ...
+---@field attach? fun(layer: Layer, entity: PlannedEntity, ctx: FeedContext)  # spaced layers: what goes with each entity (turret feeds)
 ---@field thickness? fun(layer: Layer): number  # band width in grid units (default: footprint size)
 
 ---@class Layer

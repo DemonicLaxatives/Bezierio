@@ -162,10 +162,11 @@ local function show_totals(player, controller, plan)
     local bends = window.find(player, "totals_bends")
     local gaps = window.find(player, "totals_gaps")
     local unpowered = window.find(player, "totals_unpowered")
-    if not (length and items and bends and gaps and unpowered) then return end
+    local unfed = window.find(player, "totals_unfed")
+    if not (length and items and bends and gaps and unpowered and unfed) then return end
     if not plan then
         length.caption, items.caption, items.tooltip = "", "", ""
-        bends.visible, gaps.visible, unpowered.visible = false, false, false
+        bends.visible, gaps.visible, unpowered.visible, unfed.visible = false, false, false, false
         return
     end
     length.caption = { "label.totals", string.format("%.0f", plan.length) }
@@ -176,6 +177,8 @@ local function show_totals(player, controller, plan)
     gaps.visible = plan.gaps > 0
     unpowered.caption = { "label.totals-unpowered", tostring(plan.unpowered) }
     unpowered.visible = plan.unpowered > 0
+    unfed.caption = { "label.totals-unfed", tostring(plan.unfed or 0) }
+    unfed.visible = (plan.unfed or 0) > 0
 end
 
 --- @param player LuaPlayer

@@ -207,6 +207,8 @@ lib["set_item"] = function(e)
         return
     end
     layer[field_name] = value
+    -- Derived values may depend on it (the inserter's reach).
+    registry.refresh(layer)
     layers_changed(e.player_index)
 end
 

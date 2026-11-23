@@ -100,12 +100,13 @@ end
 --- @param layer Layer
 --- @param entity PlannedEntity
 --- @param info PlacementInfo
-function lib.decorate_turret(layer, entity, info)
+--- @param directions integer|nil  # limit to this many directions (fed fluid turrets: 4)
+function lib.decorate_turret(layer, entity, info, directions)
     local direction = 0
     if layer.turn_limited then
         local v = info.outward
         if layer.facing == "inward" then v = { x = -v.x, y = -v.y } end
-        direction = lib.direction(v, layer.directions or 4)
+        direction = lib.direction(v, math.min(layer.directions or 4, directions or 16))
         entity.direction = direction
     end
     local w, h = layer.tile_w or layer.size, layer.tile_h or layer.size

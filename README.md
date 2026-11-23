@@ -55,7 +55,8 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
      point), **layers −1, −2, …** to the left. Use the **+** buttons to add layers
      above or below, and the arrows to reorder them. The ⇅ button mirrors the
      stack: every layer moves to the other side of the curve.
-   - **Walls and tiles** fill a band. *Width* sets its thickness. *Checkerboard*
+   - **Walls and tiles** fill a band. *Width* sets its thickness. Where a wall
+     lands on an existing straight rail, it becomes a gate (*Gates on rails*). *Checkerboard*
      leaves out alternating squares of the given size; the sign picks which squares.
      A tile layer with *Under entities* takes no room: the next layers out are
      built on top of its tiles.
@@ -73,6 +74,11 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
        *Outward* (away from the curve) or *Inward*, diagonally too.
      - Ammo turrets can request *Ammo*: ghosts get it delivered with them; in the
        map editor or cheat mode they're loaded straight away. The totals include it.
+     - Ammo turrets can get an *Inserter* each, taking ammo from a belt layer: put
+       the belt layer beside the turrets with an empty row between (the turret
+       layer's *Offset*), as far as the inserter reaches. Fluid turrets can get a
+       *Pipe feed*: a short pipe from one of their connections to a pipe layer
+       beside them. Turrets whose feed doesn't fit are shown as unfed.
      - Radar spacing defaults to a bit less than the area a radar keeps revealed.
      - Lamps keep their own colour, take one colour, or a *Rainbow* that cycles
        along the curve.

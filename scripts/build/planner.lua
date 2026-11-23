@@ -50,6 +50,7 @@ lib.COST = {
 --- @field w integer|nil          # footprint when not size x size (pumps)
 --- @field h integer|nil
 --- @field power boolean|nil      # needs power although its layer doesn't (pumps)
+--- @field gate string|nil         # walls: the gate to build instead where a rail crosses
 
 --- @class PlannedTile
 --- @field name string
@@ -74,6 +75,7 @@ lib.COST = {
 --- @field links {a: integer, b: integer, red: boolean, green: boolean}[]  # other wires (indices into entities): land mines
 --- @field gaps integer           # consecutive poles out of wire reach (no room for a pole between)
 --- @field unpowered integer      # powered entities no smart pole line could reach
+--- @field unfed integer          # turrets set to be fed that no belt or pipe line reaches
 --- @field warnings Vector[]       # where a bend is tighter than the layers on its inside
 --- @field closed boolean        # the curve is a loop (pole chains close too)
 --- @field done boolean
@@ -149,7 +151,7 @@ function lib.new_job(curve, layers)
         last_warning = nil,
         plan = {
             entities = {}, tiles = {}, unsupported = {}, skipped = 0,
-            length = 0, counts = {}, extra_counts = {}, chains = {}, links = {}, gaps = 0, unpowered = 0, warnings = {},
+            length = 0, counts = {}, extra_counts = {}, chains = {}, links = {}, gaps = 0, unpowered = 0, unfed = 0, warnings = {},
             closed = curve_lib.is_closed(curve),
             done = sampler == nil,
         },
@@ -373,6 +375,9 @@ end
 
 local link_to_nearby
 local collect_path_cell
+local feed_context
+local make_entity
+local feed_spot
 
 --- How many of a layer's latest band entities a new one looks at for a wire partner.
 lib.LINK_WINDOW = 40
@@ -428,6 +433,7 @@ local function emit_cell(job, layer, x, y, key)
     table.insert(plan.entities, {
         name = layer.name, quality = layer.quality,
         position = { x = x + 0.5, y = y + 0.5 }, size = 1, layer = layer.idx,
+        gate = (layer.gates ~= false and layer.gate_name) or nil,
     })
     if (layer.red_wire or layer.green_wire) and layer.circuit_distance then link_to_nearby(job, layer, #plan.entities) end
     return false
@@ -702,6 +708,14 @@ local function emit_path_line(job, item)
                         name = layer.name, quality = layer.quality, position = { x = piece.x, y = piece.y },
                         size = 1, layer = layer.idx,
                     }
+                    -- Turrets placed later feed from these lines (build/feeds.lua).
+                    local cell = cell_key(math.floor(piece.x), math.floor(piece.y))
+                    if pipes and piece.kind ~= "pump" then
+                        job.feed_pipes[cell] = item.line
+                        job.feed_pipe_names[item.line] = layer.name
+                    elseif not pipes and piece.kind == "line" then
+                        job.feed_belts[cell] = true
+                    end
                     if piece.kind == "line" then
                         if not pipes then entity.direction = piece.direction end
                         plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
@@ -730,6 +744,7 @@ local function stage_paths(job, budget)
     local used = 0
     if not job.path_queue then
         job.path_queue, job.line_cells, job.line_of, job.line_layer = {}, {}, {}, {}
+        job.feed_pipes, job.feed_pipe_names, job.feed_belts = {}, {}, {}
         job.belt_cells, job.locked, job.routes, job.reroutes = {}, {}, {}, {}
         local emits = {}
         for _, band in ipairs(job.bands) do
@@ -784,12 +799,13 @@ end
 --- @param size integer
 --- @param target Vector
 --- @return Vector|nil
-local function find_spot(job, size, target)
+local function free_spots(job, size, target)
     local occupied = job.occupied
     local xa, xb = snap_candidates(target.x, size)
     local ya, yb = snap_candidates(target.y, size)
     local candidates = { { x = xa, y = ya }, { x = xb, y = ya }, { x = xa, y = yb }, { x = xb, y = yb } }
     table.sort(candidates, function(p, q) return geometry.dist2(p, target) < geometry.dist2(q, target) end)
+    local out = {}
     for _, pos in ipairs(candidates) do
         local x0, y0 = footprint_origin(pos, size)
         local free = true
@@ -798,9 +814,18 @@ local function find_spot(job, size, target)
                 if occupied[cell_key(x0 + dx, y0 + dy)] then free = false end
             end
         end
-        if free then return pos end
+        if free then out[#out + 1] = pos end
     end
-    return nil
+    return out
+end
+
+--- The free grid position nearest to `target` for an entity of `size`, if any.
+--- @param job PlannerJob
+--- @param size integer
+--- @param target Vector
+--- @return Vector|nil
+local function find_spot(job, size, target)
+    return free_spots(job, size, target)[1]
 end
 
 --- Shifts along the curve (tiles) tried when the spot itself is taken.
@@ -823,6 +848,95 @@ local function search_spot(job, size, target, direction)
     return nil, used
 end
 
+--- @class FeedContext
+--- @field occupied fun(x: integer, y: integer): boolean
+--- @field belt fun(x: integer, y: integer): boolean         # a belt of a belt layer
+--- @field pipe_line fun(x: integer, y: integer): string|nil # the pipe line there, if any
+--- @field add fun(spec: {name: string, x: integer, y: integer, direction: integer|nil, power: boolean|nil, item: string|nil})
+--- @field add_pipe fun(x: integer, y: integer)             # a stub joining the line it touches
+--- @field unfed fun()
+
+--- What a turret layer's attach hook may look at and add (its feed).
+--- @param job PlannerJob
+--- @param layer Layer
+--- @return FeedContext
+feed_context = function(job, layer)
+    local plan = job.plan
+    local stub_line
+    local function add(spec)
+        local key = cell_key(spec.x, spec.y)
+        job.occupied[key] = true
+        table.insert(plan.entities, {
+            name = spec.name, quality = "normal", position = { x = spec.x + 0.5, y = spec.y + 0.5 }, size = 1,
+            layer = layer.idx, direction = spec.direction, power = spec.power,
+        })
+        count_extra(plan, layer.idx, spec.item)
+    end
+    return {
+        occupied = function(x, y) return job.occupied[cell_key(x, y)] == true end,
+        belt = function(x, y) return (job.feed_belts or {})[cell_key(x, y)] == true end,
+        pipe_line = function(x, y) return (job.feed_pipes or {})[cell_key(x, y)] end,
+        add = add,
+        add_pipe = function(x, y)
+            -- The stub's pipe is the pipe of the line it ends at.
+            local line
+            for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+                line = line or (job.feed_pipes or {})[cell_key(x + d[1], y + d[2])]
+            end
+            stub_line = line or stub_line
+            local name = stub_line and job.feed_pipe_names[stub_line] or "pipe"
+            add({ name = name, x = x, y = y, item = name })
+            if job.feed_pipes and stub_line then job.feed_pipes[cell_key(x, y)] = stub_line end
+        end,
+        unfed = function() plan.unfed = plan.unfed + 1 end,
+    }
+end
+
+--- A planned entity for a spaced layer at `pos`, decorated (direction, colour, ...).
+--- @param job PlannerJob
+--- @param layer Layer
+--- @param pos Vector
+--- @param frame integer|nil
+--- @param arc number|nil
+--- @return PlannedEntity
+make_entity = function(job, layer, pos, frame, arc)
+    local entity = {
+        name = layer.name, quality = layer.quality, position = pos, size = layer.size, layer = layer.idx, frame = frame,
+    }
+    local def = registry.type_of(layer)
+    if def.decorate then
+        local n = frame and job.frames[frame] and job.frames[frame].n or { x = 0, y = -1 }
+        local side = layer.idx < 0 and -1 or 1
+        def.decorate(layer, entity, { outward = { x = side * n.x, y = side * n.y }, arc = arc })
+    end
+    return entity
+end
+
+--- For turrets with a feed: the nearest spot (also shifted along the curve, as
+--- search_spot) where the feed fits.
+--- @return Vector|nil, number used
+feed_spot = function(job, layer, target, direction, frame, arc)
+    local def = registry.type_of(layer)
+    local size = layer.size
+    local used = 0
+    local function cells(pos, taken)
+        local x0, y0 = footprint_origin(pos, size)
+        for dx = 0, size - 1 do
+            for dy = 0, size - 1 do job.occupied[cell_key(x0 + dx, y0 + dy)] = taken or nil end
+        end
+    end
+    for _, shift in ipairs(SHIFTS) do
+        for _, pos in ipairs(free_spots(job, size, vect.add(target, vect.scale(shift, direction)))) do
+            used = used + lib.COST.place * 4
+            cells(pos, true)
+            local ok = def.can_attach(layer, make_entity(job, layer, pos, frame, arc), feed_context(job, layer))
+            cells(pos, false)
+            if ok then return pos, used end
+        end
+    end
+    return nil, used
+end
+
 --- Claim a spot and add the entity to the plan.
 --- @param job PlannerJob
 --- @param layer Layer
@@ -838,17 +952,11 @@ local function commit(job, layer, pos, frame, arc)
         end
     end
     local plan = job.plan
-    local entity = {
-        name = layer.name, quality = layer.quality, position = pos, size = size, layer = layer.idx, frame = frame,
-    }
     local def = registry.type_of(layer)
-    if def.decorate then
-        local n = frame and job.frames[frame] and job.frames[frame].n or { x = 0, y = -1 }
-        local side = layer.idx < 0 and -1 or 1
-        def.decorate(layer, entity, { outward = { x = side * n.x, y = side * n.y }, arc = arc })
-    end
+    local entity = make_entity(job, layer, pos, frame, arc)
     table.insert(plan.entities, entity)
     plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
+    if def.attach then def.attach(layer, entity, feed_context(job, layer)) end
     local chain = plan.chains[layer.idx]
     if chain then
         local previous = chain.members[#chain.members]
@@ -895,7 +1003,19 @@ end
 --- @param direction Vector
 --- @return number used
 local function place(job, layer, walk, target, direction)
-    local pos, used = search_spot(job, layer.size, target, direction)
+    local def = registry.type_of(layer)
+    local pos, used
+    if def.wants_feed and def.wants_feed(layer) then
+        -- Turrets with a feed: a spot where the inserter or pipe stub fits, if any.
+        pos, used = feed_spot(job, layer, target, direction, walk.i and math.min(walk.i, #job.frames) or nil, walk.aim)
+        if not pos then
+            local more
+            pos, more = search_spot(job, layer.size, target, direction)
+            used = used + more
+        end
+    else
+        pos, used = search_spot(job, layer.size, target, direction)
+    end
     if not pos then
         job.plan.skipped = job.plan.skipped + 1
         return used

@@ -244,6 +244,28 @@ A layer type is one file in `scripts/layers/`, listed in `TYPE_FILES` in
   turrets keep to 4 directions and are shifted onto their own grid inside the
   square the planner reserved.
 
+Spaced layers can also have `wants_feed(layer)`, `can_attach(layer, entity,
+ctx)` and `attach(layer, entity, ctx)`: turrets with a feed (`build/feeds.lua`).
+Their spot search only takes spots where the feed fits (falling back to a plain
+spot, counted in `plan.unfed`). Then `attach` adds the feed through a
+`FeedContext`, which sees the belt and pipe cells the paths stage made:
+- an inserter in a free cell beside the turret, turned so its drop (the inserter
+  prototype's `inserter_drop_position`) lands in the turret and its pickup on a
+  belt. An inserter's direction is its pickup side;
+- a pipe stub of up to `MAX_STUB` cells from one of the turret's fluid
+  connections to a pipe line, touching no other pipe line. Connections facing
+  straight are the prototype's north ones rotated. Facing diagonally, each north
+  connection is turned 45° and rounded to the grid, and points along whichever
+  straight direction beside the turned one leads out of the turret's square. That
+  matches the game for the flamethrower (a reference blueprint and a probe of
+  `get_fluid_box_pipe_connections`).
+
+**Gates** are decided when building, as they depend on the world: a wall cell
+(`entity.gate`, from the wall layer's *Gates on rails*) with a straight rail
+under it becomes a gate. The gate is turned whichever way the game allows over
+that rail, checked with `manual_ghost` and not forced, because a forced check
+refuses gates over rails. Super force doesn't clear rails for such walls.
+
 The outputs and the blueprint writer carry `direction` and `color` into the
 entity (a lamp ghost keeps a colour only when given at creation), and `ammo` as
 an insert plan (ghost, blueprint) or by inserting it (instant). `plan.links` holds
@@ -428,6 +450,7 @@ tests/run.sh layers                                    # layer list and detail p
 tests/run.sh build                                     # preview, totals, builds in all modes, blueprints
 tests/run.sh types                                     # turrets, lamps, mines, radars, solar panels, accumulators
 tests/run.sh paths                                     # belts and pipes: real entities flow, undergrounds pair, pumps split segments
+tests/run.sh feeds                                     # inserters feed turrets, flamethrowers piped (straight, diagonal), gates over rails
 tests/run.sh build space-age quality elevated-rails    # same, with DLC mods enabled
 tests/migrate-save.sh                                  # the game applies migrations/ to a real save
 tests/run.sh bench                                     # timing (read the BENCH lines in the log)
@@ -446,6 +469,7 @@ tests/run.sh bench                                     # timing (read the BENCH 
 | `presets.lua` | Preset list operations; export data round trip and import validation. |
 | `layer_types.lua` | Turret facing (both sides, inward) and non-square footprints, ammo, lamp colours and rainbow, radar spacing, land mine density, determinism and wires. |
 | `paths.lua` | Belts fed only from behind and lines continuous, undergrounds paired within reach, pipe lines connected and apart, pumps; on a gentle curve, a loop and random curves. |
+| `feeds.lua` | Fluid connection targets in every facing (straight and diagonal, against the game), inserters picking from a belt and dropping into their turret (normal and long reach, straight and curved lines), pipe stubs reaching one network. |
 | `shapes.lua` | What the handles mean; samples exactly on circles, (rotated) ellipses and arcs; direction; editing shapes and moving curves. |
 | `migrations.lua` | The files in `migrations/`, run like the game does, on old and current data. |
 

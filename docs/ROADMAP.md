@@ -202,16 +202,24 @@ Group c2 follow-ups (done):
 - The item picker filter and layer values are derived on use instead of stored
   (an old save didn't offer belts and pipes).
 
+Done (group c3):
+
+- **Turret feeds:** ammo turrets can get an inserter each, from a belt layer
+  beside them; fluid turrets a pipe stub to a pipe layer beside them, facing any
+  of 8 ways (diagonal connections worked out from the reference blueprint). The
+  turret spot search prefers spots where the feed fits; the rest are shown as
+  unfed (on diagonals, turrets packed side by side often are).
+- **Gates:** a planned wall landing on an existing straight rail becomes a gate
+  (*Gates on rails*, on by default); super force keeps such rails.
+
 To do:
 
 - Side wall layers on the inside of tight bends can be joined only diagonally (the
   bands get squeezed there; found with belts, never checked for walls).
 
 4. **More layer types**, continued (group c3):
-   - turrets, still to do (after belts and pipes, group c3):
-      - ammo turrets: optional infeed belt with inserters - respect inserter pickup/placement locations, ignoring mods that let the user change them at  will, maybe worth considering it at a later stage, but not now.
-      - fluid turrets with pipes
-   - gates where a planned wall crosses an existing rail, later when we'll be building rails, it should also work the other way around. It should be a toggle on the wall/rail config.
+   - gates the other way round, once Bézierio builds rails (item 5): a planned
+     rail crossing a wall.
 5. **Rails.** Fit 2.0 rail pieces (straight, half-diagonal, curved-a/b) to the
    curve, plus signals at a spacing measured in wagons (fields already exist).
    This is the largest item: it needs a search over rail-piece sequences that stays
