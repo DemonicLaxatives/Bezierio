@@ -247,6 +247,18 @@ Done (side wall layers):
   generation sometimes blocked a ramp at the end of the elevated test track.
 
 ## Phase pre-3: GUI and controll upgrades
+
+Decided (mockups: the "Bézierio window layouts" canvas): layout B, one column of
+Curve, Layers and Build, with a narrow mode where the whole window collapses
+together (points as chips that scroll past 4 rows, tools in rows); layer
+settings in their own window, edits live and Cancel reverting; a pin in the
+title bar. Groups: a) layout, shading, alignment, loop button, add bars, no
+mirror, new preset, pin, narrow mode, layer settings window, settings window
+(the view settings plus the former per-user mod settings, the gear in the title
+bar), sunken list and summary panes, wider button spacing (done); b) import /
+export windows; c) job status and queue, disabling a layer, turret targeting
+priorities, facing tooltips.
+
   - Closed loop toggle is an odd one out. It should be a button.
   - Have the panels, and elements within them align to one another. 
   - Give the list entries alternating shaded backgrounds. 
@@ -263,7 +275,7 @@ Done (side wall layers):
   - On top of the rest of the suggestions make it more cohesive and nicer. Give me options on how you see fit some things should be rearanged.
 
 ## Phase post-pre-3:
-- A full review.
+- A full code-review. Make sure the code reads well, doesn't reapeat itself and stays maintainable.
 
 ## Phase 3: release, CI and automated release
 
@@ -325,6 +337,7 @@ Done (side wall layers):
   nothing crashes (`--test-save`). Releases are when old saves start to matter.
 - Update the changelog
 - Cleanup the completed roadmap, no need to summaraize everything that's done on main, git history will still be there.
+- Add some default presets to ship it with.
 
 ## Testing to add along the way
 

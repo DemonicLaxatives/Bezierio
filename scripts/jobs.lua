@@ -98,30 +98,29 @@ end
 --- @param preset Preset
 --- @return BlueprintSource|nil
 local function blueprint_source(player, controller, preset)
-    local setting = player.mod_settings["bezierio-blueprint-source"]
-    if setting and setting.value == false then return nil end
+    if not state.setting(player.index, "blueprint_source") then return nil end
     return {
         curve = helpers.encode_string(helpers.table_to_json(curve_lib.to_data(controller.curve))) --[[@as string]],
         preset = presets.export(preset),
     }
 end
 
---- The status line: what's happening right now.
+--- What's happening right now.
 --- @param controller Controller
---- @return LocalisedString, string  # caption, and a key to detect changes
+--- @return LocalisedString, string, number|nil  # caption, a key to detect changes, and progress (0..1) while planning or building
 local function status_of(controller)
     local work = controller.work
     if work.build then
         local pct = math.floor(runner(work.build).progress(work.build) * 100)
-        return { "label.status-building", tostring(pct) }, "b" .. pct
+        return { "label.status-building", tostring(pct) }, "b" .. pct, pct / 100
     end
     local plan_job = work.plan
     if (work.pending_build or controller.ui.preview_build) and plan_job and not plan_job.plan.done then
         local pct = math.floor(planner.progress(plan_job) * 100)
-        return { "label.status-planning", tostring(pct) }, "p" .. pct
+        return { "label.status-planning", tostring(pct) }, "p" .. pct, pct / 100
     end
     if work.revision ~= controller.revision and plan_needed(controller) then
-        return { "label.status-planning", "0" }, "p0"
+        return { "label.status-planning", "0" }, "p0", 0
     end
     if controller.ui.preview_build and work.draw.preview_count >= draw.MAX_PREVIEW_OBJECTS then
         return { "label.status-preview-partial" }, "cap"
@@ -179,6 +178,24 @@ local function items_of(controller, plan)
     return table.concat(parts, " "), rows
 end
 
+--- The summary pane while planning or building: the progress and a bar, in place
+--- of the summary.
+--- @param player LuaPlayer
+--- @param caption LocalisedString
+--- @param fraction number
+local function show_progress(player, caption, fraction)
+    local pane = window.find(player, "totals")
+    if not pane then return end
+    pane.visible = true
+    for _, child in pairs(pane.children) do
+        child.visible = child.name == "totals_length" or child.name == "totals_progress"
+    end
+    local length = window.find(player, "totals_length")
+    if length then length.caption, length.tooltip = caption, "" end
+    local bar = window.find(player, "totals_progress")
+    if bar then bar.value = fraction end
+end
+
 --- @param player LuaPlayer
 --- @param controller Controller
 --- @param plan BuildPlan|nil  # nil clears the totals
@@ -190,13 +207,26 @@ local function show_totals(player, controller, plan)
     local unpowered = window.find(player, "totals_unpowered")
     local unfed = window.find(player, "totals_unfed")
     if not (length and items and bends and gaps and unpowered and unfed) then return end
+    local pane = window.find(player, "totals")
+    if pane then pane.visible = plan ~= nil end
+    -- (back from showing progress: the summary's rows, the item list only wide)
+    local narrow = controller.ui.narrow == true
+    for _, name in ipairs({ "totals_line_items", "totals_items" }) do
+        local element = window.find(player, name)
+        if element then element.visible = not narrow end
+    end
+    local bar, warning_row = window.find(player, "totals_progress"), window.find(player, "totals_warnings")
+    if bar then bar.visible = false end
+    if warning_row then warning_row.visible = true end
     if not plan then
-        length.caption, items.caption, items.tooltip = "", "", ""
+        length.caption, items.caption, items.tooltip, length.tooltip = "", "", "", ""
         bends.visible, gaps.visible, unpowered.visible, unfed.visible = false, false, false, false
         return
     end
     length.caption = { "label.totals", string.format("%.0f", plan.length) }
     items.caption, items.tooltip = items_of(controller, plan)
+    -- (the narrow window hides the item list: it's in the length's tooltip)
+    length.tooltip = { "", items.caption, "\n", items.tooltip }
     bends.caption = { "label.totals-bends", tostring(#plan.warnings) }
     bends.visible = #plan.warnings > 0
     gaps.caption = { "label.totals-gaps", tostring(plan.gaps) }
@@ -205,6 +235,9 @@ local function show_totals(player, controller, plan)
     unpowered.visible = plan.unpowered > 0
     unfed.caption = { "label.totals-unfed", tostring(plan.unfed or 0) }
     unfed.visible = (plan.unfed or 0) > 0
+    -- (a line above the warnings, when there are any)
+    local line = window.find(player, "totals_line_warnings")
+    if line then line.visible = bends.visible or gaps.visible or unpowered.visible or unfed.visible end
 end
 
 --- @param player LuaPlayer
@@ -212,11 +245,21 @@ end
 local function update_window(player, controller)
     if not window.get(player) then return end
     local work = controller.work
-    local caption, key = status_of(controller)
+    local caption, key, fraction = status_of(controller)
     if key ~= work.status then
         work.status = key
         local label = window.find(player, "status")
-        if label then label.caption = caption end
+        if label then
+            -- (progress goes into the summary pane instead)
+            label.caption = fraction and "" or caption
+            label.visible = fraction == nil and key ~= ""
+        end
+        if fraction then show_progress(player, caption, fraction) end
+    end
+    if fraction then
+        -- (-1: no revision's totals are shown, so the summary comes back when done)
+        work.totals_revision = -1
+        return
     end
     -- Totals and warnings for any finished plan: the preview's, or the one a build
     -- just used (with the preview off).

@@ -31,7 +31,11 @@ end
 
 --- An element of the main window by name.
 function flow.el(player, name)
-  return flow.find_named(player.gui.screen.bezierio_window, name)
+  for _, window in ipairs({ "bezierio_window", "bezierio_settings_window", "bezierio_layer_window" }) do
+    local root = player.gui.screen[window]
+    local found = root and flow.find_named(root, name)
+    if found then return found end
+  end
 end
 
 function flow.ghosts(surface, inner)
@@ -111,6 +115,9 @@ function flow.open_window(player)
   check(button, "mod-gui button exists")
   dev("click", P, button)
   check(player.gui.screen.bezierio_window, "window opened")
+  -- and layer 0's settings, where a player starts picking its item
+  dev("click", P, "layer_select_0")
+  check(player.gui.screen.bezierio_layer_window, "layer 0 settings opened")
 end
 
 --- The test curve: P1 (-30.3, 5), P2 (0, -40), P3 (30, 5), placed with the pointer,

@@ -35,6 +35,7 @@ local function fill(frame, player)
 
     local bar = frame.add { type = "flow", name = "preset_bar", direction = "horizontal" }
     bar.style.vertical_align = "center"
+    bar.style.horizontal_spacing = 8
     if mode == "rename" then
         local field = bar.add {
             type = "textfield",
@@ -43,7 +44,8 @@ local function fill(frame, player)
             tags = { group = "preset", action = "rename" },
             tooltip = { "tooltip.preset-name" },
         }
-        field.style.width = 160
+        field.style.horizontally_stretchable = true
+        field.style.minimal_width = 0
         field.focus()
         field.select_all()
     else
@@ -57,8 +59,12 @@ local function fill(frame, player)
             tags = { group = "preset", action = "switch" },
             tooltip = { "tooltip.preset-select" },
         }
-        select.style.width = 160
+        select.style.horizontally_stretchable = true
+        select.style.minimal_width = 0
     end
+    -- (narrow window: switching only)
+    if ui.narrow then return end
+    tool_button(bar, "preset_new", "utility/add", "preset-new", "new")
     tool_button(bar, "preset_rename", "utility/rename_icon", "preset-rename", "toggle_rename",
         { auto_toggle = true, toggled = mode == "rename" })
     tool_button(bar, "preset_copy", "utility/copy", "preset-copy", "copy")
@@ -96,7 +102,7 @@ end
 --- @param parent LuaGuiElement
 --- @param player LuaPlayer
 function lib.add(parent, player)
-    local frame = parent.add { type = "frame", name = "preset_frame", direction = "vertical", style = "inside_shallow_frame_with_padding" }
+    local frame = parent.add { type = "flow", name = "preset_frame", direction = "vertical" }
     fill(frame, player)
 end
 
@@ -109,6 +115,7 @@ end
 --- Another preset is selected (or the list changed): plan again, show its layers.
 --- @param player LuaPlayer
 local function preset_changed(player)
+    layer_view.accept(player)
     local ui = state.ui(player.index)
     ui.selected_layer = 0
     ui.preset_mode = nil
@@ -192,6 +199,13 @@ function lib.load(player, text)
     end
     preset_changed(player)
     return true
+end
+
+--- A new preset with just an empty layer 0, selected.
+--- @param e EventData.on_gui_click
+lib["new"] = function(e)
+    local player = game.get_player(e.player_index)
+    if player and presets.new(state.get(e.player_index)) then preset_changed(player) end
 end
 
 --- @param e EventData.on_gui_click

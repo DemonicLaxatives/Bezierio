@@ -25,13 +25,25 @@ local function layers_changed(player_index)
     if player then layer_view.refresh(player) end
 end
 
+--- A layer's item or settings button: open its settings window.
 --- @param e EventData.on_gui_click
 lib["select"] = function(e)
     local idx = tonumber(e.element.tags.idx)
-    if idx == nil then return end
-    state.ui(e.player_index).selected_layer = idx
     local player = game.get_player(e.player_index)
-    if player then layer_view.refresh(player) end
+    if idx == nil or not player then return end
+    layer_view.open_settings(player, idx)
+end
+
+--- @param e EventData.on_gui_click
+lib["ok"] = function(e)
+    local player = game.get_player(e.player_index)
+    if player then layer_view.accept(player) end
+end
+
+--- @param e EventData.on_gui_click
+lib["cancel"] = function(e)
+    local player = game.get_player(e.player_index)
+    if player then layer_view.cancel(player) end
 end
 
 --- @param e EventData.on_gui_click
@@ -45,6 +57,9 @@ lib["new_layer"] = function(e)
     layers[key] = registry.new_empty(key)
     state.ui(e.player_index).selected_layer = key
     layers_changed(e.player_index)
+    -- Pick its item and settings straight away (Cancel removes it again).
+    local player = game.get_player(e.player_index)
+    if player then layer_view.open_settings(player, key, true) end
 end
 
 --- Swap a layer with its neighbour; the selection follows the moved layer.
@@ -54,6 +69,8 @@ lib["move"] = function(e)
     local idx = tonumber(e.element.tags.idx)
     local direction = tonumber(e.element.tags.direction)
     if not idx or not direction then return end
+    local player = game.get_player(e.player_index)
+    if player then layer_view.accept(player) end
 
     local other = idx + direction
     local layer_a, layer_b = layers[idx], layers[other]
@@ -78,6 +95,8 @@ lib["delete"] = function(e)
     local layers = state.layers(e.player_index)
     local idx = tonumber(e.element.tags.idx)
     if not idx or idx == 0 then return end
+    local player = game.get_player(e.player_index)
+    if player then layer_view.accept(player) end
 
     local min_key, max_key = key_bounds(layers)
     if idx > 0 then
@@ -95,24 +114,6 @@ lib["delete"] = function(e)
     end
     local ui = state.ui(e.player_index)
     if not layers[ui.selected_layer] then ui.selected_layer = 0 end
-    layers_changed(e.player_index)
-end
-
---- Swap the sides: layer k becomes layer -k (layer 0 stays).
---- @param e EventData.on_gui_click
-lib["mirror"] = function(e)
-    local layers = state.layers(e.player_index)
-    -- (Not -k for 0: Factorio's Lua numbers are doubles, and -0 prints as "-0".)
-    local function opposite(k) return k == 0 and 0 or -k end
-    local mirrored = {}
-    for k, layer in pairs(layers) do
-        layer.idx = opposite(k)
-        mirrored[opposite(k)] = layer
-    end
-    for k in pairs(layers) do layers[k] = nil end
-    for k, layer in pairs(mirrored) do layers[k] = layer end
-    local ui = state.ui(e.player_index)
-    ui.selected_layer = opposite(ui.selected_layer)
     layers_changed(e.player_index)
 end
 

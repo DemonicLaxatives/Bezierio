@@ -43,13 +43,16 @@ for _, entry in ipairs(palette.NAMED) do
   }
 end
 
-data:extend {
-  {
-    type = "sprite",
-    name = "bezierio-mirror",
-    filename = "__Bezierio__/graphics/icons/mirror.png",
-    size = 32,
-    scale = 0.5,
-    flags = { "gui-icon" },
-  },
-}
+-- Title bar: narrow / widen the window, settings (white, black when hovered or pressed).
+for _, name in ipairs({ "narrow-white", "narrow-black", "widen-white", "widen-black", "settings-white", "settings-black" }) do
+  data:extend {
+    {
+      type = "sprite",
+      name = "bezierio-" .. name,
+      filename = "__Bezierio__/graphics/icons/" .. name .. ".png",
+      size = 32,
+      scale = 0.5,
+      flags = { "gui-icon" },
+    },
+  }
+end

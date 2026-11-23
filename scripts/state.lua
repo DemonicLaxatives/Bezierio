@@ -23,6 +23,9 @@ local lib = {}
 --- @field selected_layer integer        # layer shown in the detail pane
 --- @field preset_mode "rename"|"export"|"import"|nil  # what the preset bar shows (window only)
 --- @field pointer_mode "move"|nil        # clicks move the curve (until right-click)
+--- @field narrow boolean|nil            # the window is narrowed (everyday controls only)
+--- @field pinned boolean|nil            # the window stays open when other GUIs open
+--- @field editing {idx: integer, backup: Layer|nil, new: boolean|nil}|nil  # layer settings window open (backup: to cancel to)
 
 --- @class Preset
 --- @field name string
@@ -57,6 +60,7 @@ local lib = {}
 --- @field redraw boolean                 # view settings changed; redraw from scratch
 --- @field redraw_points boolean|nil       # only the point markers changed (selection)
 --- @field work Work
+--- @field settings PlayerSettings|nil   # (missing fields: SETTING_DEFAULTS)
 
 --- @class SpriteCache
 --- @field curve LuaRenderObject[]
@@ -90,6 +94,33 @@ function lib.new_controller()
         redraw = true,
         work = lib.new_work(),
     }
+end
+
+--- Per-player settings besides the view (the settings window; they were per-user
+--- mod settings before). Missing ones read as these.
+--- @class PlayerSettings
+--- @field highlight_seconds integer   # unpowered / unfed marks fade after this (0: until hidden)
+--- @field blueprint_source boolean    # blueprints carry the curve and preset
+lib.SETTING_DEFAULTS = { highlight_seconds = 60, blueprint_source = true }
+
+--- A player's setting (its default if never set).
+--- @param player_index integer
+--- @param name string
+--- @return any
+function lib.setting(player_index, name)
+    local controller = storage.controllers and storage.controllers[player_index]
+    local value = controller and controller.settings and controller.settings[name]
+    if value == nil then return lib.SETTING_DEFAULTS[name] end
+    return value
+end
+
+--- @param player_index integer
+--- @param name string
+--- @param value any
+function lib.set_setting(player_index, name, value)
+    local controller = lib.get(player_index)
+    controller.settings = controller.settings or {}
+    controller.settings[name] = value
 end
 
 --- @return ViewSettings

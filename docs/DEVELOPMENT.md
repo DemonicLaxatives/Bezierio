@@ -10,7 +10,8 @@ migrations/              storage upgrades, run by the game once per save (see St
 prototypes/
   items.lua              bezierio-pointer: cursor-only item for placing control points
   custom_input.lua       pointer click / shift-click / right-click / shift-wheel, Alt+B
-  sprites.lua            GUI icons: centred build icons, reverse, colour swatches
+  sprites.lua            GUI icons: centred build icons, reverse, narrow / widen, colour swatches
+  style.lua              GUI styles: shaded lists, add-layer bars, point chips
 scripts/
   state.lua              the definition of `storage`, accessors, migrations (start here)
   jobs.lua               per-tick runner: planning, drawing, building, within a budget
@@ -45,10 +46,10 @@ scripts/
   gui/
     interactions.lua     routes GUI events to lib[tags.group][tags.action](event)
     window.lua           find window elements by name
-    layout.lua           main window (group "main")
-    control.lua          Draw / Preview / Build buttons, status and totals lines (group "control")
-    curve_control.lua    pointer button, closed loop, reverse, point list (group "curve")
-    view_settings.lua    per-player colours, curve width, preview opacity (group "view")
+    layout.lua           main window: title bar (pin, narrow), the sections in one column (group "main")
+    control.lua          Build section: Draw / Preview / Build buttons, status and totals lines (group "control")
+    curve_control.lua    Curve section: pointer button, closed loop, reverse, point list (group "curve")
+    view_settings.lua    settings window: colours, curve width, preview opacity, mark time, blueprint source (group "view")
     preset_control.lua   preset bar above the layer list (group "preset")
     layer_view.lua       layer list and the selected layer's detail pane
     layer_control.lua    layer actions (group "layer")
@@ -471,7 +472,7 @@ It then hands off to an output module:
   revives matching ghosts and batches tiles into `set_tiles`.
 
 The blueprint writer (`build/blueprint.lua`) is the third, run by `jobs.lua`
-in place of the executor. Unless the player's *bezierio-blueprint-source* setting
+in place of the executor. Unless the player's `blueprint_source` setting
 is off, the blueprint's first entity carries a `bezierio` tag with the curve and
 preset export strings (a description holds at most 500 characters: too few), and
 the description a note. **Load from blueprint** (`gui/control.lua`) reads the tag
@@ -483,7 +484,7 @@ After an executor build, `jobs.lua` marks the plan's unpowered and unfed entitie
 (`plan.unpowered_at`, `plan.unfed_at`, recorded by `smart_poles.lua` and the feed
 context) with `highlight.lua`: a frame and an icon each, drawn a budgeted number
 per tick from `work.highlight`, with `time_to_live` from the player's
-*bezierio-highlight-seconds*. They live in `storage.sprites[i].highlight_<kind>`,
+`highlight_seconds` setting. They live in `storage.sprites[i].highlight_<kind>`,
 which a redraw of the preview leaves alone. They belong to the plan whose totals
 and warnings are shown: when an edit drops that plan, they are hidden with it
 (`highlight.hide_all`). Clicking the warning label toggles them.
@@ -492,6 +493,44 @@ Placement is checked with the real entity name and
 `build_check_type.manual_ghost, forced = true`. Don't check with
 `name = "entity-ghost", inner_name = …`: in 2.1.24 that rejects free spots
 west/north of existing walls.
+
+## The window
+
+One column of sections (`gui/layout.lua`): Curve, Layers (presets, the layer
+list) and Build. All sections share the column's width (`WIDE_WIDTH`,
+`NARROW_WIDTH`). Lists (points, layers) and the build summary sit in sunken panes
+(`inside_deep_frame`); buttons in a row are 8 px apart. While planning or building,
+the summary pane shows the progress and a bar instead of the summary
+(`jobs.lua`, `show_progress`); the summary comes back when it's done.
+
+Two more windows, found by `window.find` like the main one (element names are
+unique across all three):
+
+- **Layer settings** (`bezierio_layer_window`, `layer_view.open_settings`): a
+  layer's item or settings button opens it, so does a new layer. It becomes
+  `player.opened` and the main window gets `ignored_by_interaction` until it
+  closes. Edits apply live; `ui.editing` keeps a copy of the layer from when it
+  opened. OK (`accept`) keeps the edits, Cancel or Esc (`on_gui_closed`) puts the
+  copy back, or removes a new layer. Moving or deleting layers, switching
+  presets, narrowing or closing the main window accept first.
+- **Settings** (`bezierio_settings_window`, the gear in the title bar): the view
+  settings and the player's other settings, `controller.settings`
+  (`state.SETTING_DEFAULTS`, read with `state.setting`: missing ones read as
+  their default, so old saves need nothing). They were per-user mod settings
+  before.
+
+- **Narrow** (`ui.narrow`, the chevrons in the title bar) rebuilds the window
+  where it was. Each section then shows only its everyday controls: the points as
+  chips (`CHIP_COLUMNS` × `CHIP_ROWS` before the list scrolls, the selected one
+  kept in view), the curve tools in two rows (export / import left out), layer
+  rows without their move / delete buttons, the preset
+  drop-down only, the item list in the length's tooltip.
+- **Pinned** (`ui.pinned`): the window isn't `player.opened`, so other GUIs and
+  Esc leave it open. Letting go of it as the opened GUI raises `on_gui_closed`
+  for it, which the handler ignores while pinned (and while a layer's settings
+  are open, which take over as the opened GUI).
+- Lists (points, layers) are tables with the `bezierio_striped_table` style:
+  shaded odd rows, the game's own graphic.
 
 ## GUI events
 

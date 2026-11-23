@@ -59,6 +59,17 @@ function lib.unique_name(presets, base)
     return base .. " " .. n
 end
 
+--- Add a new preset with an empty layer 0 and select it.
+--- @param controller Controller
+--- @return boolean added  # false when the list is full
+function lib.new(controller)
+    local presets = controller.presets
+    if #presets >= lib.MAX_PRESETS then return false end
+    table.insert(presets, { name = lib.unique_name(presets, "Preset"), layers = { [0] = registry.new_empty(0) } })
+    controller.ui.preset_index = #presets
+    return true
+end
+
 --- Add a copy of the selected preset and select it.
 --- @param controller Controller
 --- @return boolean added  # false when the list is full

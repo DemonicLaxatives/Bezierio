@@ -59,8 +59,18 @@ script.on_event(defines.events.on_gui_selection_state_changed, lib.handle_event)
 script.on_event(defines.events.on_gui_closed,
     --- @param e EventData.on_gui_closed
     function(e)
-        if e.element and e.element.valid and e.element.name == "bezierio_window" then
+        if not (e.element and e.element.valid) then return end
+        local controller = storage.controllers and storage.controllers[e.player_index]
+        if e.element.name == "bezierio_window" then
+            -- (pinning, or opening a layer's settings, lets go of the window as the
+            -- opened GUI, which raises this too)
+            if controller and (controller.ui.pinned or controller.ui.editing) then return end
             lib["main"]["close"](e)
+        elseif e.element.name == "bezierio_layer_window" then
+            -- Esc (or another GUI opening): as Cancel
+            if controller and controller.ui.editing then
+                lib["layer"]["cancel"](e)
+            end
         end
     end)
 

@@ -1,5 +1,10 @@
---- The layer list (one compact row per layer) and the detail pane for the selected
---- layer, whose controls come from the layer type (see scripts/layers/).
+--- The layer list (one compact row per layer) and the layer settings window,
+--- whose controls come from the layer type (see scripts/layers/).
+---
+--- The settings window opens from a layer's item or its settings button, and for a
+--- new layer. While it is open the main window is locked; edits apply as they are
+--- made (the preview follows), OK keeps them, Cancel (or Esc) puts the layer back
+--- as it was (a new layer goes away).
 local registry = require("scripts.layers.registry")
 local state = require("scripts.state")
 local palette = require("scripts.palette")
@@ -154,8 +159,9 @@ local function fill_detail(detail, layer)
     detail.clear()
     local header = detail.add { type = "flow", name = "layer_detail_header", direction = "horizontal" }
     header.style.vertical_align = "center"
-    local title = header.add { type = "label", caption = { "label.layer-detail", tostring(layer.idx) }, style = "caption_label" }
-    title.style.font_color = palette.layer_color(layer.idx)
+    -- (the window's title says which layer)
+    local label = header.add { type = "label", caption = { "slider-caption.layer-item" }, tooltip = { "tooltip.layer-type" } }
+    label.style.width = 110
 
     local picker = header.add {
         type = "choose-elem-button",
@@ -194,40 +200,50 @@ end
 --- Height of the layer list before it scrolls (about eight rows).
 lib.LIST_HEIGHT = 340
 
---- @param list LuaGuiElement
+--- One layer: a row of cells in the layer table. Narrow: just the preview
+--- checkbox, the item and the layer number.
+--- @param list LuaGuiElement  # the table
 --- @param layer Layer
 --- @param selected boolean
-local function add_row(list, layer, selected)
+--- @param narrow boolean
+local function add_row(list, layer, selected, narrow)
     local k = layer.idx
-    local row = list.add { type = "flow", name = "layer_row_" .. k, direction = "horizontal" }
-    row.style.vertical_align = "center"
-
-    row.add {
+    list.add {
         type = "checkbox",
         name = "layer_preview_" .. k,
         state = layer.preview ~= false,
         tooltip = { "tooltip.layer-preview" },
         tags = { group = "layer", action = "toggle_preview", idx = k },
     }
-    local select = row.add {
+    local select = list.add {
         type = "sprite-button",
         name = "layer_select_" .. k,
         sprite = layer.placed_by and ("item/" .. layer.placed_by) or nil,
         tags = { group = "layer", action = "select", idx = k },
-        tooltip = { "tooltip.layer-select" },
+        tooltip = { "tooltip.layer-settings" },
         toggled = selected,
         style = "slot_button",
     }
     if layer.placed_by and layer.quality and layer.quality ~= "normal" then select.quality = layer.quality end
-    local label = row.add {
+    local label = list.add {
         type = "label",
         name = "layer_label_" .. k,
-        caption = registry.is_underlay(layer)
-            and { "label.layer-row-under", tostring(k), tostring(registry.thickness(layer)) }
+        caption = narrow and ("L" .. k)
+            or registry.is_underlay(layer) and { "label.layer-row-under", tostring(k), tostring(registry.thickness(layer)) }
             or { "label.layer-row", tostring(k), tostring(registry.thickness(layer)) },
     }
     label.style.font_color = palette.layer_color(k)
-    label.style.width = 90
+    label.style.horizontally_stretchable = true
+    local settings = list.add {
+        type = "sprite-button",
+        name = "layer_settings_" .. k,
+        sprite = "utility/list_view",
+        tooltip = { "tooltip.layer-settings" },
+        tags = { group = "layer", action = "select", idx = k },
+        style = "tool_button",
+    }
+    settings.style.size = 24
+    if narrow then return end
 
     local buttons = {
         { name = "layer_move_up_" .. k, sprite = "utility/hint_arrow_up", tooltip = "move-layer-up", action = "move", direction = 1 },
@@ -236,7 +252,7 @@ local function add_row(list, layer, selected)
     }
     for _, b in ipairs(buttons) do
         local fixed = b.action == "delete" and k == 0
-        local button = row.add {
+        local button = list.add {
             type = "sprite-button",
             name = b.name,
             sprite = b.sprite,
@@ -249,74 +265,189 @@ local function add_row(list, layer, selected)
     end
 end
 
---- (Re)build the layer column: list, highest layer on top, then the detail pane.
+--- @param parent LuaGuiElement
+--- @param direction integer  # 1: above the outermost + layer, -1: below the outermost - layer
+local function add_bar(parent, direction)
+    local bar = parent.add {
+        type = "button",
+        name = direction == 1 and "add_layer_above" or "add_layer_below",
+        tags = { group = "layer", action = "new_layer", direction = direction },
+        caption = "+",
+        tooltip = { "tooltip.add-layer" },
+        style = "bezierio_add_bar",
+    }
+    -- (apart from the preset bar's buttons above)
+    if direction == 1 then bar.style.top_margin = 8 end
+end
+
+--- (Re)build the layer list, highest layer on top, then the detail pane (wide
+--- window only).
 --- @param column LuaGuiElement
 --- @param player_index integer
 function lib.fill(column, player_index)
     column.clear()
     local layers = state.layers(player_index)
     local ui = state.ui(player_index)
+    local narrow = ui.narrow == true
     if not layers[ui.selected_layer] then ui.selected_layer = 0 end
 
-    local list = column.add { type = "frame", name = "layer_flow", direction = "vertical", style = "inside_shallow_frame_with_padding" }
-    local top = list.add { type = "flow", name = "layer_list_top", direction = "horizontal" }
-    top.add {
-        type = "sprite-button",
-        name = "add_layer_above",
-        tags = { group = "layer", action = "new_layer", direction = 1 },
-        sprite = "utility/add",
-        tooltip = { "tooltip.add-layer" },
-        style = "tool_button",
-    }
-    top.add {
-        type = "sprite-button",
-        name = "layer_mirror",
-        tags = { group = "layer", action = "mirror" },
-        sprite = "bezierio-mirror",
-        tooltip = { "tooltip.mirror-layers" },
-        style = "tool_button",
-    }
-    local rows = list.add {
+    add_bar(column, 1)
+    -- The list in its own sunken pane.
+    local sunken = column.add { type = "frame", name = "layer_list_frame", direction = "vertical", style = "inside_deep_frame" }
+    sunken.style.horizontally_stretchable = true
+    local rows = sunken.add {
         type = "scroll-pane",
         name = "layer_rows",
         horizontal_scroll_policy = "never",
         vertical_scroll_policy = "auto",
     }
     rows.style.maximal_height = lib.LIST_HEIGHT
+    rows.style.horizontally_stretchable = true
+    local list = rows.add {
+        type = "table",
+        name = "layer_table",
+        column_count = narrow and 4 or 7,
+        style = "bezierio_striped_table",
+    }
+    list.style.vertical_align = "center"
+    list.style.horizontally_stretchable = true
     local min_layer, max_layer = 0, 0
     for k in pairs(layers) do
         max_layer = math.max(max_layer, k)
         min_layer = math.min(min_layer, k)
     end
     for k = max_layer, min_layer, -1 do
-        if layers[k] then add_row(rows, layers[k], k == ui.selected_layer) end
+        if layers[k] then add_row(list, layers[k], k == ui.selected_layer, narrow) end
     end
-    list.add {
-        type = "sprite-button",
-        name = "add_layer_below",
-        tags = { group = "layer", action = "new_layer", direction = -1 },
-        sprite = "utility/add",
-        tooltip = { "tooltip.add-layer" },
-        style = "tool_button",
-    }
-
-    local detail = column.add { type = "frame", name = "layer_detail", direction = "vertical", style = "inside_shallow_frame_with_padding" }
-    fill_detail(detail, layers[ui.selected_layer])
-    local selected_row = rows["layer_row_" .. ui.selected_layer]
-    if selected_row then rows.scroll_to_element(selected_row) end
+    add_bar(column, -1)
+    local selected = list["layer_select_" .. ui.selected_layer]
+    if selected then rows.scroll_to_element(selected) end
 end
 
 --- @param parent LuaGuiElement
 --- @param player_index integer
 function lib.add(parent, player_index)
     local column = parent.add { type = "flow", name = "layers_column", direction = "vertical" }
+    column.style.vertical_spacing = 4
     lib.fill(column, player_index)
 end
 
+--- The layer list and, if open, the settings window (the layer may have become
+--- another type).
 --- @param player LuaPlayer
 function lib.refresh(player)
     local column = window.find(player, "layers_column")
     if column then lib.fill(column, player.index) end
+    local editing = state.ui(player.index).editing
+    local detail = window.find(player, "layer_detail")
+    local layer = editing and state.layers(player.index)[editing.idx]
+    if detail and layer then fill_detail(detail, layer) end
+end
+
+-- Layer settings window -----------------------------------------------------------
+
+lib.WINDOW = "bezierio_layer_window"
+
+--- @param value any
+--- @return any
+local function deep_copy(value)
+    if type(value) ~= "table" then return value end
+    local out = {}
+    for k, v in pairs(value) do out[k] = deep_copy(v) end
+    return out
+end
+
+--- Lock or unlock the main window (it can't be used while a layer is edited).
+--- @param player LuaPlayer
+--- @param locked boolean
+local function lock_main(player, locked)
+    local main = window.get(player)
+    if main then main.ignored_by_interaction = locked end
+end
+
+--- Close the settings window, keeping the edits.
+--- @param player LuaPlayer
+function lib.accept(player)
+    local ui = state.ui(player.index)
+    if not ui.editing then return end
+    ui.editing = nil
+    local frame = player.gui.screen[lib.WINDOW]
+    if frame then frame.destroy() end
+    lock_main(player, false)
+    local main = window.get(player)
+    if main and not ui.pinned then player.opened = main end
+end
+
+--- Close the settings window, putting the layer back as it was.
+--- @param player LuaPlayer
+function lib.cancel(player)
+    local ui = state.ui(player.index)
+    local editing = ui.editing
+    if not editing then return end
+    local layers = state.layers(player.index)
+    if editing.new then
+        layers[editing.idx] = nil
+        if ui.selected_layer == editing.idx then ui.selected_layer = 0 end
+    elseif editing.backup then
+        layers[editing.idx] = editing.backup
+    end
+    lib.accept(player)
+    state.changed(player.index)
+    lib.refresh(player)
+end
+
+--- Open the settings window for a layer (another one open is accepted first).
+--- @param player LuaPlayer
+--- @param idx integer
+--- @param new boolean|nil  # the layer was just added (Cancel removes it)
+function lib.open_settings(player, idx, new)
+    local ui = state.ui(player.index)
+    local layer = state.layers(player.index)[idx]
+    if not layer then return end
+    if ui.editing then lib.accept(player) end
+    ui.selected_layer = idx
+    ui.editing = { idx = idx, backup = (not new) and deep_copy(layer) or nil, new = new or nil }
+
+    local frame = player.gui.screen.add { type = "frame", name = lib.WINDOW, direction = "vertical" }
+    local title_bar = frame.add { type = "flow", direction = "horizontal" }
+    title_bar.style.horizontal_spacing = 6
+    local title = title_bar.add { type = "label", style = "frame_title", caption = { "titles.layer-settings", tostring(idx) }, ignored_by_interaction = true }
+    title.style.font_color = palette.layer_color(idx)
+    local dragger = title_bar.add { type = "empty-widget", style = "draggable_space_header" }
+    dragger.style.horizontally_stretchable = true
+    dragger.style.height = 24
+    dragger.style.minimal_width = 16
+    dragger.drag_target = frame
+
+    local detail = frame.add { type = "frame", name = "layer_detail", direction = "vertical", style = "inside_shallow_frame_with_padding" }
+    detail.style.minimal_width = 360
+    fill_detail(detail, layer)
+
+    local buttons = frame.add { type = "flow", name = "layer_dialog_buttons", direction = "horizontal", style = "dialog_buttons_horizontal_flow" }
+    buttons.add {
+        type = "button",
+        name = "layer_cancel",
+        caption = { "button.layer-cancel" },
+        tooltip = { "tooltip.layer-cancel" },
+        style = "back_button",
+        tags = { group = "layer", action = "cancel" },
+    }
+    local filler = buttons.add { type = "empty-widget", style = "draggable_space" }
+    filler.style.horizontally_stretchable = true
+    filler.style.height = 32
+    filler.drag_target = frame
+    buttons.add {
+        type = "button",
+        name = "layer_ok",
+        caption = { "button.layer-ok" },
+        tooltip = { "tooltip.layer-ok" },
+        style = "confirm_button",
+        tags = { group = "layer", action = "ok" },
+    }
+    frame.force_auto_center()
+    lock_main(player, true)
+    player.opened = frame
+    lib.refresh(player)
 end
 
 return lib

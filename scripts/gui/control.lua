@@ -1,78 +1,76 @@
 local state = require("scripts.state")
 local curve_lib = require("scripts.curve.curve")
-local view_settings = require("scripts.gui.view_settings")
 local highlight = require("scripts.highlight")
 local curve_control = require("scripts.gui.curve_control")
 local preset_control = require("scripts.gui.preset_control")
 
 local lib = {}
 
---- Buttons, and the status and totals lines.
+--- The Build section: Draw / Preview (and the view settings), the build buttons,
+--- and the status and totals lines.
 --- @param parent LuaGuiElement
 --- @param player LuaPlayer
 function lib.add(parent, player)
     local ui = state.ui(player.index)
-    local flow = parent.add { type = "flow", name = "control_flow", direction = "vertical" }
-    local buttons = flow.add { type = "flow", name = "control_buttons", direction = "horizontal" }
-    buttons.add {
-        type = "button",
-        name = "draw_curve",
-        tags = { group = "control", action = "draw_curve" },
-        caption = { "button.draw-curve" },
-        auto_toggle = true,
-        toggled = ui.draw_curve,
-    }
-    buttons.add {
-        type = "button",
-        name = "preview_build",
-        tags = { group = "control", action = "preview_build" },
-        caption = { "button.preview-build" },
-        auto_toggle = true,
-        toggled = ui.preview_build,
-    }
-    buttons.add {
-        type = "sprite-button",
-        name = "build",
-        tags = { group = "control", action = "build" },
-        sprite = "bezierio-force-build",
-        tooltip = { "tooltip.force-build" },
-        style = "tool_button",
-    }
-    buttons.add {
-        type = "sprite-button",
-        name = "super_build",
-        tags = { group = "control", action = "super_build" },
-        sprite = "bezierio-super-force-build",
-        tooltip = { "tooltip.super-force-build" },
-        style = "tool_button",
-    }
-    buttons.add {
-        type = "sprite-button",
-        name = "blueprint_build",
-        tags = { group = "control", action = "blueprint" },
-        sprite = "item/blueprint",
-        tooltip = { "tooltip.blueprint-build" },
-        style = "tool_button",
-    }
-    buttons.add {
-        type = "sprite-button",
-        name = "blueprint_load",
-        tags = { group = "control", action = "blueprint_load" },
-        sprite = "utility/import",
-        tooltip = { "tooltip.blueprint-load" },
-        style = "tool_button",
-    }
-    view_settings.add_toggle(buttons)
-    flow.add { type = "label", name = "status", caption = "" }
+    local narrow = ui.narrow == true
+    local flow = parent.add { type = "frame", name = "control_flow", direction = "vertical", style = "inside_shallow_frame_with_padding" }
+    flow.style.horizontally_stretchable = true
+    flow.add { type = "label", caption = { "label.section-build" }, style = "caption_label" }
 
-    -- Filled in by jobs.lua once the preview's plan is done.
-    local totals = flow.add { type = "flow", name = "totals", direction = "vertical" }
-    totals.style.vertical_spacing = 0
-    totals.add { type = "label", name = "totals_length", caption = "" }
-    local items = totals.add { type = "label", name = "totals_items", caption = "" }
+    local view = flow.add { type = "flow", name = "control_view", direction = "horizontal" }
+    view.style.horizontal_spacing = 8
+    view.style.vertical_align = "center"
+    for _, b in ipairs({ { "draw_curve", "button.draw-curve", ui.draw_curve }, { "preview_build", "button.preview-build", ui.preview_build } }) do
+        local button = view.add {
+            type = "button",
+            name = b[1],
+            tags = { group = "control", action = b[1] },
+            caption = { b[2] },
+            auto_toggle = true,
+            toggled = b[3],
+        }
+        button.style.horizontally_stretchable = true
+        button.style.minimal_width = 0
+    end
+
+    local buttons = flow.add { type = "flow", name = "control_buttons", direction = "horizontal" }
+    buttons.style.horizontal_spacing = 8
+    buttons.style.top_margin = 4
+    local function add_button(name, action, sprite, tooltip)
+        buttons.add {
+            type = "sprite-button",
+            name = name,
+            tags = { group = "control", action = action },
+            sprite = sprite,
+            tooltip = { tooltip },
+            style = "tool_button",
+        }
+    end
+    add_button("build", "build", "bezierio-force-build", "tooltip.force-build")
+    add_button("super_build", "super_build", "bezierio-super-force-build", "tooltip.super-force-build")
+    add_button("blueprint_build", "blueprint", "item/blueprint", "tooltip.blueprint-build")
+    add_button("blueprint_load", "blueprint_load", "utility/import", "tooltip.blueprint-load")
+    local status = flow.add { type = "label", name = "status", caption = "", visible = false }
+    status.style.single_line = false
+
+    -- The summary, in its own sunken pane: length / items / warnings, divided by
+    -- lines. Filled in (and shown) by jobs.lua once a plan is done. Narrow: the
+    -- items are in the length's tooltip.
+    local totals = flow.add { type = "frame", name = "totals", direction = "vertical", style = "inside_deep_frame", visible = false }
+    totals.style.horizontally_stretchable = true
+    totals.style.padding = 8
+    totals.style.top_margin = 8
+    totals.add { type = "label", name = "totals_length", caption = "", style = "bold_label" }
+    -- (while planning or building: the progress above, this bar, no summary)
+    local bar = totals.add { type = "progressbar", name = "totals_progress", value = 0, visible = false }
+    bar.style.horizontally_stretchable = true
+    totals.add { type = "line", name = "totals_line_items", visible = not narrow }
+    local items = totals.add { type = "label", name = "totals_items", caption = "", visible = not narrow }
     items.style.single_line = false
-    items.style.maximal_width = 320
-    local warnings = totals.add { type = "flow", name = "totals_warnings", direction = "horizontal" }
+    items.style.maximal_width = 370
+    totals.add { type = "line", name = "totals_line_warnings", visible = false }
+    local warnings = totals.add { type = "flow", name = "totals_warnings", direction = narrow and "vertical" or "horizontal" }
+    if not narrow then warnings.style.horizontal_spacing = 12 end
     for _, name in ipairs({ "bends", "gaps", "unpowered", "unfed" }) do
         -- (unpowered and unfed: click to mark them on the map)
         local clickable = name == "unpowered" or name == "unfed"

@@ -1,5 +1,6 @@
---- Finding things in the main window. Element names are unique within the window,
---- so code (and tests) can find elements by name regardless of layout.
+--- Finding things in Bézierio's windows (the main window, the settings window, the
+--- layer settings window). Element names are unique across them, so code (and
+--- tests) can find elements by name regardless of layout.
 local lib = {}
 
 --- @param player LuaPlayer
@@ -21,13 +22,22 @@ local function find_in(element, name)
 end
 lib.find_in = find_in
 
+--- The windows, searched in this order.
+lib.WINDOWS = { "bezierio_window", "bezierio_settings_window", "bezierio_layer_window" }
+
 --- @param player LuaPlayer
 --- @param name string
 --- @return LuaGuiElement|nil
 function lib.find(player, name)
-    local window = lib.get(player)
-    if not window then return nil end
-    return find_in(window, name)
+    for _, window_name in ipairs(lib.WINDOWS) do
+        local window = player.gui.screen[window_name]
+        if window then
+            if window.name == name then return window end
+            local found = find_in(window, name)
+            if found then return found end
+        end
+    end
+    return nil
 end
 
 return lib

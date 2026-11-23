@@ -29,23 +29,49 @@ function lib.point_name(curve, i)
     return { "bezierio-handle-short." .. name }, { "", { "bezierio-handle." .. name }, "\n", { "tooltip.select-point" } }
 end
 
+--- Points shown as chips before the list scrolls (narrow window): 4 rows of 4.
+lib.CHIP_COLUMNS = 4
+lib.CHIP_ROWS = 4
+
 --- @param pane LuaGuiElement
 --- @param player_index integer
 local function fill_points(pane, player_index)
     pane.clear()
     local curve = state.curve(player_index)
     local list = curve_lib.active(curve)
-    local selected = state.ui(player_index).selected_point
+    local ui = state.ui(player_index)
+    local selected = ui.selected_point
     local names = shapes.HANDLES[curve.kind]
     if names and #list < #names then
         -- What to click next
-        pane.add { type = "label", name = "no_points", caption = { "label.next-handle", { "bezierio-handle." .. names[#list + 1] } } }
+        local next_label = pane.add { type = "label", name = "no_points", caption = { "label.next-handle", { "bezierio-handle." .. names[#list + 1] } } }
+        next_label.style.single_line = false
     elseif #list == 0 then
-        pane.add { type = "label", name = "no_points", caption = { "label.no-points" } }
+        local none = pane.add { type = "label", name = "no_points", caption = { "label.no-points" } }
+        none.style.single_line = false
     end
     if #list == 0 then return end
-    local cp_table = pane.add { type = "table", name = "cp_table", column_count = 4 }
+    if ui.narrow then
+        -- Chips: select a point for the pointer; the coordinates are in the wide window.
+        local chips = pane.add { type = "table", name = "cp_table", column_count = lib.CHIP_COLUMNS, style = "bezierio_striped_chips" }
+        chips.style.horizontally_stretchable = true
+        for i in ipairs(list) do
+            local caption, tooltip = lib.point_name(curve, i)
+            chips.add {
+                type = "button",
+                name = "cp_label_" .. i,
+                caption = caption,
+                tooltip = tooltip,
+                tags = { group = "curve", action = "select", idx = i },
+                toggled = i == selected,
+                style = "bezierio_point_chip",
+            }
+        end
+        return
+    end
+    local cp_table = pane.add { type = "table", name = "cp_table", column_count = 4, style = "bezierio_striped_table" }
     cp_table.style.vertical_align = "center"
+    cp_table.style.horizontally_stretchable = true
     for i, point in ipairs(list) do
         local caption, tooltip = lib.point_name(curve, i)
         local select = cp_table.add {
@@ -70,7 +96,9 @@ local function fill_points(pane, player_index)
                 allow_decimal = true,
                 allow_negative = true,
             }
-            box.style.width = 60
+            box.style.minimal_width = 60
+            box.style.maximal_width = 1000
+            box.style.horizontally_stretchable = true
         end
         local delete = cp_table.add {
             type = "sprite-button",
@@ -103,10 +131,23 @@ end
 --- @return LuaGuiElement frame  # header "curve_header", then the point list
 function lib.add(parent, player)
     local curve = state.curve(player.index)
+    local narrow = state.ui(player.index).narrow
     local frame = parent.add { type = "frame", name = "curve_frame", direction = "vertical", style = "inside_shallow_frame_with_padding" }
+    frame.style.horizontally_stretchable = true
 
+    local title = frame.add { type = "flow", name = "curve_title", direction = "horizontal" }
+    title.add { type = "label", caption = { "label.section-curve" }, style = "caption_label" }
+
+    -- Tools: one row, or two in the narrow window (curve export / import only wide).
     local header = frame.add { type = "flow", name = "curve_header", direction = "horizontal" }
     header.style.vertical_align = "center"
+    header.style.horizontal_spacing = 8
+    local second = header
+    if narrow then
+        second = frame.add { type = "flow", name = "curve_tools", direction = "horizontal" }
+        second.style.horizontal_spacing = 8
+        second.style.top_margin = 4
+    end
     header.add {
         type = "sprite-button",
         name = "pointer_button",
@@ -122,7 +163,7 @@ function lib.add(parent, player)
         kinds[i] = { "bezierio-curve-kind." .. kind }
         if kind == curve.kind then kind_index = i end
     end
-    header.add {
+    local kind_box = header.add {
         type = "drop-down",
         name = "curve_kind",
         items = kinds,
@@ -130,16 +171,19 @@ function lib.add(parent, player)
         tooltip = { "tooltip.curve-kind" },
         tags = { group = "curve", action = "kind" },
     }
+    kind_box.style.width = narrow and 92 or 110
     header.add {
-        type = "checkbox",
+        type = "sprite-button",
         name = "closed_loop",
-        caption = { "checkbox.closed-loop" },
+        sprite = "utility/refresh",
         tooltip = { "tooltip.closed-loop" },
-        state = curve.closed,
+        auto_toggle = true,
+        toggled = curve.closed == true,
         visible = curve_lib.is_spline(curve),
         tags = { group = "curve", action = "closed" },
+        style = "tool_button",
     }
-    header.add {
+    second.add {
         type = "sprite-button",
         name = "reverse_points",
         tags = { group = "curve", action = "reverse" },
@@ -148,7 +192,7 @@ function lib.add(parent, player)
         toggled = curve_lib.is_reversed(curve),
         style = "tool_button",
     }
-    header.add {
+    second.add {
         type = "sprite-button",
         name = "move_curve",
         tags = { group = "curve", action = "move_mode" },
@@ -158,7 +202,7 @@ function lib.add(parent, player)
         toggled = state.ui(player.index).pointer_mode == "move",
         style = "tool_button",
     }
-    header.add {
+    second.add {
         type = "sprite-button",
         name = "control_points_clear",
         tags = { group = "curve", action = "clear" },
@@ -166,26 +210,34 @@ function lib.add(parent, player)
         sprite = "utility/trash",
         style = "tool_button",
     }
-    for _, io in ipairs({ "export", "import" }) do
-        header.add {
-            type = "sprite-button",
-            name = "curve_" .. io,
-            tags = { group = "curve", action = "toggle_" .. io },
-            tooltip = { "tooltip.curve-" .. io },
-            sprite = "utility/" .. io,
-            auto_toggle = true,
-            style = "tool_button",
-        }
+    if not narrow then
+        for _, io in ipairs({ "export", "import" }) do
+            header.add {
+                type = "sprite-button",
+                name = "curve_" .. io,
+                tags = { group = "curve", action = "toggle_" .. io },
+                tooltip = { "tooltip.curve-" .. io },
+                sprite = "utility/" .. io,
+                auto_toggle = true,
+                style = "tool_button",
+            }
+        end
     end
     frame.add { type = "flow", name = "curve_io", direction = "vertical", visible = false }
 
-    local pane = frame.add {
+    -- The list in its own sunken pane.
+    local sunken = frame.add { type = "frame", name = "points_frame", direction = "vertical", style = "inside_deep_frame" }
+    sunken.style.horizontally_stretchable = true
+    sunken.style.top_margin = 8
+    local pane = sunken.add {
         type = "scroll-pane",
         name = "points_pane",
         horizontal_scroll_policy = "never",
-        vertical_scroll_policy = "auto-and-reserve-space",
+        vertical_scroll_policy = "auto",
     }
-    pane.style.maximal_height = 300
+    -- (narrow: about four rows of chips)
+    pane.style.maximal_height = narrow and (lib.CHIP_ROWS * 28) or 300
+    pane.style.horizontally_stretchable = true
     fill_points(pane, player.index)
     return frame
 end
@@ -257,7 +309,7 @@ function lib.load(player, text)
     end
     local closed = window.find(player, "closed_loop")
     if closed then
-        closed.state = curve.closed
+        closed.toggled = curve.closed == true
         closed.visible = curve_lib.is_spline(curve)
     end
     local reverse = window.find(player, "reverse_points")
@@ -308,9 +360,9 @@ lib["pointer"] = function(e)
     end
 end
 
---- @param e EventData.on_gui_checked_state_changed
+--- @param e EventData.on_gui_click
 lib["closed"] = function(e)
-    state.curve(e.player_index).closed = e.element.state
+    state.curve(e.player_index).closed = e.element.toggled
     state.changed(e.player_index)
 end
 

@@ -1,7 +1,7 @@
 --- Marks on the map for the entities a build leaves unpowered or unfed: a coloured
 --- frame and an icon on each, for this player only. They are drawn a budgeted
 --- number per tick (jobs.lua), and fade by themselves after the player's
---- *bezierio-highlight-seconds* (0: they stay until hidden). Shown after a build,
+--- `highlight_seconds` setting (0: they stay until hidden). Shown after a build,
 --- and toggled by clicking the warning in the window. They belong to the plan whose
 --- totals and warnings the window shows: an edit that drops the plan hides them.
 ---
@@ -40,8 +40,7 @@ local function cache_key(kind) return "highlight_" .. kind end
 --- @param player LuaPlayer
 --- @return integer|nil
 local function ttl(player)
-    local setting = player.mod_settings["bezierio-highlight-seconds"]
-    local seconds = setting and setting.value --[[@as integer]] or 60
+    local seconds = state.setting(player.index, "highlight_seconds") --[[@as integer]]
     return seconds > 0 and seconds * 60 or nil
 end
 

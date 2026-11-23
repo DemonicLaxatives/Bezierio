@@ -12,6 +12,13 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
 ## How to use
 
 1. Click the **Bézierio** button in the top-left button bar to open the window.
+   It has three sections, **Curve**, **Layers** and **Build**, top to bottom. In
+   its title bar, the pin keeps it open while you open other windows (or press
+   <kbd>Esc</kbd>), the gear opens the settings (how the drawing looks, how long
+   marks stay after a build, whether blueprints carry their curve and preset),
+   and the chevrons narrow it to the everyday controls: the points as buttons to
+   select (coordinates only in the wide window), layers without their move and
+   delete buttons, and the tools in rows.
 2. **Draw the curve with the pointer.** Take it with the pointer button in the
    window or <kbd>Alt</kbd>+<kbd>B</kbd>, then:
    - click empty ground to add a point at the end;
@@ -38,23 +45,25 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
    centre moves the whole shape. The **move** button makes clicks move the curve's
    centre to where you click; right-click to stop.
 
-   The curve passes through every point, in order. Tick **Closed loop** to join
-   the last point back to the first; the ⇄ button reverses the curve's direction, leaving the points as they are
+   The curve passes through every point, in order. The **closed loop** button (the
+   circular arrows) joins the last point back to the first; the ⇄ button reverses the curve's direction, leaving the points as they are
    (so the layers swap sides; for a circle, inside and outside). The point list in the
    window shows each point's coordinates (the export / import buttons copy the
    whole curve as a string, e.g. to share it or report a problem): click a point's name to select it, type
    new coordinates and press <kbd>Enter</kbd>, or remove a point with its ✕. The
    trash button removes all points.
 3. Toggle **Draw** to see the curve and its points.
-4. **Set up layers** in the layer list. Pick a layer to edit it in the pane below
-   the list. Layer stacks are saved as **presets**: the bar above the list
+4. **Set up layers** in the layer list. A layer's item (or its settings button)
+   opens its settings in a window of their own, and a new layer opens it straight
+   away. The preview follows your changes as you make them; **OK** keeps them,
+   **Cancel** (or <kbd>Esc</kbd>) puts the layer back as it was (a new layer goes
+   away). The main window is locked meanwhile. Layer stacks are saved as **presets**: the bar above the list
    switches between them, and copies, renames, deletes, exports or imports them
-   (export gives a string to share; import takes one).
+   (export gives a string to share; import takes one), or starts a new one (**+**).
    - **Layer 0** runs along the middle of the curve.
    - **Layers 1, 2, …** stack to the right of the direction of travel (P1 → last
-     point), **layers −1, −2, …** to the left. Use the **+** buttons to add layers
-     above or below, and the arrows to reorder them. The ⇅ button mirrors the
-     stack: every layer moves to the other side of the curve.
+     point), **layers −1, −2, …** to the left. Use the **+** bars to add layers
+     above or below, and the arrows to reorder them.
    - **Walls and tiles** fill a band. *Width* sets its thickness. Where a wall
      lands on an existing straight rail, it becomes a gate (*Gates on rails*). *Checkerboard*
      leaves out alternating squares of the given size; the sign picks which squares.
@@ -114,8 +123,7 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
    shows the curve's length and how many of each item (and quality) the build
    needs (also after a build without the preview, until the next edit); hover it
    for the count per layer. Red circles mark bends too tight for
-   the layers on their inside (those layers split there). The colour picker
-   button opens the view settings: colours, curve width and preview opacity.
+   the layers on their inside (those layers split there). Colours, curve width and preview opacity are in the settings (the gear).
 6. **Build.**
    - **Force build** places ghosts and marks trees and rocks for deconstruction.
      Spots blocked by anything else are skipped.
@@ -127,8 +135,8 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
 
    After a build, entities that won't get power (*N unpowered*) or ammo/fluid
    (*N unfed*) from it are marked on the map for a minute. Click those warnings in
-   the window to show or hide the marks; how long they stay is a per-player mod
-   setting (0: until hidden). They go with the warnings when you edit the curve
+   the window to show or hide the marks; how long they stay is a setting (the gear;
+   0: until hidden). They go with the warnings when you edit the curve
    or layers.
 
    - **Blueprint** puts the build in your cursor as a blueprint instead. It snaps
@@ -136,8 +144,8 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
      copies line up end to end. Rotate, share or store it like any blueprint.
      It also carries the curve and preset it was made from: hold it (from your
      inventory, a blueprint book or the blueprint library) and click **Load from
-     blueprint** to get them back, the preset added as a new one. A per-player mod
-     setting turns this off.
+     blueprint** to get them back, the preset added as a new one. A setting (the gear)
+     turns this off.
 
    In the map editor or with cheat mode on, both buttons build the real entities
    and tiles straight away. Trees, rocks and (with super force) your buildings in

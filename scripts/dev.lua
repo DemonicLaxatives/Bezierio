@@ -124,9 +124,9 @@ remote.add_interface("bezierio-dev", {
     schema_version = function()
         return state.SCHEMA_VERSION
     end,
-    --- A per-player mod setting (only the mod that made it may change it).
-    set_player_setting = function(player_index, name, value)
-        game.get_player(player_index).mod_settings[name] = { value = value }
+    --- A per-player setting (as the settings window sets it).
+    set_setting = function(player_index, name, value)
+        state.set_setting(player_index, name, value)
     end,
     render_count = function()
         return #rendering.get_all_objects(script.mod_name)
