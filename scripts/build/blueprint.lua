@@ -122,6 +122,7 @@ local function step_entities(job, budget)
             direction = (e.direction and e.direction ~= 0) and e.direction or nil,
             color = e.color,
             type = e.belt_type,
+            rail_layer = e.rail_layer,
         }
         if e.ammo then
             entry.items = { {

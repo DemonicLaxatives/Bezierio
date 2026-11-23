@@ -29,6 +29,7 @@ return {
         local ghost = job.surface.create_entity {
             name = "entity-ghost", inner_name = entity.name, position = entity.position, quality = entity.quality,
             direction = entity.direction, color = entity.color, type = entity.belt_type,
+            rail_layer = entity.rail_layer and defines.rail_layer[entity.rail_layer] or nil,
             force = job.force, player = player, raise_built = true, undo_index = undo_index,
         }
         -- Ammo arrives with the robots that build it.

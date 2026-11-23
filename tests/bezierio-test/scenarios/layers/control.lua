@@ -19,7 +19,7 @@ step("configure layers", function(player)
 
   local offered = {}
   for _, n in pairs(dev("item_filter")[1].name) do offered[n] = true end
-  check(offered["stone-wall"] and offered["small-electric-pole"] and not offered["rail"], "rails not offered in the picker")
+  check(offered["stone-wall"] and offered["small-electric-pole"] and offered["rail"], "walls, poles and rails offered in the picker")
 
   dev("set_elem", P, "layer_type", { name = "stone-wall", quality = "normal" })
   dev("set_value", P, "radius_slider", 2)

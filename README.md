@@ -89,6 +89,17 @@ A Factorio 2.1 mod for building walls, floors, power lines and turret rows along
      *Pumps* every *Pump spacing* tiles (at most the pipe's pipeline extent limit),
      so long pipelines keep flowing (in the
      *Flow* direction). Undergrounds and pumps are in the totals.
+   - **Rails** follow the middle of their band, fitted from the game's own rail
+     pieces (straight, diagonal and curved). Bends tighter than rails can take are
+     marked in the preview. *Signal spacing* puts a rail signal every so many
+     wagons (0: none), on the side trains travel (*Direction of travel*; *Both
+     ways* signals both sides). Where the track crosses one of your walls, the
+     walls under it become gates (*Gates in walls*). With Space Age's elevated rails,
+     *Elevated* builds the track on supports (placed for you, as far apart as they
+     reach), with *Ramps* up at the start and down at the end; ramps only go on
+     straight north/south/east/west track, so start and end the curve that way.
+     Rails take more room than one tile: keep wall layers an *Offset* away, or
+     the track cuts through them.
    - **Land mines** cover their band (up to 63 tiles wide), *Scattered* (*Density*
      is the share of cells that get one, the same cells every time) or on a
      *Grid* (every *Spacing* tiles). *Red wire* / *Green wire* connect them.

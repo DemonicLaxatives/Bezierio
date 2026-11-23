@@ -18,6 +18,7 @@ local curve_lib = require("scripts.curve.curve")
 local registry = require("scripts.layers.registry")
 local smart_poles = require("scripts.build.smart_poles")
 local paths = require("scripts.build.paths")
+local rails = require("scripts.build.rails")
 
 local lib = {}
 
@@ -51,6 +52,8 @@ lib.COST = {
 --- @field h integer|nil
 --- @field power boolean|nil      # needs power although its layer doesn't (pumps)
 --- @field gate string|nil         # walls: the gate to build instead where a rail crosses
+--- @field track {from: Vector, to: Vector}|nil  # rails: the piece's two ends (for the preview)
+--- @field rail_layer "elevated"|nil  # signals on elevated track
 
 --- @class PlannedTile
 --- @field name string
@@ -86,7 +89,7 @@ lib.COST = {
 --- @field hi number
 --- @field under boolean   # underlay tile band: shares its cells with the other bands
 
---- @alias PlannerStage "sample"|"tangents"|"fill"|"normals"|"bands"|"bends"|"rasterize"|"spaced"|"done"
+--- @alias PlannerStage "sample"|"tangents"|"fill"|"normals"|"bands"|"bends"|"rails"|"rasterize"|"paths"|"spaced"|"done"
 
 --- @class PlannerJob
 --- @field stage PlannerStage
@@ -102,7 +105,7 @@ lib.COST = {
 --- @field umin number
 --- @field umax number
 --- @field seen table<string, boolean>    # cells already classified
---- @field occupied table<string, boolean># cells taken by entities
+--- @field occupied table<string, boolean|"rail">  # cells taken by entities ("rail": by a rail piece)
 --- @field spaced integer[]               # indices into bands, in placement order
 --- @field spaced_cursor integer
 --- @field walk {i: integer, travelled: number, next_at: number, last: Vector|nil}|SmartWalk|nil
@@ -115,6 +118,16 @@ lib.COST = {
 --- @param y integer
 local function cell_key(x, y)
     return x .. "," .. y
+end
+
+--- Item counts beyond the layer's own item (undergrounds, pumps), for the totals.
+--- @param plan BuildPlan
+--- @param idx integer
+--- @param item string|nil
+local function count_extra(plan, idx, item)
+    if not item then return end
+    plan.extra_counts[idx] = plan.extra_counts[idx] or {}
+    plan.extra_counts[idx][item] = (plan.extra_counts[idx][item] or 0) + 1
 end
 
 --- @param curve Curve
@@ -368,6 +381,150 @@ local function stage_bends(job, budget)
         used = used + lib.COST.frame
     end
     if job.cursor > n then
+        job.stage, job.cursor = "rails", 1
+    end
+    return used
+end
+
+-- Rails ------------------------------------------------------------------------
+
+--- Wagon length (tiles) for signal spacing: 6 tiles and the 1 tile gap.
+lib.WAGON = 7
+
+--- The rail band's centre line, a sample per tile, for fitting.
+--- @param job PlannerJob
+--- @param band LayerBand
+--- @return RailLine
+local function rail_line(job, band)
+    local u_mid = (band.lo + band.hi) / 2
+    local line = { xs = {}, ys = {}, tx = {}, ty = {}, n = 0 }
+    local frames = job.frames
+    local step = math.max(1, math.floor(1 / lib.SAMPLE_STEP))
+    local i = 1
+    while i <= #frames do
+        local f = frames[i]
+        local p = geometry.offset_point(f, u_mid)
+        line.n = line.n + 1
+        line.xs[line.n], line.ys[line.n] = p.x, p.y
+        line.tx[line.n], line.ty[line.n] = f.t.x, f.t.y
+        if i < #frames and i + step > #frames then i = #frames else i = i + step end
+    end
+    return line
+end
+
+--- Signals at a joint: on the side for the direction of travel (both ways for
+--- tracks used both ways), from the rail end's own signal locations.
+--- @param job PlannerJob
+--- @param layer Layer
+--- @param at TrackEnd  # the joint, facing along the track
+local function place_signals(job, layer, at)
+    local plan = job.plan
+    local placed = false
+    local function put(facing)
+        local loc = rails.signals(facing).out_signal_location
+        if not loc then return end
+        local x, y = at.x + loc.x, at.y + loc.y
+        local key = cell_key(math.floor(x), math.floor(y))
+        -- (Signals on elevated track are up there too: nothing on the ground.)
+        -- (Signals stand beside rails, on tiles a rail piece clips.)
+        if not layer.elevated then
+            if job.occupied[key] and job.occupied[key] ~= "rail" then return end
+            job.occupied[key] = true
+        end
+        table.insert(plan.entities, {
+            name = layer.signal_name, quality = "normal", position = { x = x, y = y }, size = 1,
+            layer = layer.idx, direction = loc.direction, rail_layer = layer.elevated and "elevated" or nil,
+        })
+        count_extra(plan, layer.idx, layer.signal_item)
+        placed = true
+    end
+    local travel = layer.direction_of_travel or 1
+    if travel >= 0 then put(at.direction) end
+    if travel <= 0 then put((at.direction + 8) % 16) end
+    return placed
+end
+
+--- Lay the fitted track: entities, the tiles they cover, signals, warnings.
+--- @param job PlannerJob
+--- @param band LayerBand
+--- @param fit RailFit
+local function lay_track(job, band, fit)
+    local plan, layer = job.plan, band.layer
+    local travelled, next_signal = 0, (layer.signal_spacing or 0) * lib.WAGON
+    -- Elevated track stands on supports, built first.
+    if fit.elevated and layer.support_name then
+        for _, at in ipairs(rails.supports(fit)) do
+            for dx = -1, 0 do for dy = -1, 0 do job.occupied[cell_key(math.floor(at.x) + dx, math.floor(at.y) + dy)] = true end end
+            table.insert(plan.entities, {
+                name = layer.support_name, quality = "normal", position = { x = at.x, y = at.y }, size = 2,
+                layer = layer.idx, direction = at.direction,
+            })
+            count_extra(plan, layer.idx, layer.support_item)
+        end
+    end
+    for _, piece in ipairs(fit.pieces) do
+        -- Only ground-level pieces (and ramps) take up ground.
+        if not fit.elevated or piece.ground_name == "rail-ramp" then
+            for _, c in ipairs(rails.cells(piece.ground_name or piece.name, piece.direction)) do
+                local key = cell_key(math.floor(piece.x + c[1]), math.floor(piece.y + c[2]))
+                job.occupied[key] = job.occupied[key] or "rail"
+            end
+        end
+        table.insert(plan.entities, {
+            name = piece.name, quality = layer.quality, position = { x = piece.x, y = piece.y }, size = 2,
+            layer = layer.idx, direction = piece.direction,
+            track = { from = { x = piece.from.x, y = piece.from.y }, to = { x = piece.goal.x, y = piece.goal.y } },
+            -- straight ground track across walls already there: gates (build/executor.lua)
+            gate = (piece.name == "straight-rail" and piece.direction % 4 == 0 and layer.wall_gates ~= false and layer.gate_name) or nil,
+        })
+        if piece.ground_name == "rail-ramp" then
+            count_extra(plan, layer.idx, layer.ramp_item)
+        else
+            plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + ((layer.rail_costs or {})[piece.ground_name or piece.name] or 1)
+        end
+        travelled = travelled + vect.distance(piece.from, piece.goal)
+        if next_signal > 0 and layer.signal_name and travelled >= next_signal then
+            if place_signals(job, layer, piece.goal) then
+                next_signal = travelled + layer.signal_spacing * lib.WAGON
+            end
+        end
+    end
+    for _, off in ipairs(fit.off) do table.insert(plan.warnings, { x = off.x, y = off.y }) end
+    if (fit.stalled or (job.closed and not fit.closed)) and fit.loc then table.insert(plan.warnings, { x = fit.loc.x, y = fit.loc.y }) end
+    if fit.ramps and not fit.ramped_down and not job.closed and fit.loc then table.insert(plan.warnings, { x = fit.loc.x, y = fit.loc.y }) end
+end
+
+--- Fit track to every rail layer, a piece per step.
+--- @param job PlannerJob
+--- @param budget number
+local function stage_rails(job, budget)
+    local used = 0
+    if not job.rail_queue then
+        job.rail_queue = {}
+        for b, band in ipairs(job.bands) do
+            if registry.type_of(band.layer).placement == "rail" then table.insert(job.rail_queue, b) end
+        end
+    end
+    while used < budget do
+        local b = job.rail_queue[job.cursor]
+        if not b then break end
+        local band = job.bands[b]
+        if not job.rail_fit then
+            job.rail_line = rail_line(job, band)
+            job.rail_fit = rails.new_fit(job.rail_line, {
+                elevated = band.layer.elevated == true and band.layer.can_elevate == true,
+                ramps = band.layer.ramps ~= false and not job.closed,
+            })
+        end
+        used = used + rails.step(job.rail_fit, job.rail_line, job.closed)
+        if job.rail_fit.done then
+            lay_track(job, band, job.rail_fit)
+            job.rail_fit, job.rail_line = nil, nil
+            job.cursor = job.cursor + 1
+        end
+    end
+    if not job.rail_queue[job.cursor] then
+        job.rail_queue = nil
         job.stage, job.cursor = "rasterize", 1
     end
     return used
@@ -424,6 +581,7 @@ local function emit_cell(job, layer, x, y, key)
         return false
     end
     local plan = job.plan
+    if def.output ~= "tile" and job.occupied[key] then return false end -- (rails)
     plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
     if def.output == "tile" then
         table.insert(plan.tiles, { name = layer.name, x = x, y = y, layer = layer.idx })
@@ -541,6 +699,7 @@ collect_path_cell = function(job, band, x, y, key, u, j)
     local rel = u - band.lo
     local k = math.floor(rel / step)
     if rel - k * step >= 1 or k >= (layer.lines or 1) then return end
+    if job.occupied[key] then return end -- (rails)
     job.occupied[key] = true
     job.path_cells = job.path_cells or {}
     local by_line = job.path_cells[layer.idx]
@@ -556,15 +715,6 @@ collect_path_cell = function(job, band, x, y, key, u, j)
     cells[#cells + 1] = { x = x, y = y, j = j }
 end
 
---- Item counts beyond the layer's own item (undergrounds, pumps), for the totals.
---- @param plan BuildPlan
---- @param idx integer
---- @param item string|nil
-local function count_extra(plan, idx, item)
-    if not item then return end
-    plan.extra_counts[idx] = plan.extra_counts[idx] or {}
-    plan.extra_counts[idx][item] = (plan.extra_counts[idx][item] or 0) + 1
-end
 
 -- Path layers are built in two phases, a line per step: first every line is
 -- routed (ordered into segments, diagonal steps joined through corner cells),
@@ -873,7 +1023,7 @@ feed_context = function(job, layer)
         count_extra(plan, layer.idx, spec.item)
     end
     return {
-        occupied = function(x, y) return job.occupied[cell_key(x, y)] == true end,
+        occupied = function(x, y) return job.occupied[cell_key(x, y)] ~= nil end,
         belt = function(x, y) return (job.feed_belts or {})[cell_key(x, y)] == true end,
         pipe_line = function(x, y) return (job.feed_pipes or {})[cell_key(x, y)] end,
         add = add,
@@ -1126,6 +1276,7 @@ local STAGES = {
     normals = stage_normals,
     bands = stage_bands,
     bends = stage_bends,
+    rails = stage_rails,
     rasterize = stage_rasterize,
     paths = stage_paths,
     spaced = stage_spaced,

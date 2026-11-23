@@ -346,6 +346,17 @@ local function step_preview(player, view, progress, plan, hidden, budget)
                 progress.preview_entities = i
                 used = used + lib.COST.cell
                 goto continue
+            elseif entity.track then
+                -- Rails: a line along the piece.
+                local line = base_params(player)
+                line.color = palette.layer_color(entity.layer, math.min(1, entity_alpha + 0.3))
+                line.width = 6
+                line.from, line.to = entity.track.from, entity.track.to
+                table.insert(sprites, rendering.draw_line(line))
+                progress.preview_entities = i
+                progress.preview_count = progress.preview_count + 1
+                used = used + lib.COST.line
+                goto continue
             else
                 local hw, hh = (entity.w or entity.size) / 2 - 0.05, (entity.h or entity.size) / 2 - 0.05
                 rect.left_top = vect.sub(entity.position, { x = hw, y = hh })

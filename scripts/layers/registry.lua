@@ -25,7 +25,7 @@ local lib = {}
 ---@field entity_types? string[]        # entity prototype types this layer type is used for
 ---@field tile? boolean                  # used for tiles
 ---@field hidden? boolean                # not offered in the item picker (not buildable yet)
----@field placement "band"|"spaced"|"path"|"none"|"unsupported"
+---@field placement "band"|"spaced"|"path"|"rail"|"none"|"unsupported"
 ---@field output? "entity"|"tile"
 ---@field priority integer                  # higher priority layers claim contested cells first
 ---@field fields LayerField[]               # editable settings, in GUI order

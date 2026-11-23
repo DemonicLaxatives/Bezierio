@@ -37,6 +37,7 @@ local function components(cells, min_size)
 end
 
 local curve_lib = require("scripts.curve.curve")
+local rails_lib = require("scripts.build.rails")
 
 --- Whether a closed curve comes within 2 tiles of itself between parts that are
 --- more than 4 tiles apart along the curve.
@@ -69,14 +70,25 @@ for it = 1, iterations do
   local problems = {}
 
   local occupied, walls_by_layer = {}, {}
+  local has_rails = false
   for _, e in ipairs(plan.entities) do
     local x0 = math.floor(e.position.x - e.size / 2 + 0.5)
     local y0 = math.floor(e.position.y - e.size / 2 + 0.5)
-    for dx = 0, e.size - 1 do
-      for dy = 0, e.size - 1 do
-        local k = (x0 + dx) .. "," .. (y0 + dy)
-        if occupied[k] then table.insert(problems, "entity overlap at " .. k) end
-        occupied[k] = true
+    if e.track then
+      -- Rails: their real tiles (neighbouring pieces may share a tile at a joint).
+      has_rails = true
+      for _, c in ipairs(rails_lib.cells(e.name, e.direction)) do
+        local k = math.floor(e.position.x + c[1]) .. "," .. math.floor(e.position.y + c[2])
+        if occupied[k] and occupied[k] ~= "rail" then table.insert(problems, "rail over another entity at " .. k) end
+        occupied[k] = "rail"
+      end
+    else
+      for dx = 0, e.size - 1 do
+        for dy = 0, e.size - 1 do
+          local k = (x0 + dx) .. "," .. (y0 + dy)
+          if occupied[k] then table.insert(problems, "entity overlap at " .. k) end
+          occupied[k] = true
+        end
       end
     end
     if e.name == "wall" then
@@ -109,7 +121,8 @@ for it = 1, iterations do
   end
   if plan.gaps > 0 then gap_plans = gap_plans + 1 end
 
-  if walls_by_layer[0] then
+  -- (Rails claim their tiles first: a rail layer next to the wall can cut it.)
+  if walls_by_layer[0] and not has_rails then
     local c = components(walls_by_layer[0], 10)
     if c ~= 1 then table.insert(problems, "wall layer 0 has " .. c .. " pieces of 10+ cells") end
     -- A loop with one gap is still one piece. Prune cells with fewer than two

@@ -35,6 +35,8 @@ scripts/
     planner.lua          curve + layers -> BuildPlan, as a resumable job
     executor.lua         BuildPlan -> world, as a resumable job (incl. wiring)
     blueprint.lua        BuildPlan -> blueprint in the cursor, as a resumable job
+    rails.lua            rail track fitted to a line, signals' sides, elevated supports
+    rail_data.lua        the game's rail planner data, generated (tests/gen-rail-data.sh): don't edit
     smart_poles.lua      pole lines as far apart as reach allows, powering what needs it
     undo.lua             keeps a whole build in one undo item
     outputs/ghost.lua    ... as ghosts
@@ -222,7 +224,8 @@ A layer type is one file in `scripts/layers/`, listed in `TYPE_FILES` in
 - `placement`:
   - `"band"`: fills its band (walls, tiles);
   - `"spaced"`: entities every `spacing` tiles along the band's middle;
-  - `"unsupported"`: shown, but skipped when building (rails, for now);
+  - `"rail"`: track fitted to the band's middle (see Rails below);
+  - `"unsupported"`: shown, but skipped when building;
   - `"none"`: builds nothing (empty);
 - `output` (`"entity"` or `"tile"`) and `priority` (higher claims contested cells
   first);
@@ -265,6 +268,11 @@ spot, counted in `plan.unfed`). Then `attach` adds the feed through a
 under it becomes a gate. The gate is turned whichever way the game allows over
 that rail, checked with `manual_ghost` and not forced, because a forced check
 refuses gates over rails. Super force doesn't clear rails for such walls.
+The other way round, a planned straight rail facing north/south/east/west
+(`entity.gate` and `entity.track`, from the rail layer's *Gates in walls*) swaps your walls
+under it for gates turned across it (ghost: walls marked for deconstruction and
+gate ghosts; instant: replaced). Rails only go over other layers' walls this way;
+the planner keeps planned walls off the track's cells.
 
 The outputs and the blueprint writer carry `direction` and `color` into the
 entity (a lamp ghost keeps a colour only when given at creation), and `ammo` as
@@ -370,6 +378,41 @@ builds the lines one per step:
   Pumps carry `power`, so smart poles reach them.
 Undergrounds and pumps are counted in `plan.extra_counts` for the totals.
 
+**Rails** (`build/rails.lua`, a `rails` stage between bends and rasterize, one
+piece per step). The rail layer's band middle is sampled about once a tile into a
+line. The fit is a chain of rail ends, from `rail_data.lua`: the game's rail
+planner offers three pieces at an end facing one of 16 directions (straight on, or
+one direction step either way), each with its other end ("goal") where the next
+attaches. The data, the tiles each piece covers and the signal locations at each
+end come from `tests/gen-rail-data.sh`, which runs the `rail-data` scenario (a
+search over `LuaRailEnd.get_rail_extensions`); rerun it with `space-age
+elevated-rails quality` if the game's rails change.
+- The fit starts at the line's start snapped to the rail grid. Each step scores
+  every sequence of the next `DEPTH` pieces by how far their ends land from the
+  line (squared) plus `ANGLE_WEIGHT` × the direction error (squared), and lays
+  the first piece of the best. Past the line's ends, distance is to the line
+  extended, so the lookahead doesn't bend the track towards the end point.
+- A closed curve closes when a search of up to `CLOSE_DEPTH` pieces reaches the
+  start end within `TOLERANCE`. An open one stops near its end. Ends further than
+  `TOLERANCE` from the line, a fit that stops getting along the line (`STALL`),
+  an unclosed loop or a missing ramp down become `plan.warnings`.
+- Pieces claim their tiles (`rails.cells`) as `"rail"`, so later layers keep off.
+  Each carries `track = {from, to}` (drawn as a line in the preview).
+- Signals every `signal_spacing × WAGON` tiles along the track, at the end's
+  `out_signal_location` (the side for forward travel; verified in the game),
+  or the reversed end's for backward travel, both for both ways. They may stand on
+  `"rail"` cells.
+- Elevated (the elevated-rails mod): pieces are `elevated-*`, claim no tiles and
+  signals get `rail_layer = "elevated"` (the outputs pass it to `create_entity`;
+  the executor skips ground checks for them). With *Ramps* (open curves only), the
+  fit starts with a ramp up and finishes with a ramp down at the last orthogonal
+  end it can. If the band bends until too near its end for a ramp to land there,
+  the ramp goes down from where the track ends, past the curve's end. Ramps are straight and orthogonal only. `rails.supports` then puts
+  supports at joints greedily as far apart as their range allows (`range - 1`
+  from a support, `ramp_range - 1` past a ramp top). Supports are planned before
+  the rails, so their ghosts are there when the elevated rail ghosts are placed.
+Rail items per piece come from `items_to_place_this` (curved pieces cost more).
+
 Values a layer derives from its prototype (size, wire reach, supply area,
 `needs_power` = has an electric energy source) are set by `registry.refresh`, for new
 layers and again on every configuration change; layers whose prototype is gone
@@ -394,7 +437,11 @@ The executor walks the plan's tiles, then its entities. For each placement it:
 1. skips anything already there;
 2. runs the placement check;
 3. handles obstacles: forced = trees/rocks only, superforced = own and neutral
-   entities.
+   entities, only where the spot is blocked. Super force never clears anything
+   the build itself made (`job.own`, by unit number), and track (rails, signals,
+   supports) never clears other track: the square searched around a curved
+   rail reaches far past it, and rails may cross and overlap. Elevated pieces
+   clear nothing on the ground.
 
 After the entities, the executor connects each pole chain's consecutive poles
 (ghosts or real) with copper wire, plus red and / or green wire as the layer's
@@ -451,7 +498,9 @@ tests/run.sh build                                     # preview, totals, builds
 tests/run.sh types                                     # turrets, lamps, mines, radars, solar panels, accumulators
 tests/run.sh paths                                     # belts and pipes: real entities flow, undergrounds pair, pumps split segments
 tests/run.sh feeds                                     # inserters feed turrets, flamethrowers piped (straight, diagonal), gates over rails
+tests/run.sh rails                                     # continuous track, signal sides, ghosts, blueprints, gates across walls (elevated with the DLC)
 tests/run.sh build space-age quality elevated-rails    # same, with DLC mods enabled
+tests/gen-rail-data.sh space-age elevated-rails quality # regenerate scripts/build/rail_data.lua
 tests/migrate-save.sh                                  # the game applies migrations/ to a real save
 tests/run.sh bench                                     # timing (read the BENCH lines in the log)
 ```
@@ -470,6 +519,7 @@ tests/run.sh bench                                     # timing (read the BENCH 
 | `layer_types.lua` | Turret facing (both sides, inward) and non-square footprints, ammo, lamp colours and rainbow, radar spacing, land mine density, determinism and wires. |
 | `paths.lua` | Belts fed only from behind and lines continuous, undergrounds paired within reach, pipe lines connected and apart, pumps; on a gentle curve, a loop and random curves. |
 | `feeds.lua` | Fluid connection targets in every facing (straight and diagonal, against the game), inserters picking from a belt and dropping into their turret (normal and long reach, straight and curved lines), pipe stubs reaching one network. |
+| `rails.lua` | The rail data; fits stay near calm curves, circles close, elevated track has ramps at both ends and supports in reach of every joint, slanted ends warn; signal counts follow the spacing (doubled both ways). |
 | `shapes.lua` | What the handles mean; samples exactly on circles, (rotated) ellipses and arcs; direction; editing shapes and moving curves. |
 | `migrations.lua` | The files in `migrations/`, run like the game does, on old and current data. |
 

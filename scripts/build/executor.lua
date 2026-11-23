@@ -47,6 +47,7 @@ lib.COST = { tile = 3, entity = 6, wire = 4 }
 --- @field tile_batch Tile[]      # used by the instant output
 --- @field undo UndoTracking
 --- @field result BuildResult
+--- @field own table<integer, true>|nil  # unit numbers of what this build made
 
 local IGNORED_IN_THE_WAY = {
     ["character"] = true,
@@ -160,6 +161,35 @@ local RAIL_TYPES = { "straight-rail", "half-diagonal-rail", "curved-rail-a", "cu
 local IS_RAIL = {}
 for _, t in ipairs(RAIL_TYPES) do IS_RAIL[t] = true end
 
+--- Elevated rail pieces: nothing on the ground is in their way.
+local IS_ELEVATED = {
+    ["elevated-straight-rail"] = true, ["elevated-half-diagonal-rail"] = true,
+    ["elevated-curved-rail-a"] = true, ["elevated-curved-rail-b"] = true,
+}
+
+--- What track is made of: rails cross and overlap each other, and signals and
+--- supports stand among them, so building track never clears any of these.
+local IS_TRACK = { ["rail-signal"] = true, ["rail-chain-signal"] = true, ["rail-support"] = true }
+for t in pairs(IS_RAIL) do IS_TRACK[t] = true end
+for t in pairs(IS_ELEVATED) do IS_TRACK[t] = true end
+
+--- Remember an entity (or ghost) this build made, so that super force never clears it.
+--- @param job BuildJob
+--- @param made LuaEntity|nil
+local function own(job, made)
+    if made and made.valid and made.unit_number then
+        job.own = job.own or {}
+        job.own[made.unit_number] = true
+    end
+    return made
+end
+
+--- @param job BuildJob
+--- @param other LuaEntity
+local function is_own(job, other)
+    return job.own ~= nil and other.unit_number ~= nil and job.own[other.unit_number] == true
+end
+
 --- A wall planned where a straight rail crosses: the gate to build instead, if one
 --- fits over the rail (gates only go over straight, axis-aligned rails).
 --- @param job BuildJob
@@ -181,9 +211,32 @@ local function gate_instead(job, entity)
     return nil
 end
 
+--- Straight rail planned across walls already there: the walls become gates
+--- (turned across the rail), then the rail goes through them.
+--- @param job BuildJob
+--- @param player LuaPlayer
+--- @param output BuildOutput
+--- @param entity PlannedEntity  # a straight rail with `gate`
+local function gate_walls(job, player, output, entity)
+    local p = entity.position
+    local area = { { p.x - 1, p.y - 1 }, { p.x + 1, p.y + 1 } }
+    local gate_direction = (entity.direction == defines.direction.north or entity.direction == defines.direction.south)
+        and defines.direction.east or defines.direction.north
+    for _, wall in pairs(job.surface.find_entities_filtered { area = area, type = "wall", force = job.force }) do
+        local at = wall.position
+        with_undo(job, player, output.clear, wall)
+        if job.surface.can_place_entity { name = entity.gate, position = at, direction = gate_direction, force = job.force,
+                build_check_type = defines.build_check_type.manual_ghost } or job.output == "ghost" then
+            own(job, with_undo(job, player, output.create_entity, { name = entity.gate, quality = "normal", position = at, size = 1, direction = gate_direction }))
+        end
+    end
+end
+
 local function build_entity(job, player, output, entity)
     local surface, force, result = job.surface, job.force, job.result
-    if entity.gate then
+    if entity.gate and entity.track then
+        gate_walls(job, player, output, entity)
+    elseif entity.gate then
         if surface.find_entity(entity.gate, entity.position)
             or surface.find_entities_filtered { ghost_name = entity.gate, position = entity.position, limit = 1 }[1] then
             result.existing = result.existing + 1
@@ -191,7 +244,7 @@ local function build_entity(job, player, output, entity)
         end
         local gate = gate_instead(job, entity)
         if gate then
-            if with_undo(job, player, output.create_entity, gate) then
+            if own(job, with_undo(job, player, output.create_entity, gate)) then
                 result.placed = result.placed + 1
             else
                 result.blocked = result.blocked + 1
@@ -226,10 +279,29 @@ local function build_entity(job, player, output, entity)
         right_bottom = { x = position.x + half, y = position.y + half },
     }
 
-    if job.mode == "superforced" then
+    -- Check with the real entity name: with name = "entity-ghost" + inner_name the
+    -- engine's manual ghost check rejects free spots next to existing walls (2.1.24).
+    -- With forced = true, trees and rocks don't block (they get cleared below).
+    local function placeable()
+        return surface.can_place_entity {
+            name = entity.name, position = position, direction = entity.direction, force = force,
+            build_check_type = defines.build_check_type.manual_ghost, forced = true,
+        }
+    end
+
+    if entity.rail_layer == "elevated" then
+        -- Up on elevated track: nothing on the ground in the way (and the ground
+        -- placement check doesn't know about elevated rails).
+    elseif job.mode == "superforced" and not IS_ELEVATED[prototype.type] and not placeable() then
+        -- Clear what's in the way: never what this build made, and for track never
+        -- other track (the square around a curved rail reaches far past it).
+        local track = IS_TRACK[prototype.type]
         for _, other in pairs(surface.find_entities_filtered { area = area }) do
-            if other.valid then
-                if other.type == "entity-ghost" then
+            if other.valid and not is_own(job, other) then
+                local kind = other.type == "entity-ghost" and other.ghost_type or other.type
+                if track and IS_TRACK[kind] then
+                    -- rails over rails
+                elseif other.type == "entity-ghost" then
                     other.destroy()
                 elseif not IGNORED_IN_THE_WAY[other.type] and not (entity.gate and IS_RAIL[other.type])
                     and (other.force == force or other.force.name == "neutral") then
@@ -238,13 +310,7 @@ local function build_entity(job, player, output, entity)
             end
         end
     else
-        -- Check with the real entity name: with name = "entity-ghost" + inner_name the
-        -- engine's manual ghost check rejects free spots next to existing walls (2.1.24).
-        -- With forced = true, trees and rocks don't block (they get cleared below).
-        if not surface.can_place_entity {
-                name = entity.name, position = position, direction = entity.direction, force = force,
-                build_check_type = defines.build_check_type.manual_ghost, forced = true,
-            } then
+        if not placeable() then
             result.blocked = result.blocked + 1
             return
         end
@@ -253,7 +319,7 @@ local function build_entity(job, player, output, entity)
         end
     end
 
-    if with_undo(job, player, output.create_entity, entity) then
+    if own(job, with_undo(job, player, output.create_entity, entity)) then
         result.placed = result.placed + 1
     else
         result.blocked = result.blocked + 1
