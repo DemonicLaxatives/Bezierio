@@ -389,10 +389,10 @@ Status (2026-11-24, uncommitted on `refactor`; `tests/run_all.sh` passes):
 - (done) Force build should deconstruct cliffs, 
 - (done) the intended force and super force building behaivor is described in this blogpost, we should try to replicate it: https://factorio.com/blog/post/fff-383
 - (done) we need a build action "Build", which does not mark trees for deconstruction or lay landfill or alike.
-- non square power consumers/producers can end up disconnected from the network and the fact undetected (for example railgun), because they're treated as squares in the check. Planning the overall layout with them assumed as squares is an acceptable trade-off, but smart pole placement should not make the same assumption.
-- Sometimes the build work ends up split in the LuaUndoRedoStack, ensure that the whole build is one item. Looks like it happens when the build overlaps an existing one.
-- break up `scripts/build/planner.lua` it has balooned
-- Make the readme a more of a technical description of the mod, with how to run tests, publish, etc. At the top, put a link to `mod-portal/description.md` which will be the user side doc, that lives on the mod page too, containing essentially what the current one does, just with some nice images in the beginning, and a how-to section.
+- (done) non square power consumers/producers can end up disconnected from the network and the fact undetected (for example railgun), because they're treated as squares in the check. Planning the overall layout with them assumed as squares is an acceptable trade-off, but smart pole placement should not make the same assumption.
+- (done) Sometimes the build work ends up split in the LuaUndoRedoStack, ensure that the whole build is one item. Looks like it happens when the build overlaps an existing one. (It was a full undo stack: 100 items, after which counting fails; the item is found by a tag now. Not fixed: ghosts revived by an instant build aren't in the undo item, `revive` takes no undo index.)
+- (done) break up `scripts/build/planner.lua` (stages in `scripts/build/plan/`) it has balooned
+- (done) Make the readme a more of a technical description of the mod, with how to run tests, publish, etc. At the top, put a link to `mod-portal/description.md` which will be the user side doc, that lives on the mod page too, containing essentially what the current one does, just with some nice images in the beginning, and a how-to section.
 - (done) Describe every en locale element in a comment, which element each is for, what it does. Mark each for human review. Make it a project rule to do so for each newly created local element.
 
 ## Phase 3: release, CI and automated release
@@ -425,6 +425,7 @@ Status (2026-11-24, uncommitted on `refactor`; `tests/run_all.sh` passes):
    - `changelog.txt` has a correctly formatted entry for that version (Factorio's
      format is strict about the dashes line and indentation);
    - `debug.lua` has `lib.debug = false`.
+   - no `[unreviewed]` entries in the english locale, except in the top description.
 2. **Package:** `Bezierio_X.Y.Z.zip` containing a top-level `Bezierio_X.Y.Z/`
    folder. Exclude `tests/`, `python_scripts/`, `docs/`, `.vscode/`, `mod-portal`, `release` and `.github/`.
    Generate it with `git archive` plus an exclude list (`.gitattributes`

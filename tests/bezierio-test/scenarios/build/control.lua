@@ -528,6 +528,28 @@ step("... landfill listed: landfill on water, still foundation on lava", functio
   s.set_tiles({ { name = "grass-1", position = storage.wet2[1] }, { name = "grass-1", position = storage.wet2[2] } })
 end)
 
+-- The undo stack holds 100 items: once full, its size stops growing, and the
+-- build's actions must still go into one item.
+step("undo: a build with the stack full", function(player)
+  local s = player.surface
+  flow.clear_build(s)
+  for i = 1, 120 do
+    s.create_entity { name = "stone-wall", position = { -95 + (i % 30), 90 + math.floor(i / 30) }, force = player.force,
+      player = player, undo_index = 0 }
+  end
+  storage.undo_full = player.undo_redo_stack.get_undo_item_count()
+  dev("click", P, "build")
+end, "idle")
+
+step("... one item for the whole build", function(player)
+  local stack = player.undo_redo_stack
+  check(storage.undo_full == 100 and stack.get_undo_item_count() == 100, "the stack is full: " .. stack.get_undo_item_count())
+  check(#stack.get_undo_item(1) > 100, "the top item holds the build: " .. #stack.get_undo_item(1) .. " actions")
+  check(#stack.get_undo_item(2) == 1, "the one below is the player's own")
+  for _, e in pairs(player.surface.find_entities_filtered { area = { { -96, 89 }, { -60, 96 } }, name = "stone-wall" }) do e.destroy() end
+  flow.clear_build(player.surface)
+end)
+
 step("no build without permission", function(player)
   local group = game.permissions.create_group("no-build")
   group.set_allows_action(defines.input_action.build, false)

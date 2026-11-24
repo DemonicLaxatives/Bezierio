@@ -35,7 +35,16 @@ scripts/
     belt.lua pipe.lua lamp.lua land_mine.lua radar.lua solar_panel.lua accumulator.lua
   build/
     geometry.lua         frames, spatial index, grid distance from the curve
-    planner.lua          curve + layers -> BuildPlan, as a resumable job
+    planner.lua          curve + layers -> BuildPlan, as a resumable job: makes the job, runs the stages
+    plan/                the planner's stages:
+      common.lua           costs, sample step, cell keys, grid helpers they share
+      curve.lua            samples, tangents, normals and the spatial index
+      bands.lua            the band layout, the bands stage, tight-bend warnings
+      track.lua            the rails stage (fitting in build/rails.lua)
+      raster.lua           the rasterize stage: cells to bands (walls, tiles, mines, path cells)
+      lines.lua            the paths stage: belt and pipe lines (build/paths.lua)
+      joins.lua            the joins stage: corner-only wall cells joined
+      spaced.lua           the spaced stage: poles, turrets, lamps, ... and their feeds
     executor.lua         BuildPlan -> world, as a resumable job (incl. wiring)
     blueprint.lua        BuildPlan -> blueprint in the cursor, as a resumable job
     wires.lua            walking a plan's pole chains and links, for the executor and the blueprint
@@ -311,7 +320,7 @@ don't export it). Picking another item for a layer makes a fresh layer and then
 `registry.carry_over` keeps every setting the new type also has (same field name),
 clamped to the new range, plus the offset.
 
-## How the planner works (`scripts/build/planner.lua`, `geometry.lua`)
+## How the planner works (`scripts/build/planner.lua`, `plan/`, `geometry.lua`)
 
 1. **Sample** the curve so that no step exceeds 0.25 tiles. Each sample gets a
    tangent `t`, a normal `n` (to the right of the travel direction) and
@@ -356,7 +365,10 @@ clamped to the new range, plus the offset.
      closed curves also close the chain.
    - Gaps that can't be bridged because there's no room are counted in
      `plan.gaps` and reported.
-   - **Smart pole layers** (`smart_poles.lua`) ignore the spacing. After the greedy
+   - **Smart pole layers** (`smart_poles.lua`) ignore the spacing. A consumer's
+     footprint is checked per axis (`smart_poles.footprint`: a pump's own, a
+     non-square turret's or modded entity's turned the way it's placed, square
+     when facing diagonally); planning the layout still treats it as a square. After the greedy
      walk, a refine pass drops poles nothing needs (neighbours in reach, every
      consumer they power powered by another pole too; an open line's end pole if
      the next is within a third of the reach) and slides the rest towards the middle
@@ -542,8 +554,13 @@ blueprint writer walks the wires the same way (`build/wires.lua`).
 
 Every action carries an `undo_index`, so a build spread over many ticks is still
 one undo item (`build/undo.lua`). Items are addressed from the top of the stack,
-so the job remembers the stack size right after creating its item; anything the
-player does meanwhile shifts the index.
+which holds at most 100: once full, a new item drops the oldest and the size
+stops growing, so counting can't find the build's item (every action became an
+item of its own). The item is tagged instead (`bezierio_build` on its first
+action) and looked for from where it was last seen, as the player's own actions
+push it down. To recognise the new item, the top item gets a `bezierio_seen` tag
+before an action that may start it. Ghosts revived by an instant build aren't in
+the item (`LuaEntity.revive` takes no undo index).
 
 It then hands off to an output module:
 - `ghost` places ghosts and marks obstacles for deconstruction;

@@ -146,10 +146,11 @@ function lib.step(player, controller, budget)
         if queue.gen[item.kind] == item.gen then
             local key = cache_key(item.kind)
             sprites[key] = sprites[key] or {}
-            local m, half = item.mark, item.mark.size / 2
+            local m = item.mark
+            local hw, hh = (m.w or m.size) / 2, (m.h or m.size) / 2
             local common = { surface = surface, players = { player.index }, time_to_live = queue.ttl }
             local frame = { color = COLORS[item.kind], width = 3, filled = false,
-                left_top = { x = m.x - half, y = m.y - half }, right_bottom = { x = m.x + half, y = m.y + half } }
+                left_top = { x = m.x - hw, y = m.y - hh }, right_bottom = { x = m.x + hw, y = m.y + hh } }
             local icon = { sprite = ICONS[m.icon or item.kind], target = { x = m.x, y = m.y }, x_scale = 0.6, y_scale = 0.6 }
             for k, v in pairs(common) do frame[k], icon[k] = v, v end
             table.insert(sprites[key], rendering.draw_rectangle(frame))

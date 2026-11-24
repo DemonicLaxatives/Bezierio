@@ -35,7 +35,9 @@ lib.MARGIN = 0.3
 --- @class SmartConsumer
 --- @field x number
 --- @field y number
---- @field half number     # half the footprint, minus the margin
+--- @field half number     # half the footprint's longer side, minus the margin (for reach along the line)
+--- @field hx number|nil   # half its width, minus the margin (non-square footprints: per axis)
+--- @field hy number|nil   # half its height, minus the margin
 --- @field s number        # arc length of its projection onto the centre line
 --- @field done boolean    # powered, or given up on
 --- @field powered boolean
@@ -92,8 +94,23 @@ end
 --- @param c SmartConsumer
 --- @param r number  # supply area distance
 local function covers(pos, c, r)
-    local reach = r + c.half
-    return math.abs(c.x - pos.x) < reach and math.abs(c.y - pos.y) < reach
+    return math.abs(c.x - pos.x) < r + (c.hx or c.half) and math.abs(c.y - pos.y) < r + (c.hy or c.half)
+end
+
+--- An entity's footprint in tiles, turned the way it's placed: a pump's own, a
+--- non-square turret's (or modded entity's) from its layer, square otherwise
+--- (also facing diagonally, where the footprint is about the square).
+--- @param e PlannedEntity
+--- @param owner Layer
+--- @return number w, number h
+function lib.footprint(e, owner)
+    if e.w and e.h then return e.w, e.h end
+    local w, h = owner.tile_w, owner.tile_h
+    if not (w and h) or w == h then return e.size, e.size end
+    local d = e.direction or 0
+    if d % 4 ~= 0 then return e.size, e.size end
+    if d == 4 or d == 12 then w, h = h, w end
+    return w, h
 end
 
 --- Whether a pole at `pos`, aimed at arc length `s`, powers what it must: `first`
@@ -415,8 +432,10 @@ function lib.step(job, walk, band, budget, h)
                 local j = e.frame or geometry.nearest_frame(frames, job.index, e.position)
                 local lateral = math.sqrt((e.position.x - walk.xs[j]) ^ 2 + (e.position.y - walk.ys[j]) ^ 2)
                 walk.reach_window = math.max(walk.reach_window, lateral + e.size + (layer.reach or 0) + 1)
+                local fw, fh = lib.footprint(e, owner)
                 table.insert(walk.consumers, {
-                    x = e.position.x, y = e.position.y, half = e.size / 2 - lib.MARGIN, size = e.size, s = walk.arc[j],
+                    x = e.position.x, y = e.position.y, half = math.max(fw, fh) / 2 - lib.MARGIN, size = e.size,
+                    hx = fw / 2 - lib.MARGIN, hy = fh / 2 - lib.MARGIN, w = fw, h = fh, s = walk.arc[j],
                     done = false, powered = false, order = walk.i,
                 })
                 used = used + h.COST.cell
@@ -494,7 +513,7 @@ function lib.step(job, walk, band, budget, h)
             used = used + 1
             if not powered then
                 job.plan.unpowered = job.plan.unpowered + 1
-                table.insert(job.plan.unpowered_at, { x = c.x, y = c.y, size = c.size })
+                table.insert(job.plan.unpowered_at, { x = c.x, y = c.y, size = c.size, w = c.w, h = c.h })
             end
         end
         if not walk.consumers[walk.ci] then

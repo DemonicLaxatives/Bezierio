@@ -314,20 +314,29 @@ for it = 1, smart_cases do
   if with_consumers then
     layers[2] = { idx = 2, type = "electric-turret", name = "turret", quality = "normal", size = 2, offset = smart_r.int(0, 3), spacing = smart_r.int(2, 20), needs_power = true }
     layers[-1] = { idx = -1, type = "roboport", name = "roboport", quality = "normal", size = 4, offset = smart_r.int(0, 8), spacing = smart_r.int(4, 40), needs_power = true }
+    -- non-square, turned to face outward (a railgun-like 2x4)
+    layers[-2] = { idx = -2, type = "electric-turret", name = "long-turret", quality = "normal", size = 4, tile_w = 2, tile_h = 4,
+      turn_limited = true, directions = 4, facing = "outward", offset = smart_r.int(0, 4), spacing = smart_r.int(6, 30), needs_power = true }
   end
   local plan = helpers.plan(raw, layers, nil, closed)
   local problems = {}
   local poles, consumers = {}, {}
   for _, e in ipairs(plan.entities) do
     if e.layer == 1 then table.insert(poles, e.position) end
-    if e.layer == 2 or e.layer == -1 then table.insert(consumers, e) end
+    if e.layer == 2 or e.layer == -1 or e.layer == -2 then table.insert(consumers, e) end
   end
   local uncovered = 0
   for _, c in ipairs(consumers) do
-    local d = reach + c.size / 2 - MARGIN
+    -- its footprint as placed: the 2x4 one turned with its direction
+    local w, h = c.size, c.size
+    if c.layer == -2 and (c.direction or 0) % 4 == 0 then
+      w, h = 2, 4
+      if c.direction == 4 or c.direction == 12 then w, h = 4, 2 end
+    end
+    local dx, dy = reach + w / 2 - MARGIN, reach + h / 2 - MARGIN
     local ok = false
     for _, p in ipairs(poles) do
-      if math.abs(c.position.x - p.x) < d and math.abs(c.position.y - p.y) < d then ok = true; break end
+      if math.abs(c.position.x - p.x) < dx and math.abs(c.position.y - p.y) < dy then ok = true; break end
     end
     if not ok then uncovered = uncovered + 1 end
   end
