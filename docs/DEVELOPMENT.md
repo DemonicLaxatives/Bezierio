@@ -659,6 +659,22 @@ don't depend on the layout. Found elements are remembered per player (in a plain
 Lua table, not saved: a valid element of that name is the one, so results don't
 depend on it).
 
+## Locale
+
+All texts are in `locale/en/Bezierio.cfg`. **Every key has a comment line (`;`)
+right above it**: which element it's for (window, section, widget) and what that
+element does, plus what `__1__`, `__2__` stand for. A section header gets one
+too when its keys are built from names at runtime (layer fields, view settings,
+modes). Comments end in `[unreviewed]` until a human has checked the comment and
+the text; they remove the marker then.
+
+When adding a key: write its comment, marked `[unreviewed]`. When changing what
+an element does, update the comment and mark it `[unreviewed]` again.
+
+Keys built at runtime (`"tooltip." .. field.name`, `"label.command-" .. mode`,
+`"bezierio-message." .. error`) don't show up in a search for the full key:
+adding a mode, field or error means adding its key.
+
 ## Testing
 
 ```sh

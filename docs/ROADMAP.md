@@ -393,7 +393,7 @@ Status (2026-11-24, uncommitted on `refactor`; `tests/run_all.sh` passes):
 - Sometimes the build work ends up split in the LuaUndoRedoStack, ensure that the whole build is one item. Looks like it happens when the build overlaps an existing one.
 - break up `scripts/build/planner.lua` it has balooned
 - Make the readme a more of a technical description of the mod, with how to run tests, publish, etc. At the top, put a link to `mod-portal/description.md` which will be the user side doc, that lives on the mod page too, containing essentially what the current one does, just with some nice images in the beginning, and a how-to section.
-- Describe every en locale element in a comment, which element each is for, what it does. Mark each for human review. Make it a project rule to do so for each newly created local element.
+- (done) Describe every en locale element in a comment, which element each is for, what it does. Mark each for human review. Make it a project rule to do so for each newly created local element.
 
 ## Phase 3: release, CI and automated release
 
