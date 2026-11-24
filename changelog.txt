@@ -1,4 +1,24 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.2.0
+Date: 25.11.2026
+  Features:
+    - Migrated to GUI controls.
+    - Added support for Catmull-Rom, Circular, Elliptical and Circular Arc curve construction.
+    - Added support for tiles, power poles, solar panels, accumulators, radars, roboports, land mines, lamps, belts, pipes, electric turrets, ammo turrets, fluid turrets, rails, elevated rails.
+    - Added support for multiple layers on a single curve.
+    - Added support for input inserters for the ammo turrets, taking from an adjacent belt.
+    - Added support for fluid input for the fluid turrets, taking from an adjacent pipe.
+    - Added support for smart power pole placement, powering electrical network members on the curve while maximizing inter-pole distances.
+    - Added support for Force build.
+    - Added support for Super force build.
+    - Added support for multiple layer presets.
+    - Added support for curve import/export.
+    - Added support for preset import/export.
+    - Added support for blueprint generation.
+  Changes:
+    - Removed the curve projector entity.
+    - Removed Bezier curves (keeping the name because I like it).
+---------------------------------------------------------------------------------------------------
 Version: 0.1.1
 Date: 28.01.2024
   Features:

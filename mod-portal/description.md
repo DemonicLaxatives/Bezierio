@@ -4,44 +4,44 @@ Draw a curve, stack up layers of walls, floors, power lines, turrets, belts, pip
 or rails along it, and build the lot in one go: as ghosts for your robots, as a
 blueprint, or straight away in the map editor.
 
-![Belt lines side by side along a curve](images/belt-bus.png "A belt bus")
+## Escape the grid
+![An ore bus going around a lake](images/belt-bus.png "A belt bus")
 
-![A wall with gun turrets, fed by inserters from a belt](images/gun-turret-wall.png "A gun turret wall")
+## Exploit choke points
+![A wall with gun turrets, between two lakes](images/gun-turret-wall.png "A gun turret wall")
 
-![A wall with flamethrower turrets, piped to a pipe line](images/fluid-turret-wall.png "A flamethrower wall")
+## Adapt to the world
+![A wall with flamethrower turrets, guarding a coal patch](images/fluid-turret-wall.png "A flamethrower wall")
 
+## Go nuts!
 ![A double-track railway with poles alongside](images/railway.png "A railway")
+
+## All of it controlled from a GUI
+![The GUI with a build preview in view](images/expanded-gui.png "The GUI")
 
 ## What it does
 
 - **Curves:** a smooth curve through any number of points, or a circle, ellipse
   or arc, open or closed, placed with a pointer on the map.
 - **Layers** side by side along the curve, each with its own item and settings:
-  - walls and floor tiles (also under the other layers), in a checkerboard if
+  - walls and floor tiles, in a checkerboard if
     you like;
   - electric poles, wired red and green, or placed smartly so everything in the
     build gets power;
-  - turrets facing outward or inward, with ammo, targeting priorities, and an
+  - turrets facing outward or inward, with targeting priorities, and an
     inserter or pipe feed from a belt or pipe layer next to them;
-  - radars, solar panels, accumulators, roboports, lamps (one colour, or a
-    rainbow along the curve) and land mines;
+  - radars, solar panels, accumulators, roboports, lamps, land mines;
   - belts and pipes as continuous lines, with undergrounds and pumps;
-  - rails fitted from the game's own pieces, with signals, gates where they
-    cross your walls, and elevated track with supports and ramps.
+  - rails following the curve the best they can, with signals; elevated rails supported.
 - **Presets:** save layer stacks, and share them (or curves) as strings.
-- **Builds** like the game's: Build, Force build (clears trees, rocks and cliffs,
-  lays landfill, foundation or other cover where needed) and Super force build.
-  A whole build is one undo step.
-- **Blueprints** that snap onto the preview and remember the curve and preset
-  they were made from.
-- Big builds are spread over many ticks, so the game keeps running smoothly.
+- **Builds** like the game's: Build, Force build and Super force build. One build order is just one undo step.
+- **Blueprints** that snap onto the preview and remember the curve and preset they were made from.
+- Calculations, planning and building are all spread over many ticks, so the game keeps running smoothly.
 
 ## How to use
 
 1. **Open the window** with the Bézierio button at the top left. It has three
-   sections: Curve, Layers and Build. In its title bar: the pin keeps it open
-   while you use other windows, the gear opens the settings, and the chevrons
-   narrow it to the everyday controls.
+   sections: Curve, Layers and Build.
 2. **Draw the curve.** Take the pointer (the pointer button, or Alt+B):
    - click empty ground to add a point at the end;
    - click a point to select it, then click elsewhere to move it there;
@@ -67,20 +67,19 @@ blueprint, or straight away in the map editor.
 5. **Toggle Preview** to see what would be built, coloured by layer. The summary
    shows the length and the items needed (hover for each layer's), and warns
    about bends too tight for the inner layers, pole gaps, and entities that won't
-   get power, ammo or fluid (click a warning to mark them on the map).
+   get power, ammo or fluid (click a warning to highlight them).
 6. **Build:**
    - **Build** places ghosts wherever nothing is in the way;
    - **Force build** also marks trees, rocks and cliffs in the way for
      deconstruction, and lays landfill (on water), foundation (on lava) or other
      cover where the ground can't take what's planned (which cover comes first is
-     a setting);
-   - **Super force build** also marks your own buildings in the way;
-   - **Blueprint** puts the build in your cursor, snapping onto the preview.
-     **Load from blueprint** gets the curve and preset back from it.
+     an optional setting);
+   - **Super force build** also marks for deconstruction your own buildings that are in the way;
+   - **Generate blueprint** puts the build in your cursor, snapping onto the preview.
+     **Load from generated blueprint** gets the curve and preset back from it.
 
-   In the map editor or cheat mode, the build is real straight away. A build is
-   one undo step (Ctrl+Z). While it plans or builds, the summary shows the
-   progress; its ✕ cancels.
+   In the map editor or cheat mode, the build is real straight away. While it plans or builds, the summary shows the
+   progress; its ✕ cancels it.
 
 Planning, preview and building take a moment for big curves; *Work per tick* in
 the map settings trades speed against smoothness. In the map editor, unpause the
