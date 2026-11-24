@@ -46,6 +46,31 @@ for i = 1, 8 do
 end
 cases = cases + extra / #budgets
 
+-- A long belt and pipe line is split over many steps, not routed or built in one
+-- (corners are joined a segment, and pieces made a part, at a time: up to about
+-- twice the budget here).
+do
+    local planner = require("scripts.build.planner")
+    local curve = require("scripts.curve.curve")
+    local c = curve.new()
+    for _, p in ipairs({ { x = 0, y = 0 }, { x = 1000, y = 250 }, { x = 2000, y = 0 } }) do curve.append(c, p) end
+    local belt, pipe = {}, {}
+    for k, v in pairs(special[3]) do belt[k] = v end
+    for k, v in pairs(special[-3]) do pipe[k] = v end
+    belt.idx, pipe.idx = 0, -1
+    local job = planner.new_job(c, { [0] = belt, [-1] = pipe })
+    local worst, steps = 0, 0
+    repeat
+        local stage = job.stage
+        local done, used = planner.step(job, 1000)
+        if stage == "paths" then worst, steps = math.max(worst, used), steps + 1 end
+    until done
+    if worst > 2000 or steps < 20 then
+        failures = failures + 1
+        print(string.format("FAIL paths stage not split: worst step %.0f units over %d steps", worst, steps))
+    end
+end
+
 -- A finished job keeps only what's read afterwards (it stays in the save).
 do
     local planner = require("scripts.build.planner")

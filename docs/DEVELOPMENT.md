@@ -380,8 +380,11 @@ clamped to the new range, plus the offset.
 sub-band of the layer's band (`lines` of them, `line_gap` empty cells between).
 The rasterizer collects each line's cells with the curve sample they belong to
 (`grid_distance` returns it), and a `paths` stage (between rasterize and spaced)
-builds the lines one per step:
-- `paths.segments` orders the cells by walking from neighbour to neighbour,
+builds the lines, a budgeted amount per step (the setup files the lines' cells a
+number at a time; each line's progress is kept in its `path_queue` item):
+- `paths.step_segments` (resumable; `paths.segments` runs it in one go) drops
+  repeated cells, sorts them along the curve with a merge sort that can stop
+  anywhere, then orders them by walking from neighbour to neighbour,
   preferring the way that continues along the curve over a dead end (a spur
   at a bend) and refusing neighbours from another stretch of a curve that comes
   back near itself. It steps diagonally only when it must.
@@ -392,12 +395,13 @@ builds the lines one per step:
   chose its direction. On a closed curve, distances along the curve are measured
   around the loop, and a loop whose ends meet diagonally is closed through a corner.
   Pieces shorter than `MIN_SCRAP` beside a long stretch are dropped.
-- `paths.join_corners` fills a diagonal step with a corner cell. Bands get
+- `paths.join_corners` (a segment per call) fills a diagonal step with a corner cell. Bands get
   squeezed on the inside of bends, so a one-cell line isn't always 4-connected
   there. A corner may be a free cell or, for belts, a cell of a line of the same
   layer not built yet (that line goes round it). Pipe corners must not touch
   another pipe line. A step with no usable corner splits the line.
-- `paths.pieces` makes the entities: belts point at the next cell (the last
+- `paths.pieces` (a part per call; the part's entities are then added a budgeted
+  number at a time) makes the entities: belts point at the next cell (the last
   one straight on or away from other belts, so it never feeds one from the side,
   and line ends hemmed in by belts are dropped). Undergrounds go on straight
   runs, the entrance fed from behind and the exit feeding a cell that continues

@@ -372,19 +372,28 @@ Status (2026-11-24, uncommitted on `refactor`; `tests/run_all.sh` passes):
   monotonic through rails, with a test; `window.find` remembers what it found;
   Cancel without changes doesn't plan again; `grid_distance`'s parameter; one
   sort of path cells).
-
-Left from the review:
-- Budget: a whole path line is routed and made into entities in one call. On an
-  8,000-tile curve with 2 belt and 2 pipe lines the worst `paths` step is ~53 ms
-  (every other stage stays under 10 ms). Rail laying and `rails.close` likewise
-  (not measured). Splitting a line's routing across steps is the next item.
+- Budget, the last finding: path lines were set up, routed and made into
+  entities a whole line per call (worst `paths` step ~53 ms on an 8,000-tile
+  curve with 2 belt and 2 pipe lines). Now each is budgeted: the setup files a
+  number of cells per step, `paths.step_segments` orders a line resumably (a
+  merge sort that can stop anywhere, then the walk a cell at a time), corners
+  are joined a segment and entities made a part at a time. Worst step: 5.4 ms
+  (`paths.pieces` and `join_corners` on one whole part / segment, ~4 ms per
+  8,000 tiles; split those if lines get much longer). Rails measured: the
+  `rails` stage stays at 3-6 ms on a 4,000-tile curve (ground and elevated) and
+  a radius-600 loop, `rails.close` under 1 ms: nothing to do.
 
 ## Phase post-post-pre-3: more features and findings
 
-- force build and super force build has to place landfill/foundations/ice platforms for entites that collide with the underlying tiles. The tile to place should be automatically detected and applied. Like landfill on water or foundation on lava, etc. Foundation and landfill can bothj build over water, but it makes more sense to use landfill when applicable. Give the user a setting in per player settings to set priority on these tiles, autodetect and decide when no valid tiles are set in the priority list.
+- force build and super force build has to place landfill/foundations/ice platforms for entites that collide with the underlying tiles. The tile to place should be automatically detected and applied. Like landfill on water or foundation on lava, etc. Foundation and landfill can bothj build over water, but it makes more sense to use landfill when applicable. Give the user a setting in per player settings to set priority on these tiles, autodetect and decide when no valid tiles are set in the priority list. I think the behaviour should be inferrable from the tile prototype definitions: https://lua-api.factorio.com/latest/prototypes/TilePrototype.html
+- Force build should deconstruct cliffs, 
+- the intended force and super force building behaivor is described in this blogpost, we should try to replicate it: https://factorio.com/blog/post/fff-383
 - we need a build action "Build", which does not mark trees for deconstruction or lay landfill or alike.
-- non square power consumers can end up unpowered and the fact undetected, because they're treated as squares in the check. Planning the overall layout with them assumed as squares is an acceptable trade-off, but smart pole placement should not make the same assumption.
-- Sometimes the build work ends up split in the LuaUndoRedoStack, ensure that the whole build is one item.
+- non square power consumers/producers can end up disconnected from the network and the fact undetected (for example railgun), because they're treated as squares in the check. Planning the overall layout with them assumed as squares is an acceptable trade-off, but smart pole placement should not make the same assumption.
+- Sometimes the build work ends up split in the LuaUndoRedoStack, ensure that the whole build is one item. Looks like it happens when the build overlaps an existing one.
+- break up `scripts/build/planner.lua` it has balooned
+- Make the readme a more of a technical description of the mod, with how to run tests, publish, etc. At the top, put a link to `mod-portal/description.md` which will be the user side doc, that lives on the mod page too, containing essentially what the current one does, just with some nice images in the beginning, and a how-to section.
+- Describe every en locale element in a comment, which element each is for, what it does. Mark each for human review. Make it a project rule to do so for each newly created local element.
 
 ## Phase 3: release, CI and automated release
 
@@ -398,21 +407,8 @@ Left from the review:
      the editor;
    - check that every `{"section.key"}` used in code exists in
      `locale/en/Bezierio.cfg` (a small script).
-3. **Game job:**
-   - IMPORTANT: not part of the CI job, just a script to run by the dev on their own machine
-   - run `tests/run.sh smoke` and `tests/run.sh gui-flow` with `FACTORIO=` pointing
-     at it.
 
-   Open questions to verify first:
-   - Does the headless build support `--test-scenario`? It's the same CLI, but
-     check.
-   - DLC variants: Space Age and its mods are not in the free headless download,
-     so the space-age test can only run where the DLC data is available (e.g. a
-     self-hosted runner, or keep it a local pre-release step).
-4. Make `run.sh` print the failing step clearly and upload the full log as a job
-   artifact on failure.
-
-### Automated release/detail sync/image sync (on pushing a tags)
+# Automated release/detail sync/image sync (on pushing a tags)
 **Use Python scripts (with tests) for interfacing with the API, packaging, version bumps, validation, etc**
 - portal API key stored as a repository secret.
 - edit version numbers, release dates and refrence jsons in the repo.
@@ -438,25 +434,25 @@ Left from the review:
    - create a GitHub release with the zip and the changelog section as notes;
    - https://wiki.factorio.com/Mod_upload_API,
 
-### Modportal sync
-- not via `vX.Y.Z`, let's figure out a different tag format, so we can update the details in between releases
+## Modportal sync
+- not via `vX.Y.Z`, let's figure out a different tag format, so we can update the details and images in between releases
 - as one tag for both images and details, images first, then details
 
-## Modpage image sync
+### Modpage image sync
 - keep the one source of truth for modpage images in the repo.
 - https://wiki.factorio.com/Mod_images_API
 - write mod portal id refrences in the repo, the `mod-portal/images/mod-portal-ids.json`
 - order them with respect to `mod-portal/images/order.txt`
 - detect changes, reordering, etc, and keep that in sync with mod portal. Skip if nothing is changed
 
-## Modpage detail sync
+### Modpage detail sync
 - keep the one source of truth for details on the mod page in the repo.
 - API (`api/v2/mods/edit_detail`) https://wiki.factorio.com/Mod_details_API
 - use details files from `/mod-portal/`
 - autodetect the changed detail files from the last tagged commit, and only push the changed fields
 - details in the desciption will contain github refrences, for the upload replace them with the mod portal links. Keep them as is in the repo.
 
-### Release hygiene for the first release (0.2.0)
+## Release hygiene for the first release (0.2.0)
 
 - `debug.lua` `lib.debug = false` (enforced by the release check above).
 - New screenshots for the README and mod portal. The current ones show the 0.1
@@ -469,8 +465,8 @@ Left from the review:
 - Update the changelog
 - Cleanup the completed roadmap, no need to summaraize everything that's done on main, git history will still be there.
 - Add some default presets to ship it with. They're in the folder builtin-presets, bake them into the scripts.
-- Shorten tooltips, some of them are far too verbose.
-- Make a markdown document for the mod page. It will link against images in the actual mod page, once we have them there.
+- Let a humap pass over the locale, review it, some of them are far too verbose.
+
 
 ## Testing to add along the way
 

@@ -44,43 +44,75 @@ function lib.direction(a, b)
     return lib.NORTH
 end
 
---- The line's cells in order along the curve, as continuous segments (a curve that
---- runs into another layer's cells or back near itself can split a line).
+--- Work units, for budgeting (one is a few microseconds).
+--- (join: join_corners, piece: pieces, split: the planner's kept parts; per cell)
+lib.COST = { copy = 0.1, merge = 0.1, walk = 1.5, join = 0.2, piece = 0.3, split = 0.1 }
+
+--- A cell's key in the segmenter's tables (a number: cheaper than a string).
+--- @param x integer
+--- @param y integer
+local function num_key(x, y) return x * 16777216 + y end
+
+--- @class Segmenter
+--- @field cells PathCell[]
+--- @field loop integer|nil
+--- @field phase "copy"|"sort"|"walk"|"done"
+--- @field i integer                       # copy: next cell; walk: next start in `order`
+--- @field by_key table<number, PathCell>
+--- @field order PathCell[]                # distinct cells (sorted from "walk" on)
+--- @field spare PathCell[]                # sort: the other buffer
+--- @field width integer                   # sort: length of the runs being merged
+--- @field lo integer                      # sort: start of the pair of runs being merged
+--- @field merge {i: integer, j: integer, k: integer, mid: integer, hi: integer}|nil
+--- @field visited table<number, true>
+--- @field cur PathCell|nil                # walk: the cell the segment has got to
+--- @field segments PathCell[][]
+
+--- Start ordering a line's cells along the curve (`lib.step_segments`).
 --- @param cells PathCell[]
 --- @param loop_samples integer|nil  # closed curve: sample count, so that distances
 ---   along the curve are measured around the loop (the seam joins its two ends)
---- @return PathCell[][]
-function lib.segments(cells, loop_samples)
+--- @return Segmenter
+function lib.new_segmenter(cells, loop_samples)
+    return {
+        cells = cells, loop = loop_samples, phase = "copy", i = 1, by_key = {}, order = {},
+        visited = {}, segments = {},
+    }
+end
+
+--- Cells along the curve: by sample, then x, then y (a total order: cells are distinct).
+local function before(a, b)
+    if a.j ~= b.j then return a.j < b.j end
+    if a.x ~= b.x then return a.x < b.x end
+    return a.y < b.y
+end
+
+--- Order the cells, a budgeted amount at a time: drop repeats, sort them along the
+--- curve (a merge sort that can stop anywhere), then walk from neighbour to
+--- neighbour into segments (`s.segments`).
+--- @param s Segmenter
+--- @param budget number
+--- @return number used, boolean done
+function lib.step_segments(s, budget)
+    local used = 0
+    local by_key, visited = s.by_key, s.visited
     --- Signed distance along the curve from a to b, in samples.
     local function along(a, b)
         local d = b.j - a.j
-        if loop_samples then
-            local half = loop_samples / 2
-            if d > half then d = d - loop_samples elseif d < -half then d = d + loop_samples end
+        if s.loop then
+            local half = s.loop / 2
+            if d > half then d = d - s.loop elseif d < -half then d = d + s.loop end
         end
         return d
     end
-    local by_key, order = {}, {}
-    for _, c in ipairs(cells) do
-        local k = key(c.x, c.y)
-        if not by_key[k] then
-            by_key[k] = c
-            order[#order + 1] = c
-        end
-    end
-    table.sort(order, function(a, b)
-        if a.j ~= b.j then return a.j < b.j end
-        if a.x ~= b.x then return a.x < b.x end
-        return a.y < b.y
-    end)
-    local visited = {}
     --- Unvisited neighbours of c close along the curve (or, with `ahead`, further
     --- on along the curve within MAX_JUMP_INSIDE).
     local function open_neighbours(c, except, steps, ahead)
         local out = {}
         for _, d in ipairs(steps or STEPS) do
-            local n = by_key[key(c.x + d[1], c.y + d[2])]
-            if n and n ~= except and not visited[n] then
+            local k = num_key(c.x + d[1], c.y + d[2])
+            local n = by_key[k]
+            if n and n ~= except and not visited[k] then
                 local gap = along(c, n)
                 if math.abs(gap) <= lib.MAX_JUMP or (ahead and gap > 0 and gap <= lib.MAX_JUMP_INSIDE) then
                     out[#out + 1] = n
@@ -89,35 +121,99 @@ function lib.segments(cells, loop_samples)
         end
         return out
     end
-    local segments = {}
-    for _, start in ipairs(order) do
-        if not visited[start] then
-            local segment, cur = {}, start
-            while cur do
-                visited[cur] = true
-                segment[#segment + 1] = cur
-                local options = open_neighbours(cur)
-                if #options == 0 then options = open_neighbours(cur, nil, nil, true) end
-                if #options == 0 then
-                    -- A one-cell line off to the side of a bend can step diagonally;
-                    -- lib.join_corners fills in a corner cell.
-                    options = open_neighbours(cur, nil, DIAGONALS)
+
+    while used < budget and s.phase ~= "done" do
+        if s.phase == "copy" then
+            local cells, order = s.cells, s.order
+            while s.i <= #cells and used < budget do
+                local c = cells[s.i]
+                local k = num_key(c.x, c.y)
+                if not by_key[k] then
+                    by_key[k] = c
+                    order[#order + 1] = c
                 end
-                local best, best_score
-                for _, n in ipairs(options) do
-                    -- Prefer going on along the curve, and not into a dead end (a
-                    -- spur at a bend) when there is a way that continues.
-                    local dead_end = #open_neighbours(n, cur) == 0
-                    local d = along(cur, n)
-                    local score = (dead_end and 1000 or 0) + (d < 0 and 100 or 0) + math.abs(d)
-                    if not best_score or score < best_score then best, best_score = n, score end
-                end
-                cur = best
+                s.i = s.i + 1
+                used = used + lib.COST.copy
             end
-            segments[#segments + 1] = segment
+            if s.i > #cells then
+                s.cells = nil
+                s.phase, s.width, s.lo, s.spare = "sort", 1, 1, {}
+            end
+        elseif s.phase == "sort" then
+            -- Bottom-up: merge runs of `width` pairwise from `order` into `spare`.
+            local src, dst, n = s.order, s.spare, #s.order
+            if s.width >= n then
+                s.spare = nil
+                s.phase, s.i = "walk", 1
+            elseif s.lo > n then
+                s.order, s.spare = dst, src
+                s.width, s.lo = s.width * 2, 1
+            else
+                local m = s.merge
+                if not m then
+                    local mid = math.min(s.lo + s.width - 1, n)
+                    m = { i = s.lo, j = mid + 1, k = s.lo, mid = mid, hi = math.min(s.lo + 2 * s.width - 1, n) }
+                    s.merge = m
+                end
+                while m.k <= m.hi and used < budget do
+                    local a, b = src[m.i], src[m.j]
+                    if m.i <= m.mid and (m.j > m.hi or before(a, b)) then
+                        dst[m.k], m.i = a, m.i + 1
+                    else
+                        dst[m.k], m.j = b, m.j + 1
+                    end
+                    m.k = m.k + 1
+                    used = used + lib.COST.merge
+                end
+                if m.k > m.hi then s.merge, s.lo = nil, m.hi + 1 end
+            end
+        else -- walk
+            local order = s.order
+            local cur = s.cur
+            if not cur then
+                while s.i <= #order and visited[num_key(order[s.i].x, order[s.i].y)] do s.i = s.i + 1 end
+                if s.i > #order then
+                    s.phase = "done"
+                    break
+                end
+                cur = order[s.i]
+                s.segments[#s.segments + 1] = {}
+            end
+            local segment = s.segments[#s.segments]
+            visited[num_key(cur.x, cur.y)] = true
+            segment[#segment + 1] = cur
+            local options = open_neighbours(cur)
+            if #options == 0 then options = open_neighbours(cur, nil, nil, true) end
+            if #options == 0 then
+                -- A one-cell line off to the side of a bend can step diagonally;
+                -- lib.join_corners fills in a corner cell.
+                options = open_neighbours(cur, nil, DIAGONALS)
+            end
+            local best, best_score
+            for _, n in ipairs(options) do
+                -- Prefer going on along the curve, and not into a dead end (a
+                -- spur at a bend) when there is a way that continues.
+                local dead_end = #open_neighbours(n, cur) == 0
+                local d = along(cur, n)
+                local score = (dead_end and 1000 or 0) + (d < 0 and 100 or 0) + math.abs(d)
+                if not best_score or score < best_score then best, best_score = n, score end
+            end
+            s.cur = best
+            used = used + lib.COST.walk
         end
     end
-    return segments
+    return used, s.phase == "done"
+end
+
+--- The line's cells in order along the curve, as continuous segments (a curve that
+--- runs into another layer's cells or back near itself can split a line), in one go.
+--- @param cells PathCell[]
+--- @param loop_samples integer|nil  # see new_segmenter
+--- @return PathCell[][]
+function lib.segments(cells, loop_samples)
+    local s = lib.new_segmenter(cells, loop_samples)
+    lib.step_segments(s, math.huge)
+    return s.segments
 end
 
 --- Fill in a corner cell wherever a segment steps diagonally, or split it there
