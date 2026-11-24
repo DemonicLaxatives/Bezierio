@@ -14,7 +14,8 @@ local wires = require("scripts.build.wires")
 local lib = {}
 
 --- The description of a blueprint that carries its curve and preset.
-lib.NOTE = "Made with Bézierio. To get its curve and preset back, hold this blueprint and click Load from blueprint in the Bézierio window."
+lib.NOTE =
+"Made with Bézierio. To get its curve and preset back, hold this blueprint and click Load from generated blueprint in the Bézierio window."
 
 --- Work units per item, for budgeting.
 lib.COST = { entity = 1, tile = 1, wire = 1, write = 0.5 }
@@ -61,7 +62,10 @@ function lib.new_job(player, plan, label, source)
         chain_cursor = 1,
         entities = {},
         tiles = {},
-        min_x = math.huge, min_y = math.huge, max_x = -math.huge, max_y = -math.huge,
+        min_x = math.huge,
+        min_y = math.huge,
+        max_x = -math.huge,
+        max_y = -math.huge,
     }
 end
 
@@ -140,7 +144,8 @@ local function step_entities(job, budget)
             type = e.belt_type,
             rail_layer = e.rail_layer,
             -- the curve and preset, for loading them back
-            tags = (i == 1 and job.source) and { bezierio = { curve = job.source.curve, preset = job.source.preset } } or nil,
+            tags = (i == 1 and job.source) and { bezierio = { curve = job.source.curve, preset = job.source.preset } } or
+                nil,
         }
         if e.priority_targets then
             local list = {}

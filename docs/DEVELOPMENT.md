@@ -585,7 +585,7 @@ The blueprint writer (`build/blueprint.lua`) is the third, run by `jobs.lua`
 in place of the executor. Unless the player's `blueprint_source` setting
 is off, the blueprint's first entity carries a `bezierio` tag with the curve and
 preset export strings (a description holds at most 500 characters: too few), and
-the description a note. **Load from blueprint** (`gui/control.lua`) reads the tag
+the description a note. **Load from generated blueprint** (`gui/control.lua`) reads the tag
 from the held blueprint (cursor item, the active one in a book, or a library
 record) and loads both through the import paths (`curve_control.load`,
 `preset_control.load`).

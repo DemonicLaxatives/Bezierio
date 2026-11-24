@@ -203,8 +203,8 @@ step("a layer that isn't placed keeps its room", function(player)
   local same = #a == #b
   for i = 1, #a do same = same and b[i] and a[i].position.x == b[i].position.x and a[i].position.y == b[i].position.y end
   check(same and #a > 0, "the layer outside it where it was")
-  local caption = el(player, "layer_label_1").caption
-  check(type(caption) == "table" and caption[4] and caption[4][1] == "label.layer-not-placed", "the list says so")
+  local label = el(player, "layer_label_1")
+  check(label.tooltip and label.tooltip[1] == "tooltip.layer-not-placed" and label.style.font_color.r < 0.6, "the list says so: greyed, with a tooltip")
   check(not el(player, "layer_place_1").toggled, "the toggle shows it")
   dev("click", P, "layer_place_1")
   check(layers()[1].place == nil and #on_layer(dev("plan", P), 1) > 5, "placed again")

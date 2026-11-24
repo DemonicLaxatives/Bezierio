@@ -240,7 +240,7 @@ Done (side wall layers):
   the preview off.
 - Blueprints carry the curve and preset they were made from. A description holds
   at most 500 characters, too few for both, so they are tags on the blueprint's
-  first entity, with a note in the description; **Load from blueprint** reads them
+  first entity, with a note in the description; **Load from generated blueprint** reads them
   back (from the cursor, a book or the blueprint library). A per-player setting
   turns it off.
 - Test ground covers the whole area the scenarios clear: water from random map

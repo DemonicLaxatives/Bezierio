@@ -286,17 +286,20 @@ local function add_row(list, layer, selected, narrow)
         style = "slot_button",
     }
     if layer.placed_by and layer.quality and layer.quality ~= "normal" then select.quality = layer.quality end
+    -- What doesn't fit the row goes in its tooltip: not placed, under entities.
+    local notes = {}
+    if layer.place == false then notes[#notes + 1] = { "tooltip.layer-not-placed" } end
+    if registry.is_underlay(layer) then notes[#notes + 1] = { "", { "checkbox.under" }, ": ", { "tooltip.under" } } end
+    local tooltip = notes[1]
+    if notes[2] then tooltip = { "", notes[1], "\n", notes[2] } end
     local label = list.add {
         type = "label",
         name = "layer_label_" .. k,
-        caption = narrow and ("L" .. k)
-            or registry.is_underlay(layer) and { "label.layer-row-under", tostring(k), tostring(registry.thickness(layer)) }
-            or { "label.layer-row", tostring(k), tostring(registry.thickness(layer)) },
-        tooltip = layer.place == false and { "tooltip.layer-not-placed" } or nil,
+        caption = narrow and ("L" .. k) or { "label.layer-row", tostring(k), tostring(registry.thickness(layer)) },
+        tooltip = tooltip,
     }
-    -- (a layer that isn't placed: greyed, struck through in the caption)
+    -- (a layer that isn't placed: greyed, its tooltip says why)
     if layer.place == false then
-        label.caption = { "", label.caption, " ", { "label.layer-not-placed" } }
         label.style.font_color = { r = 0.5, g = 0.5, b = 0.5 }
     else
         label.style.font_color = palette.layer_color(k)
