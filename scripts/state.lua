@@ -12,6 +12,7 @@
 local registry = require("scripts.layers.registry")
 local curve_lib = require("scripts.curve.curve")
 local palette = require("scripts.palette")
+local presets_lib = require("scripts.presets")
 
 local lib = {}
 
@@ -84,13 +85,25 @@ function lib.new_work()
     return { revision = 0, plan = nil, draw = lib.new_draw_progress(), pending_build = nil, build = nil }
 end
 
+--- New players get the built-in presets after "Default" (the test mod turns
+--- this off: its scenarios count presets).
+lib.with_builtin_presets = true
+
 --- @return Controller
 function lib.new_controller()
+    local presets = { { name = "Default", layers = { [0] = registry.new_empty(0) } } }
+    -- (in the game only: reading them needs the game's helpers and prototypes)
+    if lib.with_builtin_presets and helpers and helpers.decode_string and prototypes then
+        for _, preset in ipairs(presets_lib.builtin()) do
+            preset.name = presets_lib.unique_name(presets, preset.name)
+            presets[#presets + 1] = preset
+        end
+    end
     return {
         ui = { preset_index = 1, draw_curve = false, preview_build = false, selected_point = nil, selected_layer = 0 },
         curve = curve_lib.new(),
         view = lib.default_view(),
-        presets = { { name = "Default", layers = { [0] = registry.new_empty(0) } } },
+        presets = presets,
         revision = 1,
         redraw = true,
         work = lib.new_work(),

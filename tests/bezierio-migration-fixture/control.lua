@@ -8,39 +8,27 @@
 ---@diagnostic disable-next-line: param-type-mismatch
 local function dev(fn, ...) return remote.call("bezierio-dev", fn, ...) end
 
--- Storage as written by schema 2 (the first 2.1 dev layout).
+-- Storage as 0.1.x left it (no schema_version; the curve projector building).
+-- Add the layout of a schema N here when a release migrates N -> N+1, and check
+-- its conversion in verify().
 local OLD = {
-  schema_version = 2,
-  controllers = {
-    [1] = {
-      state = { preset_indx = 1, draw_curve = true, preview_build = true, active_control_point = 3 },
-      curve_cache = { [0] = { raw_control_points = { [1] = { x = -30.3, y = 5 }, [3] = { x = 30, y = 5 }, [5] = { x = 7 } } } },
-      presets = { { name = "Default", layers = {
-        [0] = { idx = 0, priority = 100, placed_by = "stone-wall", name = "stone-wall", quality = "normal", size = 1, offset = 0, type = "wall", checkerboard = 0, radius = 2 },
-        [1] = { idx = 1, priority = 10, placed_by = "small-electric-pole", name = "small-electric-pole", quality = "normal", size = 2, offset = 0, type = "electric-pole", spacing = 6, wire_distance = 7 },
-        [-1] = { idx = -1, priority = 0, size = 1, offset = 0, type = "nil" },
-      } } },
-    },
-  },
-  sprites = {},
+  controllers = { [1] = { foo = 1 } },
+  curve_projectors = { [1] = { unit_number = 1 } },
 }
 
 script.on_init(function()
   dev("set_storage", OLD)
-  log("MIGRATION FIXTURE written, schema " .. dev("storage").schema_version)
+  log("MIGRATION FIXTURE written, schema " .. tostring(dev("storage").schema_version))
 end)
 
 local function verify(when)
   local s = dev("storage")
   local problems = {}
   local function check(cond, msg) if not cond then table.insert(problems, msg) end end
-  local c = s.controllers[1]
   check(s.schema_version == dev("schema_version"), "schema " .. tostring(s.schema_version))
-  check(c and c.curve.kind == "catmull_rom" and #c.curve.points == 2, "curve converted")
-  check(c and c.presets[1].layers[1].size == 1, "pole resized from its prototype")
-  check(c and c.presets[1].layers[-1].type == "empty", "nil layer -> empty")
-  check(c and c.view and c.view.curve_color == "blue", "view settings filled in")
-  check(c and c.work and c.work.draw, "jobs rebuilt")
+  check(s.curve_projectors == nil, "0.1 tables removed")
+  check(s.controllers and s.controllers[1] == nil or (s.controllers[1] and s.controllers[1].foo == nil), "0.1 controllers discarded")
+  check(s.rebuild_needed == nil, "rebuilt")
   if #problems == 0 then
     log("MIGRATION PASS (" .. when .. ")")
   else

@@ -168,12 +168,10 @@ save or a new game starts, right after `on_init`. Hence:
   first tick or event does the rebuild (`state.ensure_rebuilt`). The map editor
   starts paused, so a GUI event may come first.
 
-Files: `0.2.0.lua` discards 0.1.x data (no `schema_version`). The
-`0.2.0-dev-N.lua` files upgrade saves from development builds; they sort before
-`0.2.0.lua` (`-` < `.`) and are to be removed before the first release (see the
-roadmap). Name later ones after the mod version that introduces them. Names sort
-byte-wise, so `0.10.0.lua` would run before `0.9.0.lua`: once versions get there,
-rename or pad accordingly.
+Files: `0.2.0.lua` discards 0.1.x data (no `schema_version`); 0.2 development
+saves (an older schema) are reset by `on_configuration_changed`. Name later ones
+after the mod version that introduces them. Names sort byte-wise, so `0.10.0.lua`
+would run before `0.9.0.lua`: once versions get there, rename or pad accordingly.
 
 **Keep derived data out of storage.** Anything computed from the mod's code and
 the prototypes (the item picker filter, layer values like sizes and wire reach)
@@ -753,7 +751,7 @@ tests/run.sh bench                                     # timing (read the BENCH 
 | `feeds.lua` | Fluid connection targets in every facing (straight and diagonal, against the game), inserters picking from a belt and dropping into their turret (normal and long reach, straight and curved lines), pipe stubs reaching one network, and a plain pipe where the line has pipes-to-ground. |
 | `rails.lua` | The rail data; fits stay near calm curves, circles close, elevated track has ramps at both ends and supports in reach of every joint, slanted ends warn; signal counts follow the spacing (doubled both ways); planning progress never goes back. |
 | `shapes.lua` | What the handles mean; samples exactly on circles, (rotated) ellipses and arcs; direction; editing shapes and moving curves; spaced entities round a loop keep apart at the seam. |
-| `migrations.lua` | The files in `migrations/`, run like the game does, on old and current data. |
+| `migrations.lua` | The files in `migrations/`, run like the game does: 0.1 data discarded, pre-release dev data reset, current data untouched, newer data reset. |
 
 `helpers.plan` is the only place the tests touch the planner API.
 
@@ -779,8 +777,10 @@ tests/run.sh bench                                     # timing (read the BENCH 
   `tests/run_all.sh`.
 - `migrate-save.sh` creates a save with a copy of the mod that has no
   `migrations/` folder; the `bezierio-migration-fixture` mod writes old data into
-  its storage. It then loads the save with the real mod and the fixture checks the
-  result on the first tick.
+  its storage (0.1-era data for now). It then loads the save with the real mod and
+  the fixture checks the result on the first tick. When a release migrates schema
+  N -> N+1, the fixture writes schema N's layout instead, and `tests/unit/migrations.lua`
+  gets the same case (see the template there).
 
 **Lint** (`tests/lint/`, also in CI): `check.sh` type-checks the mod with the Lua
 language server and FMTK's Factorio API stubs (`LUALS=`, `LUALS_LIBRARY=`, see

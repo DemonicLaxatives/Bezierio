@@ -1,7 +1,6 @@
 -- 0.1.x -> 0.2.0: the curve projector building is gone and the data has nothing in
--- common with 0.2, so 0.1 data is discarded. Saves from 0.2 development builds
--- (schema_version set) are upgraded by the 0.2.0-dev-*.lua files instead, which
--- sort before this one.
+-- common with 0.2, so 0.1 data is discarded. (Saves from 0.2 development builds
+-- have a schema_version: state.on_configuration_changed resets an older one.)
 --
 -- Migrations run once per save, also when the mod is first added (after on_init),
 -- so this must do nothing on data that is already current.

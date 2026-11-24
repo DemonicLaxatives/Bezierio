@@ -27,7 +27,7 @@ release/          release and mod portal scripts, and their tests (see Releasing
 
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) explains how the mod works: storage,
 the per-tick job runner, the planner's stages, building, the GUI and the tests.
-[docs/ROADMAP.md](docs/ROADMAP.md) lists what's done and what's next.
+[docs/ROADMAP.md](docs/ROADMAP.md) lists what's left to do.
 [CLAUDE.md](CLAUDE.md) holds project rules for AI assistants (and people).
 
 ## Running it

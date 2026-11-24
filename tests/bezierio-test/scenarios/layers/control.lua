@@ -186,6 +186,22 @@ step("no switching presets while a layer's settings are open", function(player)
   check(#controller().presets == 1, "the copy deleted again")
 end, "idle")
 
+step("built-in presets, as new players get them", function(player)
+  dev("add_builtin_presets", P)
+  local list = controller().presets
+  check(#list == 4 and list[2].name == "early-game wall" and list[3].name == "mid-game wall" and list[4].name == "railway",
+    "after Default: " .. (list[2] and list[2].name or "?") .. ", " .. (list[3] and list[3].name or "?") .. ", " .. (list[4] and list[4].name or "?"))
+  local mid = list[3].layers
+  check(mid[-1].type == "turret" and mid[-1].name == "flamethrower-turret" and mid[-2].type == "pipe" and mid[0].name == "stone-wall",
+    "mid-game wall: flamethrowers, a pipe line, walls")
+  check(list[4].layers[1].type == "straight-rail" and list[4].layers[0].type == "electric-pole", "railway: rails and big poles")
+  for _ = 1, 3 do
+    dev("select", P, "preset_select", 2)
+    dev("click", P, "preset_delete")
+  end
+  check(#controller().presets == 1, "deleted again")
+end)
+
 step("pin: other GUIs don't close the window", function(player)
   dev("click", P, "main_pin_button")
   check(controller().ui.pinned == true and player.opened == nil, "pinned: not the opened GUI")

@@ -7,6 +7,7 @@
 --- way picking the item in the GUI does, so missing items, unknown qualities and
 --- out-of-range values are handled the same way.
 local registry = require("scripts.layers.registry")
+local builtin_strings = require("scripts.builtin_presets")
 
 local lib = {}
 
@@ -199,6 +200,19 @@ local function make_layer(idx, item, quality)
     local ok, layer = pcall(registry.new_layer, idx, item, quality)
     if not ok or registry.type_of(layer).hidden then return nil end
     return layer
+end
+
+--- The built-in presets (scripts/builtin_presets.lua), as presets; ones that
+--- can't be read are left out.
+--- @return Preset[]
+function lib.builtin()
+    local out = {}
+    for _, text in ipairs(builtin_strings) do
+        local json = helpers.decode_string(text)
+        local preset = json and lib.from_data(helpers.json_to_table(json), make_layer)
+        if preset then out[#out + 1] = preset end
+    end
+    return out
 end
 
 --- Add a preset from an export string and select it.

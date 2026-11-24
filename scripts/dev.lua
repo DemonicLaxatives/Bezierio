@@ -14,6 +14,10 @@ local state = require("scripts.state")
 local planner = require("scripts.build.planner")
 local jobs = require("scripts.jobs")
 local layer_view = require("scripts.gui.layer_view")
+local presets = require("scripts.presets")
+
+-- (the scenarios count presets: test players start with "Default" only)
+state.with_builtin_presets = false
 
 --- @param player_index integer
 --- @param path string[]|LuaGuiElement  # element names, starting from player.gui
@@ -102,6 +106,16 @@ remote.add_interface("bezierio-dev", {
     end,
     --- A drop-down choice as the player makes it, locks included (nothing on a
     --- disabled one).
+    --- Add the built-in presets to this player's, as a new player gets them.
+    add_builtin_presets = function(player_index)
+        local list = state.get(player_index).presets
+        for _, preset in ipairs(presets.builtin()) do
+            preset.name = presets.unique_name(list, preset.name)
+            list[#list + 1] = preset
+        end
+        local player = game.get_player(player_index)
+        if player then interactions["preset"].refresh(player) end
+    end,
     select_raw = function(player_index, path, index)
         local element = find(player_index, path)
         if not element.enabled then return end -- (the engine doesn't let the player use it)
