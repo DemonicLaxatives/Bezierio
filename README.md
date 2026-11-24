@@ -21,8 +21,7 @@ tests/            unit tests (plain Lua) and game test scenarios
 docs/             DEVELOPMENT.md (how it works), ROADMAP.md (what's next)
 mod-portal/       the mod portal page: description, FAQ, summary, images (with
                   their order and portal ids)
-release/          release scripts and their tests (see Releasing); mod portal
-                  sync (images.py, detail.py) still to come
+release/          release and mod portal scripts, and their tests (see Releasing)
 .github/          CI and release workflows
 ```
 
@@ -82,6 +81,26 @@ the "ModPortal: Upload Mods" permission).
 
 To try it locally: `python3 release/package.py --out dist` and
 `python3 release/validate.py --tag vX.Y.Z --zip dist/Bezierio_X.Y.Z.zip`.
+
+## The mod portal page
+
+`mod-portal/` is the page's one source of truth: `summary.txt`, `description.md`,
+`faq.md`, and `images/` (shown in the order of `images/order.txt`). Push a tag
+`portal-<anything>` (e.g. `portal-2026-11-25`) to bring the page in line, between
+releases too (`.github/workflows/portal.yml`):
+
+- `release/images.py` uploads images that are new or whose file changed (by
+  SHA1), sets the page's images in order (ones not in `order.txt` come off), and
+  records each image's SHA1 and portal id, URL and thumbnail in
+  `images/mod-portal-ids.json`. The workflow commits that file to the default
+  branch when the tag is its latest commit, otherwise leaves it as an artifact.
+- `release/detail.py` sends the texts changed since the previous `portal-*` tag
+  (all of them the first time), with the description's image links (raw GitHub
+  URLs in the repository) swapped for the portal's.
+
+Both take `--dry-run` (they only read the public page then; any non-empty
+`FACTORIO_API_KEY` will do). The key needs "ModPortal: Edit Mods" for this, and
+"ModPortal: Upload Mods" for releases: one secret with both.
 
 ## Contributing
 

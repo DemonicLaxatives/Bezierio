@@ -8,6 +8,8 @@ import os
 import requests
 
 BASE = "https://mods.factorio.com/api/v2/mods"
+#: The public read API (no key): a mod's page, images included.
+READ = "https://mods.factorio.com/api/mods"
 
 
 class PortalError(Exception):
@@ -15,12 +17,19 @@ class PortalError(Exception):
 
 
 class Portal:
-    def __init__(self, api_key=None, session=None, base=BASE):
+    def __init__(self, api_key=None, session=None, base=BASE, read=READ):
         self.api_key = api_key if api_key is not None else os.environ.get("FACTORIO_API_KEY", "")
         if not self.api_key:
             raise PortalError("no API key: set FACTORIO_API_KEY")
         self.session = session or requests.Session()
-        self.base = base
+        self.base, self.read = base, read
+
+    def mod_info(self, mod):
+        """The mod's page as the portal shows it (images: [{id, url, thumbnail}], ...)."""
+        response = self.session.get(f"{self.read}/{mod}/full", timeout=60)
+        if response.status_code >= 400:
+            raise PortalError(f"{mod}: HTTP {response.status_code}")
+        return response.json()
 
     def _post(self, url, data=None, files=None, auth=True):
         headers = {"Authorization": f"Bearer {self.api_key}"} if auth else {}

@@ -1,0 +1,65 @@
+# The mod portal page from mod-portal/, on pushing a portal-* tag (e.g.
+# portal-2026-11-25): images first, then the texts, between releases too.
+# Needs the repository secret FACTORIO_API_KEY with "ModPortal: Edit Mods".
+name: Mod portal page
+
+on:
+  push:
+    tags: ["portal-*"]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # (the previous portal-* tag, for what changed)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r release/requirements.txt
+      - name: Release scripts' tests
+        run: python -m pytest -q release/tests tests/lint
+
+      - name: Images
+        env:
+          FACTORIO_API_KEY: ${{ secrets.FACTORIO_API_KEY }}
+        run: |
+          python release/images.py
+          if git diff --quiet -- mod-portal/images/mod-portal-ids.json; then
+            echo "IMAGES_CHANGED=" >> "$GITHUB_ENV"
+          else
+            echo "IMAGES_CHANGED=--images-changed" >> "$GITHUB_ENV"
+          fi
+      - name: Texts
+        env:
+          FACTORIO_API_KEY: ${{ secrets.FACTORIO_API_KEY }}
+        run: python release/detail.py $IMAGES_CHANGED
+
+      # The portal's ids and URLs belong in the repository: commit them to the
+      # default branch when the tag is its latest commit; otherwise keep them as
+      # an artifact to commit by hand.
+      - name: Record the image ids
+        if: env.IMAGES_CHANGED != ''
+        id: record
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch origin "$DEFAULT_BRANCH"
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$DEFAULT_BRANCH")" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Mod portal image ids ($GITHUB_REF_NAME)" -- mod-portal/images/mod-portal-ids.json
+            git push origin "HEAD:$DEFAULT_BRANCH"
+          else
+            echo "::warning::$GITHUB_REF_NAME isn't the head of $DEFAULT_BRANCH: commit mod-portal-ids.json from the artifact by hand"
+            echo "artifact=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.record.outputs.artifact == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mod-portal-ids
+          path: mod-portal/images/mod-portal-ids.json

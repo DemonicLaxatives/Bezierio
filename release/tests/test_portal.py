@@ -17,6 +17,10 @@ class FakeSession:
     def __init__(self, *answers):
         self.answers, self.sent = list(answers), []
 
+    def get(self, url, timeout=None):
+        self.sent.append({"url": url, "get": True})
+        return FakeResponse(*self.answers.pop(0))
+
     def post(self, url, data=None, files=None, headers=None, timeout=None):
         self.sent.append({"url": url, "data": data, "files": files, "headers": headers})
         return FakeResponse(*self.answers.pop(0))
@@ -50,3 +54,9 @@ def test_images_are_set_in_order():
     session = FakeSession((200, {"success": True, "images": []}))
     portal.Portal("key", session).set_images("Bezierio", ["a", "b"])
     assert session.sent[0]["data"] == {"mod": "Bezierio", "images": "a,b"}
+
+
+def test_the_page_is_read_without_the_key():
+    session = FakeSession((200, {"images": [{"id": "a"}]}))
+    assert portal.Portal("key", session).mod_info("Bezierio")["images"] == [{"id": "a"}]
+    assert session.sent[0]["url"] == "https://mods.factorio.com/api/mods/Bezierio/full"

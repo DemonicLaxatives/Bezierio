@@ -437,7 +437,7 @@ Status (2026-11-24, uncommitted on `refactor`; `tests/run_all.sh` passes):
    - create a GitHub release with the zip and the changelog section as notes;
    - https://wiki.factorio.com/Mod_upload_API,
 
-## Modportal sync
+## Modportal sync (done: `portal-*` tags, `release/images.py`, `release/detail.py`, `.github/workflows/portal.yml`)
 - not via `vX.Y.Z`, let's figure out a different tag format, so we can update the details and images in between releases
 - as one tag for both images and details, images first, then details
 
