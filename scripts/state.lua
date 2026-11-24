@@ -25,7 +25,7 @@ local lib = {}
 --- @field pointer_mode "move"|nil        # clicks move the curve (until right-click)
 --- @field narrow boolean|nil            # the window is narrowed (everyday controls only)
 --- @field pinned boolean|nil            # the window stays open when other GUIs open
---- @field editing {idx: integer, backup: Layer|nil, new: boolean|nil, revision: integer|nil}|nil  # layer settings window open (backup: to cancel to; revision: when it opened)
+--- @field editing {idx: integer, backup: Layer|nil, new: boolean|nil, revision: integer|nil, locked: table<integer, true>|nil}|nil  # layer settings window open (backup: to cancel to; revision: when it opened; locked: main window elements greyed out, window.lock_main)
 --- @field reopen_main boolean|nil      # make the main window the opened GUI next tick (window.focus_main)
 
 --- @class Preset

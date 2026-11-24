@@ -65,6 +65,7 @@ remote.add_interface("bezierio-dev", {
     --- A click exactly as the player makes it, locks included.
     click_raw = function(player_index, path)
         local element = find(player_index, path)
+        if not element.enabled then return end -- (the engine doesn't let the player use it)
         if element.auto_toggle then element.toggled = not element.toggled end
         interactions.handle_event(event("on_gui_click", player_index, element, {
             button = defines.mouse_button_type.left, alt = false, control = false, shift = false,
@@ -98,6 +99,14 @@ remote.add_interface("bezierio-dev", {
         local element = as_player(player_index, find(player_index, path))
         element.state = checked
         interactions.handle_event(event("on_gui_checked_state_changed", player_index, element))
+    end,
+    --- A drop-down choice as the player makes it, locks included (nothing on a
+    --- disabled one).
+    select_raw = function(player_index, path, index)
+        local element = find(player_index, path)
+        if not element.enabled then return end -- (the engine doesn't let the player use it)
+        element.selected_index = index
+        interactions.handle_event(event("on_gui_selection_state_changed", player_index, element))
     end,
     select = function(player_index, path, index)
         local element = as_player(player_index, find(player_index, path))

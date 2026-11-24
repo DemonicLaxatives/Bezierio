@@ -36,7 +36,7 @@ lib.CHIP_ROWS = 4
 
 --- @param pane LuaGuiElement
 --- @param player_index integer
-local function fill_points(pane, player_index)
+local function fill_point_list(pane, player_index)
     pane.clear()
     local curve = state.curve(player_index)
     local list = curve_lib.active(curve)
@@ -125,6 +125,16 @@ local function fill_points(pane, player_index)
         end
         pane.add { type = "label", name = "shape_info", caption = caption }
     end
+end
+
+--- The point list, greyed out while a layer's settings are open.
+--- @param pane LuaGuiElement
+--- @param player_index integer
+local function fill_points(pane, player_index)
+    fill_point_list(pane, player_index)
+    local player = game.get_player(player_index)
+    local ui = state.ui(player_index)
+    if player and ui.editing then window.lock_main(player, ui) end
 end
 
 --- @param parent LuaGuiElement

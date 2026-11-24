@@ -28,7 +28,7 @@ end
 
 --- @param frame LuaGuiElement
 --- @param player LuaPlayer
-local function fill(frame, player)
+local function fill_bar(frame, player)
     frame.clear()
     local controller = state.get(player.index)
     local ui = controller.ui
@@ -78,6 +78,15 @@ local function fill(frame, player)
         { auto_toggle = true, toggled = open_mode == "export" })
     tool_button(bar, "preset_import", "utility/import", "preset-import", "toggle_import",
         { auto_toggle = true, toggled = open_mode == "import" })
+end
+
+--- The preset bar, greyed out while a layer's settings are open.
+--- @param frame LuaGuiElement
+--- @param player LuaPlayer
+local function fill(frame, player)
+    fill_bar(frame, player)
+    local ui = state.ui(player.index)
+    if ui.editing then window.lock_main(player, ui) end
 end
 
 --- @param parent LuaGuiElement

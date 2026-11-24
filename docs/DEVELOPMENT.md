@@ -622,8 +622,12 @@ unique across all of them):
 
 - **Layer settings** (`bezierio_layer_window`, `layer_view.open_settings`): a
   layer's item or settings button opens it, so does a new layer. It becomes
-  `player.opened`, and the main window is locked until it closes:
+  `player.opened`, and the main window is locked until it closes: its controls
+  are greyed out (`window.lock_main`, again after the layer list, point list or
+  preset bar is rebuilt meanwhile; it remembers which it disabled, so
+  `unlock_main` leaves controls disabled for their own reasons alone), and
   `interactions.handle_event` ignores events from it while `ui.editing` is set.
+  (Switching presets then would have sent the edits to the other preset.)
   (`ignored_by_interaction` on the main window would pass clicks through to the
   world, where the pointer acts on them.) Edits apply live; `ui.editing` keeps a copy of the layer from when it
   opened. OK (`accept`) keeps the edits, Cancel or Esc (`on_gui_closed`) puts the
@@ -702,6 +706,14 @@ the text; they remove the marker then.
 When adding a key: write its comment, marked `[unreviewed]`. When changing what
 an element does, update the comment and mark it `[unreviewed]` again.
 
+Shortcuts are written as the player's own bindings, never as fixed keys:
+`__CONTROL__bezierio-pointer__` (the mod's custom inputs), `__CONTROL__toggle-menu__`
+(the game's controls, as the game's own locale names them), so they stay right
+when rebound. They read like "Left mouse button" or "Shift + Left mouse button".
+A headless game can't resolve them ("Unknown control sequence"), so check them
+in a normal game. Keys of text boxes (Enter, Ctrl+C) aren't controls and stay
+as text.
+
 Keys built at runtime (`"tooltip." .. field.name`, `"label.command-" .. mode`,
 `"bezierio-message." .. error`) don't show up in a search for the full key:
 adding a mode, field or error means adding its key.
@@ -756,7 +768,8 @@ tests/run.sh bench                                     # timing (read the BENCH 
   first. The hooks act as a player would: on the main window while a layer's
   settings are open, they press OK first; for a name that isn't there (a layer
   setting after that), they open the selected layer's settings again.
-  `click_raw` clicks without either, to test the lock. `set_budget` sets the
+  `click_raw` / `select_raw` act without either, to test the lock (and, like the
+  engine, do nothing on a disabled element). `set_budget` sets the
   work budget.
 - Steps that start work wait for `dev("idle")`, i.e. for jobs to catch up.
 - Scenarios share helpers, a standard curve and layer stack, and the step runner

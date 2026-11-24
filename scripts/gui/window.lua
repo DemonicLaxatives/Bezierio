@@ -55,6 +55,57 @@ function lib.find(player, name)
     return nil
 end
 
+--- Element types a player can act on (labels only with an action: the clickable
+--- warnings and point chips).
+local INTERACTIVE = {
+    ["button"] = true, ["sprite-button"] = true, ["drop-down"] = true, ["list-box"] = true,
+    ["slider"] = true, ["textfield"] = true, ["text-box"] = true, ["checkbox"] = true,
+    ["radiobutton"] = true, ["switch"] = true, ["choose-elem-button"] = true,
+}
+
+--- @param element LuaGuiElement
+--- @param fn fun(element: LuaGuiElement)
+local function walk(element, fn)
+    fn(element)
+    for _, child in pairs(element.children) do walk(child, fn) end
+end
+
+--- While a layer's settings are open, grey out the main window's controls, so
+--- nothing there looks usable (interactions.lua ignores its events anyway). The
+--- ones greyed out here are remembered (`editing.locked`, by element index), so
+--- unlocking leaves those disabled for their own reasons (layer 0's delete)
+--- alone. Run again after part of the window was rebuilt meanwhile.
+--- @param player LuaPlayer
+--- @param ui InterfaceState
+function lib.lock_main(player, ui)
+    local main = lib.get(player)
+    local editing = ui.editing
+    if not (main and editing) then return end
+    local before, now = editing.locked or {}, {}
+    walk(main, function(el)
+        local interactive = INTERACTIVE[el.type] or (el.type == "label" and el.tags.action ~= nil)
+        if not interactive then return end
+        if before[el.index] then
+            now[el.index] = true
+        elseif el.enabled then
+            el.enabled = false
+            now[el.index] = true
+        end
+    end)
+    editing.locked = now
+end
+
+--- Undo lock_main (the layer settings window closed).
+--- @param player LuaPlayer
+--- @param locked table<integer, true>|nil
+function lib.unlock_main(player, locked)
+    local main = lib.get(player)
+    if not (main and locked) then return end
+    walk(main, function(el)
+        if locked[el.index] then el.enabled = true end
+    end)
+end
+
 --- Set while on_gui_closed runs (interactions.lua).
 lib.in_closed_event = false
 

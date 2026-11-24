@@ -390,6 +390,9 @@ function lib.fill(column, player_index)
     add_bar(column, -1)
     local selected = list["layer_select_" .. ui.selected_layer]
     if selected then rows.scroll_to_element(selected) end
+    -- (rebuilt while a layer's settings are open: grey the new rows out too)
+    local player = game.get_player(player_index)
+    if player and ui.editing then window.lock_main(player, ui) end
 end
 
 --- @param parent LuaGuiElement
@@ -432,6 +435,7 @@ function lib.accept(player)
     local ui = state.ui(player.index)
     local frame = player.gui.screen[lib.WINDOW]
     if not (ui.editing or frame) then return end
+    window.unlock_main(player, ui.editing and ui.editing.locked)
     ui.editing = nil
     if frame then frame.destroy() end
     window.focus_main(player, ui)
@@ -512,6 +516,7 @@ function lib.open_settings(player, idx, new)
     frame.force_auto_center()
     player.opened = frame
     lib.refresh(player)
+    window.lock_main(player, ui)
 end
 
 return lib
