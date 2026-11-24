@@ -86,3 +86,31 @@ def test_order_must_name_real_files(tmp_path):
     d = folder(tmp_path, {"a.png": b"A"}, ["a.png", "missing.png"])
     with pytest.raises(common.ReleaseError, match="missing.png"):
         images.sync(FakePortal(), "Bezierio", d)
+
+
+class StoredButNotShown(FakePortal):
+    """The portal keeps an image off the page: uploading it again is refused."""
+
+    def __init__(self, stored):
+        super().__init__()
+        self.stored = stored
+
+    def add_image(self, mod, path):
+        image_id = hashlib.sha1(path.read_bytes()).hexdigest()
+        if image_id in self.stored:
+            import portal
+            raise portal.PortalError("refused", "InvalidRequest", "Image already exists")
+        return super().add_image(mod, path)
+
+    def set_images(self, mod, ids):
+        self.calls.append(("set", list(ids)))
+        self.page = [{"id": i, "url": f"https://assets/{i}.png", "thumbnail": ""} for i in ids]
+        return {"success": True, "images": self.page}
+
+
+def test_an_image_stored_but_off_the_page_is_put_back(tmp_path):
+    d = folder(tmp_path, {"a.png": b"A"}, ["a.png"])
+    client = StoredButNotShown({sha(b"A")})
+    changed, entries = images.sync(client, "Bezierio", d)
+    assert changed and client.calls == [("set", [sha(b"A")])]
+    assert entries[0]["id_on_mod_portal"] == sha(b"A") and entries[0]["url"] == f"https://assets/{sha(b'A')}.png"

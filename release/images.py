@@ -79,8 +79,16 @@ def sync(client, mod, images_dir=IMAGES, dry_run=False):
         print(f"upload {name}")
         if dry_run:
             continue
-        image = client.add_image(mod, images_dir / name)
-        on_portal[image["id"]] = image
+        try:
+            image = client.add_image(mod, images_dir / name)
+        except portal.PortalError as e:
+            # Uploaded before but not on the page (an earlier run stopped in
+            # between): the portal keeps it under its SHA1, so use that.
+            if "already exists" not in (e.message or ""):
+                raise
+            print("  (the portal has it already)")
+            image = {"id": files[name]}
+        on_portal.setdefault(image["id"], image)
         ids[name] = image["id"]
     wanted = [ids[n] for n in order]
     changed = bool(uploads) or portal_order != wanted

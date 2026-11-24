@@ -60,3 +60,10 @@ def test_the_page_is_read_without_the_key():
     session = FakeSession((200, {"images": [{"id": "a"}]}))
     assert portal.Portal("key", session).mod_info("Bezierio")["images"] == [{"id": "a"}]
     assert session.sent[0]["url"] == "https://mods.factorio.com/api/mods/Bezierio/full"
+
+
+def test_upload_tokens_stay_out_of_messages():
+    session = FakeSession((200, {"upload_url": "https://uploads/upload/image/token/SECRET"}), (400, {"error": "InvalidRequest", "message": "Image already exists"}))
+    with pytest.raises(portal.PortalError) as e:
+        portal.Portal("key", session).add_image("Bezierio", __file__)
+    assert "SECRET" not in str(e.value) and e.value.message == "Image already exists"

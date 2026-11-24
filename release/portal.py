@@ -15,6 +15,15 @@ READ = "https://mods.factorio.com/api/mods"
 class PortalError(Exception):
     """The portal refused (its `error` and `message`), or answered oddly."""
 
+    def __init__(self, text, error=None, message=None):
+        super().__init__(text)
+        self.error, self.message = error, message
+
+
+def where(url):
+    """A URL for messages: upload URLs carry a one-time token, which logs mustn't."""
+    return url.split("/token/")[0] + "/token/..." if "/token/" in url else url
+
 
 class Portal:
     def __init__(self, api_key=None, session=None, base=BASE, read=READ):
@@ -37,9 +46,10 @@ class Portal:
         try:
             body = response.json()
         except ValueError:
-            raise PortalError(f"{url}: HTTP {response.status_code}, not JSON")
+            raise PortalError(f"{where(url)}: HTTP {response.status_code}, not JSON")
         if response.status_code >= 400 or "error" in body:
-            raise PortalError(f"{url}: {body.get('error', response.status_code)}: {body.get('message', '')}")
+            raise PortalError(f"{where(url)}: {body.get('error', response.status_code)}: {body.get('message', '')}",
+                              body.get("error"), body.get("message"))
         return body
 
     def upload_release(self, mod, zip_path):

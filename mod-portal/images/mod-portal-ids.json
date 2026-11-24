@@ -26,5 +26,12 @@
         "id_on_mod_portal": "bb156b097c8c4ce949d2be004f2ee84397f46f50",
         "url": "https://assets-mod.factorio.com/assets/bb156b097c8c4ce949d2be004f2ee84397f46f50.png",
         "thumbnail": "https://assets-mod.factorio.com/assets/bb156b097c8c4ce949d2be004f2ee84397f46f50.thumb.png"
+    },
+    {
+        "name_in_repo": "expanded-gui.png",
+        "sha1": "a2fae6ad97691f8d250e14b57faa3d1cd4163d8b",
+        "id_on_mod_portal": "a2fae6ad97691f8d250e14b57faa3d1cd4163d8b",
+        "url": "https://assets-mod.factorio.com/assets/a2fae6ad97691f8d250e14b57faa3d1cd4163d8b.png",
+        "thumbnail": "https://assets-mod.factorio.com/assets/a2fae6ad97691f8d250e14b57faa3d1cd4163d8b.thumb.png"
     }
 ]
