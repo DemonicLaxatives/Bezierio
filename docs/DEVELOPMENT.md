@@ -508,16 +508,30 @@ explosives) and lays cover tiles; **Super force** (`superforced`) also removes
 the player's own and neutral entities in the way.
 
 Cover (`build/cover.lua`, forced modes): an entity needs it where a tile's
-collision mask meets its own (water and walls share `water_tile`); a planned
-floor tile where its item's `place_as_tile_result` can't go on the tile there.
-The cover is the first of the player's `cover_tiles` setting that can go on that
-tile (its `condition` / `invert` / `tile_condition`) and takes what's planned,
-else the tile's `default_cover_tile` (water: landfill, lava: foundation,
-ammoniacal ocean: ice platform, empty space: space platform foundation); none:
-blocked. Ghosts: a tile ghost (an entity ghost may stand on a tile ghost, and a
-floor ghost on a cover ghost); instant: `set_tiles` at once. A force build
-checks first that nothing it won't remove is in the way, so a blocked spot isn't
-left with landfill. Elevated pieces need none.
+collision mask meets its own (water and walls share `water_tile`; ice and
+heat-needing entities share `meltable`); a planned floor tile where its item's
+`place_as_tile_result` can't go on the tile there. Cover takes up to two layers:
+ammoniacal ocean takes an ice platform, which a wall still can't stand on, so
+concrete goes on top; rough ice takes concrete directly. At each layer the
+choice is the first that can go on what's below (its `condition` / `invert` /
+`tile_condition`): the player's `cover_tiles` setting in order, then that tile's
+`default_cover_tile` (water: landfill, lava: foundation, ammoniacal ocean: ice
+platform, empty space: space platform foundation), then any tile item by its
+tile's `order` (stone path, concrete, ... first). Under a planned floor tile only
+foundation tiles go. Nothing is named for a planet: modded ones work the same
+way. A cover ghost already in the cell is built on. Ghosts: tile ghosts, stacked
+(an entity ghost stands on the top one); instant: `set_tiles`, one layer after
+the other (concrete on ice platform becomes the game's frozen concrete, the
+ocean and the platform hidden below). A force build checks first that nothing
+it won't remove is in the way, so a blocked spot isn't left with landfill.
+Elevated pieces need none.
+
+With ghosts, nothing is placed that the player couldn't place, in any mode: an
+entity whose `surface_conditions` the surface doesn't meet (rails need gravity:
+none on a space platform) is blocked, and after super force has cleared the way
+(marked for deconstruction) the game's placement check must pass, so tiles the
+entity can't stand on or another force's buildings still block it (track keeps
+going over other track). The map editor and cheat mode skip both.
 
 The executor walks the plan's tiles, then its entities. For each placement it:
 

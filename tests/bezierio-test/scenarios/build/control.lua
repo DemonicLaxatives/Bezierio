@@ -528,6 +528,45 @@ step("... landfill listed: landfill on water, still foundation on lava", functio
   s.set_tiles({ { name = "grass-1", position = storage.wet2[1] }, { name = "grass-1", position = storage.wet2[2] } })
 end)
 
+-- Aquilo's ground: ammoniacal ocean takes an ice platform, and a wall (which
+-- needs heat: `meltable`) can't stand on ice, so concrete goes on top; on rough
+-- ice, just concrete. Inferred from the prototypes.
+step("cover in two layers: ammoniacal ocean and rough ice (with Space Age)", function(player)
+  if not prototypes.tile["ammoniacal-ocean"] then return end
+  local s = player.surface
+  flow.clear_build(s)
+  local walls = planned_walls(dev("plan", P))
+  storage.ocean, storage.ice = cell_of(walls[5].position), cell_of(walls[6].position)
+  storage.ocean_wall, storage.ice_wall = walls[5].position, walls[6].position
+  s.set_tiles({ { name = "ammoniacal-ocean", position = storage.ocean }, { name = "ice-rough", position = storage.ice } })
+  dev("click", P, "build")
+end, "idle")
+
+step("... ghosts: ice platform and concrete on the ocean, concrete on the ice", function(player)
+  if not prototypes.tile["ammoniacal-ocean"] then return end
+  local s = player.surface
+  local ocean, ice = tile_ghost_names(s, storage.ocean), tile_ghost_names(s, storage.ice)
+  check(ocean["ice-platform"] and ocean.concrete, "ocean: ice platform and concrete ghosts")
+  check(ice.concrete and not ice["ice-platform"], "rough ice: a concrete ghost")
+  check(wall_ghost_at(s, storage.ocean_wall) and wall_ghost_at(s, storage.ice_wall), "wall ghosts on both")
+  flow.clear_build(s)
+  player.cheat_mode = true
+  dev("click", P, "build")
+end, "idle")
+
+step("... cheat mode: real walls on concrete", function(player)
+  if not prototypes.tile["ammoniacal-ocean"] then return end
+  local s = player.surface
+  local o, i = storage.ocean, storage.ice
+  check(s.find_entity("stone-wall", storage.ocean_wall) and s.find_entity("stone-wall", storage.ice_wall), "walls built")
+  check(s.get_tile(o.x, o.y).name:find("concrete") and s.get_hidden_tile({ o.x, o.y }) == "ice-platform",
+    "ocean: concrete over ice platform: " .. s.get_tile(o.x, o.y).name)
+  check(s.get_tile(i.x, i.y).name:find("concrete"), "rough ice: concrete: " .. s.get_tile(i.x, i.y).name)
+  player.cheat_mode = false
+  flow.clear_build(s)
+  s.set_tiles({ { name = "grass-1", position = o }, { name = "grass-1", position = i } })
+end)
+
 -- The undo stack holds 100 items: once full, its size stops growing, and the
 -- build's actions must still go into one item.
 step("undo: a build with the stack full", function(player)

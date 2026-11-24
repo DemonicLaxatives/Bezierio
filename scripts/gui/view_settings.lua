@@ -153,7 +153,7 @@ function lib.open(player)
         mouse_button_filter = { "left" },
     }
     local pane = frame.add { type = "frame", name = "view_settings", direction = "vertical", style = "inside_shallow_frame_with_padding" }
-    pane.style.width = 320
+    pane.style.minimal_width = 320 -- (wider when its rows need it: the cover tile slots)
     fill(pane, player.index)
 
     local main = window.get(player)
@@ -220,8 +220,8 @@ lib["set_seconds"] = function(e)
     e.element.text = tostring(value)
 end
 
---- The cover tiles in order: only tiles that are a foundation for others
---- (landfill, foundation, ...); empty slots close up.
+--- The cover tiles in order: any tile item (landfill, foundation, concrete, ...:
+--- build/cover.lua tries each where it can go); empty slots close up.
 --- @param e EventData.on_gui_elem_changed
 lib["set_cover"] = function(e)
     local player = game.get_player(e.player_index)
@@ -233,7 +233,7 @@ lib["set_cover"] = function(e)
         local name = button and button.elem_value --[[@as string|nil]]
         local item = name and prototypes.item[name]
         local r = item and item.place_as_tile_result
-        if r and r.result.is_foundation then
+        if r then
             local seen = false
             for _, other in ipairs(list) do seen = seen or other == name end
             if not seen then list[#list + 1] = name end

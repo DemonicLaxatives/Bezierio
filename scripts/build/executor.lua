@@ -165,19 +165,35 @@ local function tile_item(name)
     return item and prototypes.item[item] or nil
 end
 
---- A cover tile ghost already at a cell (from this build, or before) whose tile
---- takes what's planned.
---- @param surface LuaSurface
+--- Cover choices already worked out: by priority list, start tile and what's
+--- planned (a per-session cache: the prototypes don't change while the game runs).
+--- @type table<string, {tile: string, item: string}[]|false>
+local chosen = {}
+
+--- What to lay at a cell, bottom first, so that `takes` holds: {} when it holds
+--- already (the ground, or a tile ghost there), nil when nothing fits. A cover
+--- ghost already there (ice platform from an earlier build) is built on.
+--- @param job BuildJob
 --- @param x integer
 --- @param y integer
+--- @param what string      # what's planned (for the cache)
 --- @param takes fun(tile: LuaTilePrototype): boolean
---- @return boolean
-local function cover_ghost_at(surface, x, y, takes)
+--- @param foundations_only boolean
+--- @return {tile: string, item: string}[]|nil
+local function cover_plan(job, x, y, what, takes, foundations_only)
+    local surface = job.surface
+    local start = surface.get_tile(x, y).prototype
+    if takes(start) then return {} end
     for _, ghost in pairs(surface.find_entities_filtered { type = "tile-ghost", position = { x + 0.5, y + 0.5 } }) do
         local t = prototypes.tile[ghost.ghost_name]
-        if t and t.is_foundation and takes(t) then return true end
+        if t then
+            if takes(t) then return {} end
+            if t.is_foundation then start = t end
+        end
     end
-    return false
+    local key = table.concat(job.cover_tiles or {}, ",") .. "|" .. start.name .. "|" .. what
+    if chosen[key] == nil then chosen[key] = cover.choose(start, takes, job.cover_tiles, foundations_only) or false end
+    return chosen[key] or nil
 end
 
 --- @param job BuildJob
@@ -210,13 +226,14 @@ local function build_tile(job, player, output, tile)
             result.blocked = result.blocked + 1
             return
         end
-        local below = cover_ghost_at(surface, tile.x, tile.y, function(t) return cover.item_goes_on(item, t) end)
-        if not below then
-            local c = cover.choose(here, function(t) return cover.item_goes_on(item, t) end, job.cover_tiles)
-            if not c then
-                result.blocked = result.blocked + 1
-                return
-            end
+        -- (only foundations under a floor: no concrete under a stone path)
+        local layers = cover_plan(job, tile.x, tile.y, "tile:" .. tile.name,
+            function(t) return cover.item_goes_on(item, t) end, true)
+        if not layers then
+            result.blocked = result.blocked + 1
+            return
+        end
+        for _, c in ipairs(layers) do
             with_undo(job, player, output.place_cover, { x = tile.x, y = tile.y, tile = c.tile })
             result.covered = (result.covered or 0) + 1
         end
@@ -350,6 +367,19 @@ local function obstacle_area(prototype, entity)
     return { left_top = { x = p.x + l, y = p.y + t }, right_bottom = { x = p.x + r, y = p.y + b } }
 end
 
+--- Does the surface meet the entity's surface conditions (gravity, pressure, ...)?
+--- Rails need gravity: none on a space platform.
+--- @param surface LuaSurface
+--- @param prototype LuaEntityPrototype
+--- @return boolean
+local function surface_allows(surface, prototype)
+    for _, c in pairs(prototype.surface_conditions or {}) do
+        local value = surface.get_property(c.property)
+        if (c.min and value < c.min) or (c.max and value > c.max) then return false end
+    end
+    return true
+end
+
 --- Types a force build removes when they're in the way.
 local NATURAL = { "tree", "simple-entity", "cliff" }
 local IS_NATURAL = { tree = true, ["simple-entity"] = true, cliff = true }
@@ -380,11 +410,10 @@ local function lay_cover(job, player, output, prototype, area)
     local function takes(t) return not cover.entity_needs(prototype, t) end
     local todo = {}
     for _, c in ipairs(cells_of(area)) do
-        local here = surface.get_tile(c.x, c.y).prototype
-        if cover.entity_needs(prototype, here) and not cover_ghost_at(surface, c.x, c.y, takes) then
-            local choice = cover.choose(here, takes, job.cover_tiles)
-            if not choice then return false end
-            todo[#todo + 1] = { x = c.x, y = c.y, tile = choice.tile }
+        if cover.entity_needs(prototype, surface.get_tile(c.x, c.y).prototype) then
+            local layers = cover_plan(job, c.x, c.y, prototype.name, takes, false)
+            if not layers then return false end
+            for _, layer in ipairs(layers) do todo[#todo + 1] = { x = c.x, y = c.y, tile = layer.tile } end
         end
     end
     for _, cell in ipairs(todo) do
@@ -472,6 +501,15 @@ local function build_entity(job, player, output, entity)
         }
     end
 
+    -- Ghosts the game wouldn't let the player place aren't placed in any mode:
+    -- surface conditions (rails on a space platform). In the map editor and cheat
+    -- mode, anything goes.
+    local ghosts = job.output == "ghost"
+    if ghosts and not surface_allows(surface, prototype) then
+        result.blocked = result.blocked + 1
+        return
+    end
+
     -- Cover first, where the ground can't take it (forced: only if nothing that
     -- stays is in the way).
     if job.mode ~= "normal" and entity.rail_layer ~= "elevated" and not IS_ELEVATED[prototype.type] then
@@ -511,6 +549,13 @@ local function build_entity(job, player, output, entity)
                     with_undo(job, player, output.clear, other)
                 end
             end
+        end
+        -- With the way cleared (marked for deconstruction), the ghost must still
+        -- pass the game's check: tiles it can't stand on, what wasn't cleared
+        -- (another force's). Track keeps going over other track.
+        if ghosts and not track and not placeable() then
+            result.blocked = result.blocked + 1
+            return
         end
     elseif job.mode == "normal" then
         if not placeable() then

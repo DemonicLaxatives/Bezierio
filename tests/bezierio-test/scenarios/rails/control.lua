@@ -334,4 +334,31 @@ step("super force: elevated track over ground track", function(player)
   dev("set_checked", P, "elevated", false)
 end)
 
+-- Surface conditions hold for every mode with ghosts: rails need gravity (none on
+-- a space platform), so even super force places no rail ghosts without it.
+local function rails_need_gravity()
+  for _, c in pairs(prototypes.entity["straight-rail"].surface_conditions or {}) do
+    if c.property == "gravity" then return true end
+  end
+  return false
+end
+
+step("no gravity: super force places no rail ghosts", function(player)
+  if not rails_need_gravity() then return end
+  local s = player.surface
+  clear_all(s)
+  storage.gravity = s.get_property("gravity")
+  s.set_property("gravity", 0)
+  dev("click", P, "super_build")
+end, "idle")
+
+step("... none, and the walls still there", function(player)
+  if not rails_need_gravity() then return end
+  local s = player.surface
+  local rails = 0
+  for _, name in ipairs(RAILS) do rails = rails + #s.find_entities_filtered { ghost_name = name } end
+  check(rails == 0, "no rail ghosts without gravity: " .. rails)
+  s.set_property("gravity", storage.gravity)
+end)
+
 flow.run("rails")
