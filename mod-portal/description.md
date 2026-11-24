@@ -26,7 +26,7 @@ Draw a curve, stack up layers of walls, floors, power lines, turrets, belts, pip
     - turrets facing outward or inward, with targeting priorities, and an inserter or pipe feed from a belt or pipe layer next to them;
     - radars, solar panels, accumulators, roboports, lamps, land mines;
     - belts and pipes as continuous lines, with undergrounds and pumps;
-    - rails following the curve the best they can, with signals; elevated rails supported.
+    - rails following the curve as best they can, with signals; elevated rails supported.
 - **Presets:** save layer stacks, and share them (or curves) as strings.
 - **Builds** like the game's: Build, Force build and Super force build. One build order is just one undo step.
 - **Blueprints** that snap onto the preview and remember the curve and preset they were made from.
@@ -48,25 +48,41 @@ Draw a curve, stack up layers of walls, floors, power lines, turrets, belts, pip
 
 3. **Toggle Draw** to see the curve and its points.
 
-4. **Set up the layers.** Layer 0 runs along the middle; layers 1, 2, ... stack to the right of the direction of travel, −1, −2, ... to the left. Use the + bars to add a layer, and its item or settings button to open its settings (OK keeps the changes, Cancel or Esc puts it back). Each layer has an Offset (gap to the next layer in) and the settings of its kind: width, spacing, wires, facing, ammo, lines, signals, and so on (hover them for what they do). The two toggles in front of a layer choose whether it's built and whether it's drawn in the preview. The preset bar above the list saves and switches layer stacks.
+4. **Set up the layers.**
 
-5. **Toggle Preview** to see what would be built, coloured by layer. The summary shows the length and the items needed (hover for each layer's), and warns about bends too tight for the inner layers, pole gaps, and entities that won't get power, ammo or fluid (click a warning to highlight them).
+    - layer 0 runs along the middle; layers 1, 2, ... stack to the right of the direction of travel, −1, −2, ... to the left;
+    - use the + bars to add a layer;
+    - configure a layer with its item or settings button:
+        - its kind, specified by the item type you choose;
+        - an Offset (gap to the next layer in);
+        - the settings of its kind: width, spacing, wires, facing, ammo, lines, signals, and so on (hover for tooltips);
+    - the two toggles in front of a layer choose whether it's built and whether it's drawn in the preview;
+    - the preset bar above the list saves and switches layer stacks.
+
+5. **Toggle Preview** to see what would be built, coloured by layer. The summary shows the length and the items needed, and warns about bends too tight for the inner layers, pole gaps, and entities that won't get power, ammo or fluid (click a warning to highlight them).
 
 6. **Build:**
 
     - **Build** places ghosts wherever nothing is in the way;
-    - **Force build** also marks trees, rocks and cliffs in the way for deconstruction, and lays landfill (on water), foundation (on lava) or other cover where the ground can't take what's planned (which cover comes first is an optional setting);
+    - **Force build** also marks trees, rocks and cliffs in the way for deconstruction, and lays landfill (on water), foundation (on lava) and so on where the ground can't take what's planned;
     - **Super force build** also marks for deconstruction your own buildings that are in the way;
     - **Generate blueprint** puts the build in your cursor, snapping onto the preview. **Load from generated blueprint** gets the curve and preset back from it.
 
     In the map editor or cheat mode, the build is real straight away. While it plans or builds, the summary shows the progress; its ✕ cancels it.
 
-Planning, preview and building take a moment for big curves; *Work per tick* in the map settings trades speed against smoothness. In the map editor, unpause the game, or nothing happens.
+Planning, preview and building take a moment for big curves; *Work per tick* in the map settings trades speed against smoothness.
+
+## Known issues
+Some issues will crop up, and some manual post-processing is expected.
+
+- Sometimes layers collide and override each other.
+- Parallel belts in the same layer can collide with one another.
+- Turrets don't always get properly fed; in most cases there should be a warning on that.
 
 ## Compatibility
 
 - Factorio 2.1.
 - Space Age: works on every surface, with its turrets, foundation, ice platform and elevated rails.
-- Quality: pick the quality to build.
+- Quality: pick the quality to build with.
 
 Feedback and crash logs are welcome on the mod portal or on GitHub.
