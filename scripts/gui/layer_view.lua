@@ -256,7 +256,7 @@ local function add_row(list, layer, selected, narrow)
     local place = list.add {
         type = "sprite-button",
         name = "layer_place_" .. k,
-        sprite = "bezierio-force-build",
+        sprite = "bezierio-build",
         tooltip = { "tooltip.place" },
         auto_toggle = true,
         toggled = layer.place ~= false,

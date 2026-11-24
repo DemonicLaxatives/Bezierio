@@ -386,6 +386,148 @@ step("blueprint without curve and preset when turned off", function(player)
   check(controller().ui.preset_index == 1 and #controller().presets == storage.preset_count, "back to the first preset")
 end, "idle")
 
+-- Build modes (as the game's, FFF-383): Build leaves trees and water alone; Force
+-- build marks trees and lays cover (landfill on water) under walls and floor.
+local function cell_of(position) return { x = math.floor(position.x), y = math.floor(position.y) } end
+
+step("build modes: water under walls and floor, a tree in the way", function(player)
+  local s = player.surface
+  flow.clear_build(s)
+  local plan = dev("plan", P)
+  local walls = planned_walls(plan)
+  storage.wet = {}
+  local tiles = {}
+  for i = 5, 8 do
+    local c = cell_of(walls[i].position)
+    storage.wet[#storage.wet + 1] = c
+    tiles[#tiles + 1] = { name = "water", position = c }
+  end
+  storage.wet_floor = { x = plan.tiles[3].x, y = plan.tiles[3].y }
+  tiles[#tiles + 1] = { name = "water", position = storage.wet_floor }
+  s.set_tiles(tiles)
+  storage.tree3 = s.create_entity { name = "tree-01", position = walls[15].position }
+  storage.wet_walls = { walls[5].position, walls[6].position, walls[7].position, walls[8].position }
+  dev("click", P, "normal_build")
+end, "idle")
+
+local function wall_ghost_at(s, position)
+  return s.find_entities_filtered { ghost_name = "stone-wall", position = position, limit = 1 }[1]
+end
+local function tile_ghost_names(s, c)
+  local names = {}
+  for _, g in pairs(s.find_entities_filtered { type = "tile-ghost", position = { c.x + 0.5, c.y + 0.5 } }) do names[g.ghost_name] = true end
+  return names
+end
+
+step("... Build: nothing on water, the tree left standing", function(player)
+  local s = player.surface
+  local on_water = 0
+  for _, p in ipairs(storage.wet_walls) do if wall_ghost_at(s, p) then on_water = on_water + 1 end end
+  check(on_water == 0, "no wall ghosts on water: " .. on_water)
+  check(not storage.tree3.to_be_deconstructed(), "tree not marked")
+  check(not tile_ghost_names(s, storage.wet_floor)["stone-path"], "no floor on water")
+  local landfill = 0
+  for _, g in pairs(s.find_entities_filtered { type = "tile-ghost" }) do if g.ghost_name == "landfill" then landfill = landfill + 1 end end
+  check(landfill == 0, "no landfill")
+  check(#ghosts(s, "stone-wall") > 20, "walls elsewhere")
+  flow.clear_build(s)
+  dev("click", P, "build")
+end, "idle")
+
+step("... Force build: landfill under the walls and the floor, the tree marked", function(player)
+  local s = player.surface
+  local ok = 0
+  for i, p in ipairs(storage.wet_walls) do
+    if wall_ghost_at(s, p) and tile_ghost_names(s, storage.wet[i]).landfill then ok = ok + 1 end
+  end
+  check(ok == 4, "wall ghosts on landfill ghosts: " .. ok .. "/4")
+  local floor = tile_ghost_names(s, storage.wet_floor)
+  check(floor.landfill and floor["stone-path"], "landfill ghost under the floor ghost")
+  check(storage.tree3.to_be_deconstructed(), "tree marked")
+  flow.clear_build(s)
+  player.cheat_mode = true
+  dev("click", P, "build")
+end, "idle")
+
+step("... cheat mode: real landfill under real walls and floor", function(player)
+  local s = player.surface
+  local ok = 0
+  for i, p in ipairs(storage.wet_walls) do
+    local c = storage.wet[i]
+    if s.find_entity("stone-wall", p) and s.get_tile(c.x, c.y).name == "landfill" then ok = ok + 1 end
+  end
+  check(ok == 4, "walls on landfill: " .. ok .. "/4")
+  local f = storage.wet_floor
+  check(s.get_tile(f.x, f.y).name == "stone-path" and s.get_hidden_tile({ f.x, f.y }) == "landfill", "stone path over landfill")
+  player.cheat_mode = false
+  flow.clear_build(s)
+  local tiles = {}
+  for _, c in ipairs(storage.wet) do tiles[#tiles + 1] = { name = "grass-1", position = c } end
+  tiles[#tiles + 1] = { name = "grass-1", position = f }
+  s.set_tiles(tiles)
+end)
+
+step("force build removes a cliff in the way (cheat mode)", function(player)
+  local s = player.surface
+  local walls = planned_walls(dev("plan", P))
+  storage.cliff = s.create_entity { name = "cliff", position = walls[12].position, cliff_orientation = "west-to-east" }
+  storage.cliff_wall = walls[12].position
+  check(storage.cliff and storage.cliff.valid, "cliff placed")
+  player.cheat_mode = true
+  dev("click", P, "build")
+end, "idle")
+
+step("... gone, the wall built there", function(player)
+  local s = player.surface
+  check(not storage.cliff.valid, "cliff removed")
+  check(s.find_entity("stone-wall", storage.cliff_wall), "wall where the cliff was")
+  player.cheat_mode = false
+  flow.clear_build(s)
+  -- ghosts: marked for deconstruction (with cliff explosives), the wall ghost over it
+  local tech = player.force.technologies["cliff-explosives"]
+  if tech then tech.researched = true end
+  storage.cliff = s.create_entity { name = "cliff", position = storage.cliff_wall, cliff_orientation = "west-to-east" }
+  dev("click", P, "build")
+end, "idle")
+
+step("... ghosts: the cliff marked, a wall ghost there", function(player)
+  local s = player.surface
+  check(storage.cliff.valid and storage.cliff.to_be_deconstructed(), "cliff marked for deconstruction")
+  check(wall_ghost_at(player.surface, storage.cliff_wall), "wall ghost where the cliff is")
+  storage.cliff.destroy()
+  flow.clear_build(s)
+end)
+
+step("cover from the player's list, and lava (with Space Age)", function(player)
+  if not prototypes.item["foundation"] then return end
+  local s = player.surface
+  local walls = planned_walls(dev("plan", P))
+  storage.wet2 = { cell_of(walls[5].position), cell_of(walls[6].position) }
+  s.set_tiles({ { name = "water", position = storage.wet2[1] }, { name = "lava", position = storage.wet2[2] } })
+  dev("set_setting", P, "cover_tiles", { "foundation" })
+  dev("click", P, "build")
+end, "idle")
+
+step("... foundation on water (the list), foundation on lava (the default)", function(player)
+  if not prototypes.item["foundation"] then return end
+  local s = player.surface
+  check(tile_ghost_names(s, storage.wet2[1]).foundation, "foundation on water, as listed")
+  check(tile_ghost_names(s, storage.wet2[2]).foundation, "foundation on lava")
+  dev("set_setting", P, "cover_tiles", { "landfill" })
+  flow.clear_build(s)
+  dev("click", P, "build")
+end, "idle")
+
+step("... landfill listed: landfill on water, still foundation on lava", function(player)
+  if not prototypes.item["foundation"] then return end
+  local s = player.surface
+  check(tile_ghost_names(s, storage.wet2[1]).landfill, "landfill on water")
+  check(tile_ghost_names(s, storage.wet2[2]).foundation, "foundation on lava (landfill can't go there)")
+  dev("set_setting", P, "cover_tiles", nil)
+  flow.clear_build(s)
+  s.set_tiles({ { name = "grass-1", position = storage.wet2[1] }, { name = "grass-1", position = storage.wet2[2] } })
+end)
+
 step("no build without permission", function(player)
   local group = game.permissions.create_group("no-build")
   group.set_allows_action(defines.input_action.build, false)

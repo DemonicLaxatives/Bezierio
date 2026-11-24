@@ -17,6 +17,14 @@ return {
 
     flush = function(job, player, undo_index) end,
 
+    -- (an entity ghost may stand on a tile ghost: robots lay the cover first)
+    place_cover = function(job, player, cell, undo_index)
+        job.surface.create_entity {
+            name = "tile-ghost", inner_name = cell.tile, position = { x = cell.x + 0.5, y = cell.y + 0.5 },
+            force = job.force, player = player, raise_built = true, undo_index = undo_index,
+        }
+    end,
+
     matching_entity_ghost = function(job, player, ghost, entity)
         return "existing"
     end,

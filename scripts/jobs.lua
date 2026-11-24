@@ -76,6 +76,9 @@ local function report_build(player, controller, job)
     local message = job.output == "instant" and "bezierio-message.build-result-instant"
         or "bezierio-message.build-result"
     player.print({ message, tostring(result.placed), tostring(result.existing), tostring(result.blocked + plan.skipped) })
+    if (result.covered or 0) > 0 then
+        player.print({ "bezierio-message.covered", tostring(result.covered) })
+    end
     if plan.gaps > 0 then
         player.print({ "bezierio-message.pole-gaps", tostring(plan.gaps) })
     end
@@ -348,7 +351,8 @@ function lib.update(player, controller)
                 work.build = blueprint.new_job(player, plan_job.plan, "Bézierio: " .. preset.name,
                     blueprint_source(player, controller, preset))
             else
-                work.build = executor.new_job(player, plan_job.plan, work.pending_build)
+                work.build = executor.new_job(player, plan_job.plan, work.pending_build,
+                    state.setting(player.index, "cover_tiles"))
             end
             work.pending_build = nil
         end

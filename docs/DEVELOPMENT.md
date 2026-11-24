@@ -39,6 +39,7 @@ scripts/
     executor.lua         BuildPlan -> world, as a resumable job (incl. wiring)
     blueprint.lua        BuildPlan -> blueprint in the cursor, as a resumable job
     wires.lua            walking a plan's pole chains and links, for the executor and the blueprint
+    cover.lua            cover tiles (landfill, foundation, ...) for force builds, from the prototypes
     paths.lua            belt and pipe lines: segments, corners, pieces
     feeds.lua            turret feeds: fluid connections, inserters
     rails.lua            rail track fitted to a line, signals' sides, elevated supports
@@ -488,6 +489,24 @@ Known geometric limits:
 
 ## Building (`scripts/build/executor.lua`, `outputs/`)
 
+Three modes, as the game's (FFF-383): **Build** (`normal`) places only where
+nothing is in the way; **Force build** (`forced`) also removes trees, rocks and
+cliffs in the way (marked for deconstruction as ghosts; a cliff only with cliff
+explosives) and lays cover tiles; **Super force** (`superforced`) also removes
+the player's own and neutral entities in the way.
+
+Cover (`build/cover.lua`, forced modes): an entity needs it where a tile's
+collision mask meets its own (water and walls share `water_tile`); a planned
+floor tile where its item's `place_as_tile_result` can't go on the tile there.
+The cover is the first of the player's `cover_tiles` setting that can go on that
+tile (its `condition` / `invert` / `tile_condition`) and takes what's planned,
+else the tile's `default_cover_tile` (water: landfill, lava: foundation,
+ammoniacal ocean: ice platform, empty space: space platform foundation); none:
+blocked. Ghosts: a tile ghost (an entity ghost may stand on a tile ghost, and a
+floor ghost on a cover ghost); instant: `set_tiles` at once. A force build
+checks first that nothing it won't remove is in the way, so a blocked spot isn't
+left with landfill. Elevated pieces need none.
+
 The executor walks the plan's tiles, then its entities. For each placement it:
 
 1. skips anything already there. For belts, undergrounds (and their input /
@@ -499,8 +518,10 @@ The executor walks the plan's tiles, then its entities. For each placement it:
    which then counts the entity as its own and gives it its priorities and
    ammo (dropping the ghost's ammo request);
 2. runs the placement check;
-3. handles obstacles: forced = trees/rocks only, superforced = own and neutral
-   entities, only where the spot is blocked, within the collision box turned
+3. lays cover where needed (forced modes), then handles obstacles: normal =
+   none (blocked), forced = trees, rocks and cliffs (cleared first when only they
+   fail the check), superforced = own and neutral entities, only where the spot
+   is blocked, within the collision box turned
    the planned way (`obstacle_area`; a square for diagonals and track). Super
    force never clears anything the build itself made (`job.own`, by unit
    number), only its own force's ghosts, and nothing of the types in

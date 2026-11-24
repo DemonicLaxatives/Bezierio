@@ -102,7 +102,9 @@ end
 --- @class PlayerSettings
 --- @field highlight_seconds integer   # unpowered / unfed marks fade after this (0: until hidden)
 --- @field blueprint_source boolean    # blueprints carry the curve and preset
-lib.SETTING_DEFAULTS = { highlight_seconds = 60, blueprint_source = true }
+--- @field cover_tiles string[]|nil    # cover items for force builds, in order (build/cover.lua)
+--- (cover_tiles: none set means each tile's own default cover, build/cover.lua)
+lib.SETTING_DEFAULTS = { highlight_seconds = 60, blueprint_source = true, cover_tiles = nil }
 
 --- A player's setting (its default if never set).
 --- @param player_index integer

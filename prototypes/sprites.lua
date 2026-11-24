@@ -2,7 +2,7 @@
 --
 -- The build buttons use the game's ghost cursor art. In the cursor sprites it sits
 -- in the top-right corner of the 64px image, so take a square around it to centre it.
-local function cursor_icon(name, file)
+local function cursor_icon(name, file, tint)
   return {
     type = "sprite",
     name = name,
@@ -10,6 +10,7 @@ local function cursor_icon(name, file)
     position = { 24, 0 },
     size = 40,
     scale = 0.5,
+    tint = tint,
     flags = { "gui-icon" },
   }
 end
@@ -24,7 +25,9 @@ data:extend {
     scale = 0.5,
     flags = { "gui-icon" },
   },
-  cursor_icon("bezierio-force-build", "cursor-ghost.png"),
+  -- Build: the plain ghost; Force build: the ghost in yellow; Super force: the game's red one.
+  cursor_icon("bezierio-build", "cursor-ghost.png"),
+  cursor_icon("bezierio-force-build", "cursor-ghost.png", { r = 1, g = 0.85, b = 0.3 }),
   cursor_icon("bezierio-super-force-build", "cursor-super-force-ghost.png"),
   {
     type = "sprite",

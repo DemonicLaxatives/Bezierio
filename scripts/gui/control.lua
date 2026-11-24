@@ -46,6 +46,7 @@ function lib.add(parent, player)
             style = "tool_button",
         }
     end
+    add_button("normal_build", "normal_build", "bezierio-build", "tooltip.normal-build")
     add_button("build", "build", "bezierio-force-build", "tooltip.force-build")
     add_button("super_build", "super_build", "bezierio-super-force-build", "tooltip.super-force-build")
     add_button("blueprint_build", "blueprint", "item/blueprint", "tooltip.blueprint-build")
@@ -212,6 +213,11 @@ local function request_build(player_index, mode)
         return
     end
     state.request_build(player_index, mode)
+end
+
+--- @param e EventData.on_gui_click
+lib["normal_build"] = function(e)
+    request_build(e.player_index, "normal")
 end
 
 --- @param e EventData.on_gui_click

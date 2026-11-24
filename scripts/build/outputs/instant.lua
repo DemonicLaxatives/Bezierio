@@ -35,6 +35,12 @@ return {
         end
     end,
 
+    -- At once, not batched: what goes on it is checked against it right after.
+    place_cover = function(job, player, cell, undo_index)
+        job.surface.set_tiles({ { name = cell.tile, position = { x = cell.x, y = cell.y } } },
+            true, "abort_on_collision", true, true, player, undo_index)
+    end,
+
     matching_entity_ghost = function(job, player, ghost, entity)
         local _, revived, proxy = ghost.revive { raise_revive = true }
         -- (raise_revive: another mod may have removed it already)

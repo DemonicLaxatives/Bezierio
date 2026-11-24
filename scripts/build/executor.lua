@@ -6,10 +6,18 @@
 --- pole chains, and keeping everything in one undo item.
 local undo = require("scripts.build.undo")
 local wires = require("scripts.build.wires")
+local cover = require("scripts.build.cover")
 
 local lib = {}
 
---- @alias BezierioBuildMode "forced"|"superforced"
+--- How hard a build pushes (as the game's build modes, FFF-383):
+--- - normal: anything in the way blocks;
+--- - forced: trees, rocks and cliffs in the way are removed (marked for
+---   deconstruction, as ghosts), and cover tiles (landfill, foundation, ...) are
+---   laid where the ground can't take what's planned (build/cover.lua);
+--- - superforced: as forced, and the player's own and neutral entities in the way
+---   are removed too.
+--- @alias BezierioBuildMode "normal"|"forced"|"superforced"
 
 --- @class BuildOutput
 --- @field name string
@@ -19,6 +27,7 @@ local lib = {}
 --- @field matching_entity_ghost fun(job: BuildJob, player: LuaPlayer, ghost: LuaEntity, entity: PlannedEntity): "placed"|"existing", LuaEntity|nil  # the entity revived from it
 --- @field clear fun(job: BuildJob, player: LuaPlayer, obstacle: LuaEntity, undo_index: integer)
 --- @field create_entity fun(job: BuildJob, player: LuaPlayer, entity: PlannedEntity, undo_index: integer): LuaEntity|nil
+--- @field place_cover fun(job: BuildJob, player: LuaPlayer, cell: {x: integer, y: integer, tile: string}, undo_index: integer)  # at once, before what goes on it
 
 --- @type table<string, BuildOutput>
 lib.outputs = {
@@ -33,6 +42,7 @@ lib.COST = { tile = 3, entity = 6, wire = 4 }
 --- @field placed integer
 --- @field existing integer
 --- @field blocked integer
+--- @field covered integer|nil  # cover tiles laid
 
 --- @class BuildJob: WireWalk
 --- @field player_index integer
@@ -47,6 +57,7 @@ lib.COST = { tile = 3, entity = 6, wire = 4 }
 --- @field undo UndoTracking
 --- @field result BuildResult
 --- @field own table<integer, true>|nil  # unit numbers of what this build made
+--- @field cover_tiles string[]|nil  # the player's cover items, in order
 --- @field aborted boolean|nil  # stopped: its surface or force went away
 
 --- Entity types super force never clears: characters and their corpses, items on
@@ -94,8 +105,9 @@ end
 --- @param player LuaPlayer
 --- @param plan BuildPlan  # must be done
 --- @param mode BezierioBuildMode
+--- @param cover_tiles string[]|nil  # the player's cover items, in order (none: each tile's default)
 --- @return BuildJob
-function lib.new_job(player, plan, mode)
+function lib.new_job(player, plan, mode, cover_tiles)
     local chain_keys = wires.chain_keys(plan)
     return {
         player_index = player.index,
@@ -110,7 +122,8 @@ function lib.new_job(player, plan, mode)
         chain_cursor = 1,
         tile_batch = {},
         undo = {},
-        result = { placed = 0, existing = 0, blocked = 0 },
+        result = { placed = 0, existing = 0, blocked = 0, covered = 0 },
+        cover_tiles = cover_tiles,
     }
 end
 
@@ -143,6 +156,30 @@ local function with_undo(job, player, fn, arg)
     return result
 end
 
+--- The item that places a tile, if any.
+--- @param name string
+--- @return LuaItemPrototype|nil
+local function tile_item(name)
+    local tile = prototypes.tile[name]
+    local item = tile and cover.item_of(tile)
+    return item and prototypes.item[item] or nil
+end
+
+--- A cover tile ghost already at a cell (from this build, or before) whose tile
+--- takes what's planned.
+--- @param surface LuaSurface
+--- @param x integer
+--- @param y integer
+--- @param takes fun(tile: LuaTilePrototype): boolean
+--- @return boolean
+local function cover_ghost_at(surface, x, y, takes)
+    for _, ghost in pairs(surface.find_entities_filtered { type = "tile-ghost", position = { x + 0.5, y + 0.5 } }) do
+        local t = prototypes.tile[ghost.ghost_name]
+        if t and t.is_foundation and takes(t) then return true end
+    end
+    return false
+end
+
 --- @param job BuildJob
 --- @param player LuaPlayer
 --- @param output BuildOutput
@@ -163,7 +200,29 @@ local function build_tile(job, player, output, tile)
             break
         end
     end
-    if not surface.can_place_entity {
+    -- Ground the tile can't go on (water under a stone path): cover first, when
+    -- forced. (The ghost check doesn't know about a cover ghost under it.)
+    local here = surface.get_tile(tile.x, tile.y).prototype
+    local item = tile_item(tile.name)
+    local covered = false
+    if item and not cover.item_goes_on(item, here) then
+        if job.mode == "normal" then
+            result.blocked = result.blocked + 1
+            return
+        end
+        local below = cover_ghost_at(surface, tile.x, tile.y, function(t) return cover.item_goes_on(item, t) end)
+        if not below then
+            local c = cover.choose(here, function(t) return cover.item_goes_on(item, t) end, job.cover_tiles)
+            if not c then
+                result.blocked = result.blocked + 1
+                return
+            end
+            with_undo(job, player, output.place_cover, { x = tile.x, y = tile.y, tile = c.tile })
+            result.covered = (result.covered or 0) + 1
+        end
+        covered = true
+    end
+    if not covered and not surface.can_place_entity {
             name = "tile-ghost", inner_name = tile.name, position = position, force = job.force,
             build_check_type = defines.build_check_type.manual_ghost,
         } then
@@ -291,6 +350,62 @@ local function obstacle_area(prototype, entity)
     return { left_top = { x = p.x + l, y = p.y + t }, right_bottom = { x = p.x + r, y = p.y + b } }
 end
 
+--- Types a force build removes when they're in the way.
+local NATURAL = { "tree", "simple-entity", "cliff" }
+local IS_NATURAL = { tree = true, ["simple-entity"] = true, cliff = true }
+
+--- The cells under an area.
+--- @param area BoundingBox
+--- @return {x: integer, y: integer}[]
+local function cells_of(area)
+    local out = {}
+    for x = math.floor(area.left_top.x), math.ceil(area.right_bottom.x) - 1 do
+        for y = math.floor(area.left_top.y), math.ceil(area.right_bottom.y) - 1 do
+            out[#out + 1] = { x = x, y = y }
+        end
+    end
+    return out
+end
+
+--- Lay cover where the ground under an entity can't take it (water under a
+--- wall). False when some cell has no cover that fits: then nothing is laid.
+--- @param job BuildJob
+--- @param player LuaPlayer
+--- @param output BuildOutput
+--- @param prototype LuaEntityPrototype
+--- @param area BoundingBox
+--- @return boolean ok
+local function lay_cover(job, player, output, prototype, area)
+    local surface = job.surface
+    local function takes(t) return not cover.entity_needs(prototype, t) end
+    local todo = {}
+    for _, c in ipairs(cells_of(area)) do
+        local here = surface.get_tile(c.x, c.y).prototype
+        if cover.entity_needs(prototype, here) and not cover_ghost_at(surface, c.x, c.y, takes) then
+            local choice = cover.choose(here, takes, job.cover_tiles)
+            if not choice then return false end
+            todo[#todo + 1] = { x = c.x, y = c.y, tile = choice.tile }
+        end
+    end
+    for _, cell in ipairs(todo) do
+        with_undo(job, player, output.place_cover, cell)
+        job.result.covered = (job.result.covered or 0) + 1
+    end
+    return true
+end
+
+--- Is anything a force build doesn't remove in the way? (Checked before laying
+--- cover, so a blocked spot isn't left with landfill.)
+--- @param job BuildJob
+--- @param area BoundingBox
+--- @return boolean
+local function hard_obstacle(job, area)
+    for _, other in pairs(job.surface.find_entities_filtered { area = area }) do
+        if other.valid and not IGNORED_IN_THE_WAY[other.type] and not IS_NATURAL[other.type] then return true end
+    end
+    return false
+end
+
 local function build_entity(job, player, output, entity)
     local surface, force, result = job.surface, job.force, job.result
     if entity.gate and entity.track then
@@ -353,8 +468,27 @@ local function build_entity(job, player, output, entity)
     local function placeable()
         return surface.can_place_entity {
             name = entity.name, position = position, direction = entity.direction, force = force,
-            build_check_type = defines.build_check_type.manual_ghost, forced = true,
+            build_check_type = defines.build_check_type.manual_ghost, forced = job.mode ~= "normal",
         }
+    end
+
+    -- Cover first, where the ground can't take it (forced: only if nothing that
+    -- stays is in the way).
+    if job.mode ~= "normal" and entity.rail_layer ~= "elevated" and not IS_ELEVATED[prototype.type] then
+        local needs = false
+        for _, c in ipairs(cells_of(area)) do
+            if cover.entity_needs(prototype, surface.get_tile(c.x, c.y).prototype) then needs = true break end
+        end
+        if needs then
+            if job.mode == "forced" and hard_obstacle(job, area) then
+                result.blocked = result.blocked + 1
+                return
+            end
+            if not lay_cover(job, player, output, prototype, area) then
+                result.blocked = result.blocked + 1
+                return
+            end
+        end
     end
 
     if entity.rail_layer == "elevated" then
@@ -378,13 +512,25 @@ local function build_entity(job, player, output, entity)
                 end
             end
         end
-    else
+    elseif job.mode == "normal" then
         if not placeable() then
             result.blocked = result.blocked + 1
             return
         end
-        for _, other in pairs(surface.find_entities_filtered { area = area, type = { "tree", "simple-entity" } }) do
+    else
+        -- Trees and rocks don't fail the forced check, cliffs do: when only those
+        -- are in the way, clear them, then check again.
+        local fits = placeable()
+        if not fits and hard_obstacle(job, area) then
+            result.blocked = result.blocked + 1
+            return
+        end
+        for _, other in pairs(surface.find_entities_filtered { area = area, type = NATURAL }) do
             with_undo(job, player, output.clear, other)
+        end
+        if not fits and not placeable() then
+            result.blocked = result.blocked + 1
+            return
         end
     end
 

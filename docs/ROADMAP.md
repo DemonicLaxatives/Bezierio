@@ -385,10 +385,10 @@ Status (2026-11-24, uncommitted on `refactor`; `tests/run_all.sh` passes):
 
 ## Phase post-post-pre-3: more features and findings
 
-- force build and super force build has to place landfill/foundations/ice platforms for entites that collide with the underlying tiles. The tile to place should be automatically detected and applied. Like landfill on water or foundation on lava, etc. Foundation and landfill can bothj build over water, but it makes more sense to use landfill when applicable. Give the user a setting in per player settings to set priority on these tiles, autodetect and decide when no valid tiles are set in the priority list. I think the behaviour should be inferrable from the tile prototype definitions: https://lua-api.factorio.com/latest/prototypes/TilePrototype.html
-- Force build should deconstruct cliffs, 
-- the intended force and super force building behaivor is described in this blogpost, we should try to replicate it: https://factorio.com/blog/post/fff-383
-- we need a build action "Build", which does not mark trees for deconstruction or lay landfill or alike.
+- (done) force build and super force build has to place landfill/foundations/ice platforms for entites that collide with the underlying tiles. The tile to place should be automatically detected and applied. Like landfill on water or foundation on lava, etc. Foundation and landfill can bothj build over water, but it makes more sense to use landfill when applicable. Give the user a setting in per player settings to set priority on these tiles, autodetect and decide when no valid tiles are set in the priority list. I think the behaviour should be inferrable from the tile prototype definitions: https://lua-api.factorio.com/latest/prototypes/TilePrototype.html
+- (done) Force build should deconstruct cliffs, 
+- (done) the intended force and super force building behaivor is described in this blogpost, we should try to replicate it: https://factorio.com/blog/post/fff-383
+- (done) we need a build action "Build", which does not mark trees for deconstruction or lay landfill or alike.
 - non square power consumers/producers can end up disconnected from the network and the fact undetected (for example railgun), because they're treated as squares in the check. Planning the overall layout with them assumed as squares is an acceptable trade-off, but smart pole placement should not make the same assumption.
 - Sometimes the build work ends up split in the LuaUndoRedoStack, ensure that the whole build is one item. Looks like it happens when the build overlaps an existing one.
 - break up `scripts/build/planner.lua` it has balooned
@@ -409,7 +409,7 @@ Status (2026-11-24, uncommitted on `refactor`; `tests/run_all.sh` passes):
      `locale/en/Bezierio.cfg` (a small script).
 
 # Automated release/detail sync/image sync (on pushing a tags)
-**Use Python scripts (with tests) for interfacing with the API, packaging, version bumps, validation, etc**
+**Use Python scripts using requests (with tests, that don't touch the actual API) for interfacing with the API, packaging, version bumps, validation, etc**
 - portal API key stored as a repository secret.
 - edit version numbers, release dates and refrence jsons in the repo.
 
@@ -417,7 +417,9 @@ Status (2026-11-24, uncommitted on `refactor`; `tests/run_all.sh` passes):
 
 0. **Version bumps:** a small script `release/bump.py --version "X.Y.Z"`, that updates 
   - `info.json`, ensure the correct version, edit it repo if needed
-  - `changelog.txt` match the latest version for 0.0.0 - fail if the latest version isn't matched, update the date on that entry to the current date
+  - `changelog.txt` match the latest version for 0.0.0 - fail if the latest version isn't matched, in the repo update the date on that entry to the current date
+  - in a copy to be packaged, not the repo, set `lib.debug = false` 
+
 1. **Validate:**
    - the tag matches `info.json` and `changelog.txt`
    - `changelog.txt` has a correctly formatted entry for that version (Factorio's
@@ -454,18 +456,17 @@ Status (2026-11-24, uncommitted on `refactor`; `tests/run_all.sh` passes):
 
 ## Release hygiene for the first release (0.2.0)
 
-- `debug.lua` `lib.debug = false` (enforced by the release check above).
 - New screenshots for the README and mod portal. The current ones show the 0.1
   curve projector.
 - A real multiplayer test: a manual session with two players (everything is per
-  player and in `storage`, but nothing has run two players at once yet). Lay out a plan for what and how should be tested.
+  player and in `storage`, but nothing has run two players at once yet). Lay out a plan for what and how should be tested. Let's put it off for now, when it comes to this step, let's just document it in the next roadmap.
 - Remove the dev-migrations, they're usefull for seamless testing but serve no purpose for the end user on initial release.
 - A storage migration test ground work, there will be no migrations for release: create a save with schema N, load it with N+1, check
   nothing crashes (`--test-save`). Releases are when old saves start to matter.
 - Update the changelog
-- Cleanup the completed roadmap, no need to summaraize everything that's done on main, git history will still be there.
+- Cleanup the completed roadmap, no need to summaraize everything that's done on main, git history will still be there. On main the roadmap should really contain just what's left to do.
 - Add some default presets to ship it with. They're in the folder builtin-presets, bake them into the scripts.
-- Let a humap pass over the locale, review it, some of them are far too verbose.
+- Let a human pass over the locale, review it, some of them are far too verbose.
 
 
 ## Testing to add along the way
