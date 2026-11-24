@@ -63,6 +63,7 @@ end
 --- @param controller Controller
 --- @param job BuildJob|BlueprintJob
 local function report_build(player, controller, job)
+    if job.aborted then return end
     if job.kind == "blueprint" then
         if job.error then
             player.print({ "bezierio-message." .. job.error })
@@ -295,8 +296,9 @@ end
 function lib.update(player, controller)
     local work = controller.work
     local budget = lib.budget()
+    if controller.ui.reopen_main then window.focus_main(player, controller.ui) end
 
-    budget = budget - draw.step_trash(player.index, budget)
+    budget = budget - draw.step_trash(player.index, budget * draw.TRASH_SHARE)
 
     if work.revision ~= controller.revision
         and game.tick - (controller.changed_tick or 0) >= lib.SETTLE_TICKS then
@@ -354,7 +356,8 @@ function lib.update(player, controller)
 
     local build = work.build
     if build and budget > 0 then
-        local done = runner(build).step(build, budget)
+        local done, used = runner(build).step(build, budget)
+        budget = budget - (used or 0)
         if done then
             report_build(player, controller, build)
             work.build = nil

@@ -25,9 +25,10 @@ lib.COST = { line = 2, rectangle = 2, destroy = 1, circle = 2, cell = 0.5, arrow
 --- of at most this many cells.
 lib.ARROW_RUN = 8
 
---- Retire render objects: they are destroyed a budgeted number per tick by
+--- Retire render objects: whole caches go into the trash as they are (no walk
+--- over them here) and are destroyed a budgeted number per tick by
 --- `lib.step_trash`, so clearing a big preview doesn't cost one long tick. They
---- stay visible until then (a tick or two at the default budget).
+--- stay visible until then.
 --- @param player LuaPlayer
 --- @param key string|nil  # a SpriteCache key; nil clears the drawing (not highlights)
 function lib.delete_sprites(player, key)
@@ -36,13 +37,15 @@ function lib.delete_sprites(player, key)
     for cache_key, cache in pairs(sprites) do
         local highlight = string.sub(cache_key, 1, 10) == "highlight_"
         if cache_key ~= "trash" and (key == cache_key or (key == nil and not highlight)) then
-            for _, obj in pairs(cache) do
-                if obj.valid then table.insert(sprites.trash, obj) end
-            end
+            if #cache > 0 then table.insert(sprites.trash, cache) end
             sprites[cache_key] = {}
         end
     end
 end
+
+--- The trash may take at most this share of a tick's budget, so the next drawing
+--- and planning go on while an old preview is cleared.
+lib.TRASH_SHARE = 0.5
 
 --- Destroy retired render objects, up to the budget.
 --- @param player_index integer
@@ -54,9 +57,20 @@ function lib.step_trash(player_index, budget)
     if not trash then return 0 end
     local used = 0
     while #trash > 0 and used < budget do
-        local obj = table.remove(trash)
-        if obj.valid then obj.destroy() end
-        used = used + lib.COST.destroy
+        local chunk = trash[#trash]
+        if type(chunk) ~= "table" then -- (a single object: saves from before chunks)
+            trash[#trash] = nil
+            if chunk.valid then chunk.destroy() end
+            used = used + lib.COST.destroy
+        else
+            while #chunk > 0 and used < budget do
+                local obj = chunk[#chunk]
+                chunk[#chunk] = nil
+                if obj.valid then obj.destroy() end
+                used = used + lib.COST.destroy
+            end
+            if #chunk == 0 then trash[#trash] = nil end
+        end
     end
     return used
 end

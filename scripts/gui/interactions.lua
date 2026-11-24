@@ -1,5 +1,7 @@
 --- Routes GUI events to handlers by element tags: lib[tags.group][tags.action](event).
 local debug    = require("scripts.debug")
+local state    = require("scripts.state")
+local window   = require("scripts.gui.window")
 
 local lib      = {}
 
@@ -25,14 +27,28 @@ lib.routed_types = {
 
 --- @param e {name: defines.events, element: LuaGuiElement, player_index: integer}
 function lib.handle_event(e)
+    -- (a rebuild after migrations closes the windows: do it before looking at them)
+    state.ensure_rebuilt()
     local element = e.element
     if not (element and element.valid) then return end
     if element.get_mod() ~= script.mod_name then return end
     local routed = lib.routed_types[e.name]
     if not (routed and routed[element.type]) then return end
+    -- Buttons act on the left mouse button only (a right-click on a delete button
+    -- shouldn't delete).
+    if e.name == defines.events.on_gui_click and e.button and e.button ~= defines.mouse_button_type.left then return end
 
     local group_tag = element.tags.group
     if not group_tag then return end -- passive element (labels, frames, ...)
+
+    -- While a layer's settings are open the main window is locked: its events do
+    -- nothing (the window still takes the click, so it doesn't reach the world).
+    local controller = storage.controllers and storage.controllers[e.player_index]
+    if controller and controller.ui.editing then
+        local root = element
+        while root.parent and root.parent.parent do root = root.parent end
+        if root.name == "bezierio_window" then return end
+    end
 
     local group = lib[group_tag]
     if not group then
@@ -69,13 +85,15 @@ script.on_event(defines.events.on_gui_closed,
             local player = game.get_player(e.player_index)
             if player and player.gui.screen.bezierio_string_window then return end
             lib["main"]["close"](e)
-        elseif e.element.name == "bezierio_string_window" then
-            lib["strings"]["close"](e)
-        elseif e.element.name == "bezierio_layer_window" then
-            -- Esc (or another GUI opening): as Cancel
-            if controller and controller.ui.editing then
-                lib["layer"]["cancel"](e)
-            end
+        else
+            -- Esc, or another GUI opening (the layer window: as Cancel)
+            local handler = (e.element.name == "bezierio_layer_window" and lib["layer"]["cancel"])
+                or (e.element.name == "bezierio_string_window" and lib["strings"]["close"])
+            if not handler then return end
+            window.in_closed_event = true
+            local ok, err = pcall(handler, e)
+            window.in_closed_event = false
+            if not ok then error(err, 0) end
         end
     end)
 

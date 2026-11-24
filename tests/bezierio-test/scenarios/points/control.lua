@@ -10,6 +10,24 @@ step("setup + open window", function(player)
   check(el(player, "no_points"), "empty point list shows a hint")
 end)
 
+step("pointer puts the hand away first", function(player)
+  local inventory = player.get_main_inventory()
+  player.cursor_stack.set_stack { name = "iron-plate", count = 10 }
+  dev("click", P, "pointer_button")
+  check(player.cursor_stack.valid_for_read and player.cursor_stack.name == "bezierio-pointer"
+    and inventory.get_item_count("iron-plate") == 10, "pointer in the cursor, plates in the inventory")
+  dev("click", P, "pointer_button")
+  inventory.clear()
+  -- a full inventory: the hand is kept, no pointer
+  while inventory.insert { name = "stone", count = 1000 } > 0 do end
+  player.cursor_stack.set_stack { name = "iron-plate", count = 10 }
+  dev("click", P, "pointer_button")
+  check(player.cursor_stack.valid_for_read and player.cursor_stack.name == "iron-plate"
+    and player.cursor_stack.count == 10 and not el(player, "pointer_button").toggled, "full inventory: hand kept, button off")
+  player.cursor_stack.clear()
+  inventory.clear()
+end)
+
 step("pointer adds points", function(player)
   dev("click", P, "pointer_button")
   check(player.cursor_stack.valid_for_read and player.cursor_stack.name == "bezierio-pointer", "pointer in cursor")

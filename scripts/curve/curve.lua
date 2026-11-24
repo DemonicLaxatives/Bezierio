@@ -244,7 +244,8 @@ function lib.distinct_points(curve)
             points[#points + 1] = { x = p.x, y = p.y }
         end
     end
-    if lib.is_closed(curve) and #points > 1 then
+    -- (a loop's last point repeating the first; is_closed counts these points)
+    if curve.closed == true and #points > 1 then
         local first, last = points[1], points[#points]
         if first.x == last.x and first.y == last.y then points[#points] = nil end
     end
@@ -268,7 +269,8 @@ function lib.is_closed(curve)
         local shape = lib.shape(curve)
         return shape ~= nil and shape.closed
     end
-    return curve.closed == true and #curve.points >= 3
+    -- (distinct points, as the sampler counts them: a repeated point doesn't make a loop)
+    return curve.closed == true and #lib.distinct_points(curve) >= 3
 end
 
 --- @param curve Curve

@@ -74,6 +74,49 @@ step("real belts flow, undergrounds pair up", function(player)
   check(#belts + #undergrounds == planned, "everything planned was built: " .. (#belts + #undergrounds) .. "/" .. planned)
 end)
 
+step("a belt turned round isn't counted as built", function(player)
+  local s = player.surface
+  for _, e in pairs(dev("plan", P).entities) do
+    if e.name == "transport-belt" then storage.turned = e break end
+  end
+  local belt = s.find_entity("transport-belt", storage.turned.position)
+  belt.direction = (storage.turned.direction + 8) % 16
+  storage.belt_count = s.count_entities_filtered { name = "transport-belt" }
+  dev("click", P, "build")
+end, "idle")
+
+step("... a normal build leaves it", function(player)
+  local s = player.surface
+  local belt = s.find_entity("transport-belt", storage.turned.position)
+  check(belt and belt.direction ~= storage.turned.direction, "left facing the other way")
+  check(s.count_entities_filtered { name = "transport-belt" } == storage.belt_count, "nothing else built")
+  dev("click", P, "super_build")
+end, "idle")
+
+step("... super force turns it back", function(player)
+  local s = player.surface
+  local belt = s.find_entity("transport-belt", storage.turned.position)
+  check(belt and belt.direction == storage.turned.direction, "facing the planned way")
+  check(s.count_entities_filtered { name = "transport-belt" } == storage.belt_count, "the same belts")
+  -- with ghosts: marked for deconstruction, a ghost facing the planned way
+  player.cheat_mode = false
+  belt.direction = (storage.turned.direction + 8) % 16
+  dev("click", P, "super_build")
+end, "idle")
+
+step("... with ghosts: replaced by a ghost", function(player)
+  local s = player.surface
+  local belt = s.find_entity("transport-belt", storage.turned.position)
+  local ghost = s.find_entities_filtered { ghost_name = "transport-belt", position = storage.turned.position, limit = 1 }[1]
+  check(belt and belt.to_be_deconstructed(), "the turned belt is marked for deconstruction")
+  check(ghost and ghost.direction == storage.turned.direction, "a ghost facing the planned way")
+  check(#s.find_entities_filtered { type = "entity-ghost" } == 1, "no other ghosts")
+  if ghost then ghost.destroy() end
+  belt.cancel_deconstruction(player.force)
+  belt.direction = storage.turned.direction
+  player.cheat_mode = true
+end)
+
 step("real pipes: two networks, split by the pumps", function(player)
   local s = player.surface
   local pumps = s.find_entities_filtered { name = "pump" }

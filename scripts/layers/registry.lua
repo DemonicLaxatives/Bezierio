@@ -88,6 +88,24 @@ lib.place_field = { name = "place", widget = "checkbox", default = true }
 --- Most entries in a turret's targeting priority list.
 lib.MAX_TARGETS = 8
 
+--- Entity types a turret's priority list may hold: enemies and asteroids.
+lib.TARGET_TYPES = { "unit", "unit-spawner", "turret", "spider-unit", "segmented-unit", "asteroid" }
+
+--- Whether an entity may be a priority target (always, outside the game).
+--- @param name any
+--- @return boolean
+function lib.is_target(name)
+    if type(name) ~= "string" then return false end
+    if not prototypes then return true end
+    local prototype = prototypes.entity[name]
+    if not prototype then return false end
+    for _, t in ipairs(lib.TARGET_TYPES) do
+        if prototype.type == t then return true end
+    end
+    return false
+end
+
+
 --- @param def LayerType
 function lib.register(def)
     assert(not lib.types[def.name], "layer type registered twice: " .. def.name)
@@ -147,6 +165,20 @@ function lib.field_range(layer, field_name)
     return resolve(layer, field, "min"), resolve(layer, field, "max")
 end
 
+--- A number for a slider field: whole, within the field's range (nil: not a number).
+--- @param layer Layer
+--- @param field LayerField
+--- @param value any
+--- @return integer|nil
+local function slider_value(layer, field, value)
+    if type(value) ~= "number" or value ~= value then return nil end -- (NaN)
+    local min, max = resolve(layer, field, "min"), resolve(layer, field, "max")
+    if min then value = math.max(min, value) end
+    if max then value = math.min(max, value) end
+    if value == math.huge or value == -math.huge then return nil end
+    return math.floor(value + 0.5)
+end
+
 --- Keep the settings of `old` that `layer`'s type also has (same field name and
 --- value type), clamped to the new ranges: switching a layer to another quality or
 --- a similar item shouldn't reset its width, spacing, etc. Offset always carries.
@@ -154,7 +186,8 @@ end
 --- @param old Layer|nil
 function lib.carry_over(layer, old)
     if not old then return end
-    if type(old.offset) == "number" then layer.offset = old.offset end
+    -- (values may come from an import string: checked like the GUI would)
+    layer.offset = slider_value(layer, lib.offset_field, old.offset) or layer.offset
     if old.place == false and layer.placed_by then layer.place = false end
     for _, field in ipairs(lib.type_of(layer).fields) do
         local value = old[field.name]
@@ -164,17 +197,15 @@ function lib.carry_over(layer, old)
             if type(value) == "table" then
                 list = {}
                 for _, name in ipairs(value) do
-                    if type(name) == "string" and #list < lib.MAX_TARGETS
-                        and (not prototypes or prototypes.entity[name]) then
-                        list[#list + 1] = name
-                    end
+                    if #list < lib.MAX_TARGETS and lib.is_target(name) then list[#list + 1] = name end
                 end
                 if #list == 0 then list = nil end
             end
             value = nil
             layer[field.name] = list
         end
-        if field.widget == "item" and value ~= nil and field.valid and not field.valid(layer, value) then
+        if field.widget == "item" and value ~= nil
+            and (type(value) ~= "string" or (field.valid and not field.valid(layer, value))) then
             value = nil
         end
         if field.widget == "choice" and value ~= nil then
@@ -183,12 +214,8 @@ function lib.carry_over(layer, old)
             if not valid then value = nil end
         end
         if value ~= nil and (type(value) == type(layer[field.name]) or (field.widget == "item" and type(value) == "string")) then
-            if type(value) == "number" then
-                local min, max = resolve(layer, field, "min"), resolve(layer, field, "max")
-                if min then value = math.max(min, value) end
-                if max then value = math.min(max, value) end
-            end
-            layer[field.name] = value
+            if type(value) == "number" then value = slider_value(layer, field, value) end
+            if value ~= nil then layer[field.name] = value end
         end
     end
 end
@@ -262,6 +289,7 @@ function lib.new_layer(layer_idx, item_name, quality_name, offset)
             layer[field.name] = resolve(layer, field, "default")
         end
     end
+    lib.check_fields(layer) -- (a default may lie outside the range, e.g. for a big lamp)
     return layer
 end
 
@@ -278,20 +306,45 @@ function lib.refresh(layer, prototype)
         prototype = layer.type == "tile" and prototypes.tile[layer.name] or prototypes.entity[layer.name]
         if not prototype then return false end
     end
+    -- (mods may have removed the item that placed it, or its quality)
+    if layer.placed_by and prototypes.item and not prototypes.item[layer.placed_by] then return false end
+    if layer.quality and prototypes.quality and not prototypes.quality[layer.quality] then layer.quality = "normal" end
     local def = lib.type_of(layer)
     layer.size = lib.footprint_size(prototype)
+    -- (non-square: placed on their own grid, common.fit_footprint)
+    local square = prototype.type == "tile" or prototype.tile_width == prototype.tile_height
+    layer.tile_w = (not square) and prototype.tile_width or nil
+    layer.tile_h = (not square) and prototype.tile_height or nil
     layer.needs_power = prototype.type ~= "tile" and prototype.electric_energy_source_prototype ~= nil or nil
     if def.init then def.init(layer, prototype) end
-    for _, field in ipairs(def.fields) do
+    lib.check_fields(layer)
+    return true
+end
+
+--- Keep a layer's settings within what its fields allow now: numbers clamped,
+--- items and priority targets that are gone (or no longer fit) dropped.
+--- @param layer Layer
+function lib.check_fields(layer)
+    for _, field in ipairs(lib.type_of(layer).fields) do
         local value = layer[field.name]
         if type(value) == "number" then
             local min, max = resolve(layer, field, "min"), resolve(layer, field, "max")
             if min then value = math.max(min, value) end
             if max then value = math.min(max, value) end
             layer[field.name] = value
+        elseif field.widget == "item" and value ~= nil then
+            if prototypes and (type(value) ~= "string" or not prototypes.item[value]
+                    or (field.valid and not field.valid(layer, value))) then
+                layer[field.name] = nil
+            end
+        elseif field.widget == "targets" and type(value) == "table" then
+            local list = {}
+            for _, name in ipairs(value) do
+                if lib.is_target(name) and #list < lib.MAX_TARGETS then list[#list + 1] = name end
+            end
+            layer[field.name] = #list > 0 and list or nil
         end
     end
-    return true
 end
 
 --- Filter for the layer item pickers: every item that places a supported entity

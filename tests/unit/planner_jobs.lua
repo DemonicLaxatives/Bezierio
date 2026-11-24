@@ -45,5 +45,25 @@ for i = 1, 8 do
     end
 end
 cases = cases + extra / #budgets
+
+-- A finished job keeps only what's read afterwards (it stays in the save).
+do
+    local planner = require("scripts.build.planner")
+    local curve = require("scripts.curve.curve")
+    local c = curve.new()
+    for _, p in ipairs(helpers.random_points(r)) do curve.append(c, p) end
+    local job = planner.new_job(c, special)
+    while not planner.step(job, 50) do end
+    for field in pairs(job) do
+        if not planner.KEEP_WHEN_DONE[field] then
+            failures = failures + 1
+            print("FAIL finished job keeps " .. field)
+        end
+    end
+    if not (job.plan.done and #job.points > 0) then
+        failures = failures + 1
+        print("FAIL finished job lost its plan or points")
+    end
+end
 print(string.format("%d/%d sliced plans match", cases * #budgets - failures, cases * #budgets))
 os.exit(failures == 0 and 0 or 1)

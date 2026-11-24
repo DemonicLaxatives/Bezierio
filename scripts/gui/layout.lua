@@ -93,8 +93,6 @@ function lib.create_main_window(player, location)
     local frame = player.gui.screen.add { type = "frame", name = "bezierio_window", direction = "vertical" }
     frame.location = location or { 75, 75 }
     if not ui.pinned and not ui.editing then player.opened = frame end
-    -- (locked while a layer's settings are open)
-    if ui.editing then frame.ignored_by_interaction = true end
 
     add_title_bar(frame, ui)
     local body = frame.add { type = "flow", name = "main", direction = "vertical" }

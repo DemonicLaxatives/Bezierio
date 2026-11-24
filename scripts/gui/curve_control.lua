@@ -322,10 +322,16 @@ end
 lib["pointer"] = function(e)
     local player = game.get_player(e.player_index)
     if not player then return end
+    local cursor = player.cursor_stack
     if e.element.toggled then
-        player.cursor_stack.set_stack { name = lib.POINTER, count = 1 }
-    elseif lib.holds_pointer(player) then
-        player.cursor_stack.clear()
+        -- Put away what's in hand first (never overwrite it); no room: no pointer.
+        if cursor and (lib.holds_pointer(player) or player.clear_cursor()) then
+            cursor.set_stack { name = lib.POINTER, count = 1 }
+        else
+            e.element.toggled = false
+        end
+    elseif cursor and lib.holds_pointer(player) then
+        cursor.clear()
     end
 end
 

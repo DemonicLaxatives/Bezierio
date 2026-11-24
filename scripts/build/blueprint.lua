@@ -9,6 +9,8 @@
 --- The blueprint uses absolute snapping with a grid the size of the build, offset
 --- so that it snaps exactly onto where the plan was previewed (and stamps further
 --- copies end to end).
+local wires = require("scripts.build.wires")
+
 local lib = {}
 
 --- The description of a blueprint that carries its curve and preset.
@@ -17,20 +19,18 @@ lib.NOTE = "Made with Bézierio. To get its curve and preset back, hold this blu
 --- Work units per item, for budgeting.
 lib.COST = { entity = 1, tile = 1, wire = 1, write = 0.5 }
 
---- @class BlueprintJob
+--- @class BlueprintSource
+--- @field curve string    # curve export string
+--- @field preset string   # preset export string
+
+--- @class BlueprintJob: WireWalk
 --- @field kind "blueprint"
 --- @field player_index integer
 --- @field plan BuildPlan
 --- @field label string
 --- @field source BlueprintSource|nil
-
---- @class BlueprintSource
---- @field curve string    # curve export string
---- @field preset string   # preset export string
 --- @field stage "bounds"|"entities"|"tiles"|"wires"|"write"|"done"
 --- @field cursor integer
---- @field chain_keys integer[]
---- @field chain_cursor integer
 --- @field origin {x: integer, y: integer}|nil   # world position of blueprint (0, 0)
 --- @field size {x: integer, y: integer}|nil
 --- @field entities BlueprintEntity[]
@@ -44,9 +44,7 @@ lib.COST = { entity = 1, tile = 1, wire = 1, write = 0.5 }
 --- @param source BlueprintSource|nil
 --- @return BlueprintJob
 function lib.new_job(player, plan, label, source)
-    local chain_keys = {}
-    for idx in pairs(plan.chains) do table.insert(chain_keys, idx) end
-    table.sort(chain_keys)
+    local chain_keys = wires.chain_keys(plan)
     return {
         kind = "blueprint",
         player_index = player.index,
@@ -180,39 +178,23 @@ end
 --- @param budget number
 --- @return number used
 local function step_wires(job, budget)
-    local plan, used = job.plan, 0
     local ids = defines.wire_connector_id
-    while job.chain_cursor <= #job.chain_keys and used < budget do
-        local chain = plan.chains[job.chain_keys[job.chain_cursor]]
-        local members = chain.members
-        local count = #members
-        local pairs_total = (plan.closed and count > 2) and count or count - 1
-        while job.cursor <= pairs_total and used < budget do
-            local a = members[job.cursor]
-            local b = members[job.cursor % count + 1]
-            local source = job.entities[a]
-            source.wires = source.wires or {}
-            table.insert(source.wires, { a, ids.pole_copper, b, ids.pole_copper })
-            if chain.red then table.insert(source.wires, { a, ids.circuit_red, b, ids.circuit_red }) end
-            if chain.green then table.insert(source.wires, { a, ids.circuit_green, b, ids.circuit_green }) end
-            job.cursor = job.cursor + 1
-            used = used + lib.COST.wire
-        end
-        if job.cursor > pairs_total then
-            job.chain_cursor = job.chain_cursor + 1
-            job.cursor = 1
-        end
+    local function add(a, b, id)
+        local source = job.entities[a]
+        source.wires = source.wires or {}
+        table.insert(source.wires, { a, id, b, id })
     end
-    if job.chain_cursor > #job.chain_keys then
-        -- Other wires (land mines): red and / or green.
-        for _, link in ipairs(plan.links or {}) do
-            local source = job.entities[link.a]
-            source.wires = source.wires or {}
-            if link.red then table.insert(source.wires, { link.a, ids.circuit_red, link.b, ids.circuit_red }) end
-            if link.green then table.insert(source.wires, { link.a, ids.circuit_green, link.b, ids.circuit_green }) end
-        end
-        job.stage = "write"
-    end
+    local used, done = wires.step(job, job.plan, budget, lib.COST.wire,
+        function(chain, a, b)
+            add(a, b, ids.pole_copper)
+            if chain.red then add(a, b, ids.circuit_red) end
+            if chain.green then add(a, b, ids.circuit_green) end
+        end,
+        function(link)
+            if link.red then add(link.a, link.b, ids.circuit_red) end
+            if link.green then add(link.a, link.b, ids.circuit_green) end
+        end)
+    if done then job.stage = "write" end
     return used
 end
 

@@ -158,5 +158,14 @@ for it = 1, cases do
 end
 print(string.format("(%d of %d random curves split a line somewhere)", split, cases))
 
+-- A corner cell keeps its place along the curve (a line routed again later orders
+-- its cells by it; with j = 0 the corner was cut off and the line split there).
+do
+    local used = {}
+    local pieces = require("scripts.build.paths").join_corners({ { x = 0, y = 0, j = 40 }, { x = 1, y = 1, j = 44 } },
+        function() return 1 end, function(x, y, j) used[#used + 1] = { x = x, y = y, j = j } end)
+    check(#pieces == 1 and #pieces[1] == 3 and used[1] and used[1].j == 40, "corner cell used with its curve sample")
+end
+
 print(string.format("%d/%d path checks passed", checks - failures, checks))
 os.exit(failures == 0 and 0 or 1)

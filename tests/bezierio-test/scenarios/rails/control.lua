@@ -156,6 +156,7 @@ step("elevated: plan", function(player)
     return
   end
   clear_all(player.surface)
+  dev("click", P, "layer_settings_0")
   check(el(player, "elevated"), "elevated option offered")
   dev("set_checked", P, "elevated", true)
   check(el(player, "ramps") and el(player, "ramps").state, "ramps on")

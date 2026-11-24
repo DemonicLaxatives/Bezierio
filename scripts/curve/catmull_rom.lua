@@ -89,11 +89,28 @@ end
 --- that bulges between close endpoints is still sampled.
 local PIECES = 4
 
+--- Longest piece (tiles, end to end): a long segment gets twice the pieces, and
+--- again, until its pieces are this short. A piece is sampled in one go, so this
+--- bounds the work per call; halving pieces gives the same samples as the
+--- subdivision would (only segments longer than PIECES * MAX_PIECE are affected).
+local MAX_PIECE = 64
+
+--- Pieces for a segment: PIECES, doubled until they are at most MAX_PIECE long.
+--- @param seg CatmullRomSegment
+--- @return integer
+local function pieces_of(seg)
+    local n, length = PIECES, vect.distance(seg.p[2], seg.p[3])
+    while length / n > MAX_PIECE do n = n * 2 end
+    return n
+end
+
 --- @class CatmullRomSampler
 --- @field origin Vector          # math is done relative to the first point for precision
 --- @field segments CatmullRomSegment[]
 --- @field max_step number
---- @field next_piece integer     # -1: start point not emitted yet
+--- @field seg integer           # segment being sampled
+--- @field piece integer         # next piece of it (-1: the start point not emitted yet)
+--- @field pieces integer        # pieces of that segment
 --- @field done boolean
 
 --- @param points Vector[]
@@ -108,7 +125,8 @@ function lib.new_sampler(points, max_step, closed)
         origin = origin,
         segments = lib.segments(relative, closed),
         max_step = max_step,
-        next_piece = -1,
+        seg = 1,
+        piece = -1,
         done = false,
     }
 end
@@ -120,25 +138,28 @@ end
 --- @return number used
 function lib.step(sampler, out, budget)
     local used = 0
-    local total = #sampler.segments * PIECES
-    if sampler.next_piece < 0 then
-        table.insert(out, vect.add(lib.evaluate(sampler.segments[1], 0), sampler.origin))
-        sampler.next_piece = 0
+    local segments = sampler.segments
+    if sampler.piece < 0 then
+        table.insert(out, vect.add(lib.evaluate(segments[1], 0), sampler.origin))
+        sampler.piece, sampler.pieces = 0, pieces_of(segments[1])
         used = used + 1
     end
-    while sampler.next_piece < total and used < budget do
-        local piece = sampler.next_piece
-        local seg = sampler.segments[math.floor(piece / PIECES) + 1]
-        local k = piece % PIECES
+    while segments[sampler.seg] and used < budget do
+        local seg, k, n = segments[sampler.seg], sampler.piece, sampler.pieces
         local local_out = {}
-        sample_range(seg, k / PIECES, (k + 1) / PIECES, sampler.max_step, local_out)
+        sample_range(seg, k / n, (k + 1) / n, sampler.max_step, local_out)
         for _, p in ipairs(local_out) do
             table.insert(out, vect.add(p, sampler.origin))
         end
         used = used + #local_out
-        sampler.next_piece = piece + 1
+        if k + 1 < n then
+            sampler.piece = k + 1
+        else
+            sampler.seg, sampler.piece = sampler.seg + 1, 0
+            if segments[sampler.seg] then sampler.pieces = pieces_of(segments[sampler.seg]) end
+        end
     end
-    sampler.done = sampler.next_piece >= total
+    sampler.done = segments[sampler.seg] == nil
     return used
 end
 

@@ -2,7 +2,7 @@
 -- Shapes from handles (scripts/curve/shapes.lua, curve.lua): what the handles mean,
 -- exact sampling, direction, and editing shapes with the curve functions.
 --   lua5.4 tests/unit/shapes.lua
-dofile((arg[0]:match("^(.*)/tests/unit/") or ".") .. "/tests/unit/helpers.lua")
+local helpers = dofile((arg[0]:match("^(.*)/tests/unit/") or ".") .. "/tests/unit/helpers.lua")
 local curve_lib = require("scripts.curve.curve")
 
 local failures, checks = 0, 0
@@ -131,6 +131,20 @@ local junk = curve_lib.from_data({ format = "bezierio-curve", version = 1, kind 
     handles = { circle = { { x = 0, y = 0 }, { x = 5, y = 0 }, { x = 9, y = 9 } } } })
 check(junk and junk.kind == "catmull_rom" and #junk.points == 2 and #junk.handles.circle == 2, "bad points dropped, extra handles cut, unknown kind ignored")
 check(curve_lib.from_data({ format = "bezierio-preset" }) == nil and select(2, curve_lib.from_data({ format = "bezierio-curve", version = 9 })) == "unknown-version", "wrong strings refused")
+
+-- Closed loops: no spaced entity right next to the first one at the seam
+local lamp = { idx = 0, type = "lamp", name = "small-lamp", quality = "normal", size = 1, offset = 0, priority = 30, spacing = 6 }
+for _, r in ipairs({ 10.4, 10.52, 10.6, 15.3, 20.9 }) do
+    local plan = helpers.plan_curve(helpers.shape_curve("circle", { { x = 0, y = 0 }, { x = r, y = 0 } }), { [0] = lamp })
+    local e, closest = plan.entities, math.huge
+    for i = 1, #e do
+        for j = i + 1, #e do
+            local a, b = e[i].position, e[j].position
+            closest = math.min(closest, math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2))
+        end
+    end
+    check(closest >= 3, "lamps every 6 round a circle of radius " .. r .. ": at least 3 apart (" .. string.format("%.2f", closest) .. ")")
+end
 
 print(string.format("%d/%d shape checks passed", checks - failures, checks))
 os.exit(failures == 0 and 0 or 1)

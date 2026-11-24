@@ -101,7 +101,7 @@ return {
     decorate = function(layer, entity, info)
         common.decorate_turret(layer, entity, info)
         if layer.ammo and layer.ammo_inventory then
-            entity.ammo = { name = layer.ammo, quality = layer.ammo_quality or "normal", count = layer.ammo_count or 10, inventory = layer.ammo_inventory }
+            entity.ammo = { name = layer.ammo, quality = "normal", count = layer.ammo_count or 10, inventory = layer.ammo_inventory }
         end
     end,
     --- Whether the turret gets an inserter or a pipe stub.

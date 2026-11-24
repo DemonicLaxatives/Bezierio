@@ -12,12 +12,17 @@
 ---              pole towards the middle between its neighbours (the greedy walk puts
 ---              a pole at full reach and then, when a powered entity can only be
 ---              reached from a short stretch just past it, another one close by)
+---   count      the consumers no pole powers (poles bucketed by position, then a
+---              budgeted number of consumers per call)
 local vect = require("scripts.vector_math")
 local geometry = require("scripts.build.geometry")
 
 local lib = {}
 
 local refine
+
+--- Side (tiles) of the squares poles are bucketed in when counting what they power.
+lib.BUCKET = 16
 
 --- Distance (tiles) between the positions tried for one pole.
 lib.STEP = 0.5
@@ -37,7 +42,9 @@ lib.MARGIN = 0.3
 
 --- @class SmartWalk
 --- @field smart true
---- @field phase "line"|"consumers"|"poles"|"done"
+--- @field phase "line"|"consumers"|"poles"|"refine"|"count"|"done"
+--- @field buckets table<string, Vector[]>|nil  # count: poles by BUCKET-sized square
+--- @field ci integer|nil                       # count: next consumer
 --- @field i integer
 --- @field xs number[]
 --- @field ys number[]
@@ -47,6 +54,9 @@ lib.MARGIN = 0.3
 --- @field reach_window number    # how far (arc length) a pole can reach a consumer
 --- @field last Vector|nil        # the previous pole
 --- @field last_s number          # ... and where along the line it was aimed
+--- @field pole_s number[]|nil     # where along the line each pole was aimed
+--- @field refine {pass: string, i: integer, positions: Vector[], gaps: integer}|nil  # refine: its progress
+--- @field removed table<integer, true>|nil  # refine: poles taken out
 
 --- @return SmartWalk
 function lib.new_walk()
@@ -430,11 +440,11 @@ function lib.step(job, walk, band, budget, h)
             used = used + more
             if spot then put(job, walk, layer, h, spot, 0) else job.plan.skipped = job.plan.skipped + 1 end
             if not walk.last then
-                walk.phase = "done"
-                return used, true
+                -- (no pole at all: every consumer is unpowered)
+                walk.phase = "count"
             end
         end
-        while used < budget do
+        while walk.phase == "poles" and used < budget do
             local u, finished = next_pole(job, walk, layer, h)
             used = used + u + 1
             if finished then
@@ -449,22 +459,46 @@ function lib.step(job, walk, band, budget, h)
     end
 
     if walk.phase == "count" then
-        walk.phase = "done"
-        -- Count what no pole powers (checking every pole: few are left over).
-        local poles = job.plan.chains[layer.idx].members
+        -- Count what no pole powers: poles bucketed by position, then each consumer
+        -- checks only the buckets its supply reach touches.
         local r = layer.reach or 0
-        for _, c in ipairs(walk.consumers) do
-            local powered = false
-            for _, m in ipairs(poles) do
-                if covers(job.plan.entities[m].position, c, r) then
-                    powered = true
-                    break
-                end
+        local size = lib.BUCKET
+        if not walk.buckets then
+            walk.buckets, walk.ci = {}, 1
+            local chain = job.plan.chains[layer.idx]
+            for _, m in ipairs(chain and chain.members or {}) do
+                local pos = job.plan.entities[m].position
+                local key = math.floor(pos.x / size) .. "," .. math.floor(pos.y / size)
+                walk.buckets[key] = walk.buckets[key] or {}
+                table.insert(walk.buckets[key], pos)
+                used = used + 1
             end
+        end
+        while walk.consumers[walk.ci] and used < budget do
+            local c = walk.consumers[walk.ci]
+            walk.ci = walk.ci + 1
+            local reach, powered = r + c.half, false
+            for bx = math.floor((c.x - reach) / size), math.floor((c.x + reach) / size) do
+                for by = math.floor((c.y - reach) / size), math.floor((c.y + reach) / size) do
+                    for _, pos in ipairs(walk.buckets[bx .. "," .. by] or {}) do
+                        used = used + 0.2
+                        if covers(pos, c, r) then
+                            powered = true
+                            break
+                        end
+                    end
+                    if powered then break end
+                end
+                if powered then break end
+            end
+            used = used + 1
             if not powered then
                 job.plan.unpowered = job.plan.unpowered + 1
                 table.insert(job.plan.unpowered_at, { x = c.x, y = c.y, size = c.size })
             end
+        end
+        if not walk.consumers[walk.ci] then
+            walk.phase, walk.buckets = "done", nil
         end
     end
     return used, walk.phase == "done"

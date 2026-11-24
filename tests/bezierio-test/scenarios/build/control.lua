@@ -172,6 +172,13 @@ step("cheat mode built real entities", function(player)
   check(a and b and a.type == "electric-pole", "real poles found")
   check(wired(a, b, defines.wire_connector_id.pole_copper), "real poles connected with copper")
   check(wired(a, b, defines.wire_connector_id.circuit_red), "real poles wired red")
+  -- super force clears what's in the way, but not items on the ground or corpses
+  local spot = s.find_entities_filtered { name = "stone-wall", limit = 40 }[40].position
+  storage.wall_spot = spot
+  storage.dropped = s.create_entity { name = "item-on-ground", position = spot, stack = { name = "iron-plate", count = 5 } }
+  storage.corpse = s.create_entity { name = "character-corpse", position = spot, inventory_size = 10 }
+  storage.corpse.get_inventory(defines.inventory.character_corpse).insert { name = "iron-plate", count = 5 }
+  check(storage.dropped and storage.corpse, "item on the ground and a corpse placed")
   dev("click", P, "super_build")
 end, "idle")
 
@@ -179,6 +186,10 @@ step("cheat mode superforced", function(player)
   local s = player.surface
   local planned = count_planned(dev("plan", P))
   check(not storage.chest2.valid, "chest removed by superforced build")
+  check(storage.dropped.valid, "item on the ground left alone")
+  check(storage.corpse.valid, "corpse left alone")
+  storage.dropped.destroy()
+  storage.corpse.destroy()
   check(s.count_entities_filtered { name = "stone-wall" } == planned["stone-wall"], "wall built where the chest was")
   check(wall_components(s.find_entities_filtered { name = "stone-wall" }) == 1, "built walls are one 4-connected line")
   player.cheat_mode = false

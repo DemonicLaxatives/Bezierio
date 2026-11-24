@@ -199,5 +199,19 @@ check(all, "turrets carry the priority list")
 local art = helpers.plan(line, { [0] = wall0, [1] = turret(1, { priority_targets = { "small-biter" } }) })
 check(of_layer(art, 1)[1] and of_layer(art, 1)[1].priority_targets == nil, "no list where the turret can't have one")
 
+-- Non-square entities that aren't turrets (a modded 2x3 lamp) sit on their own grid
+local wide = helpers.plan({ { x = 0.5, y = 0.5 }, { x = 30.5, y = 9.5 } }, {
+    [0] = { idx = 0, type = "wall", name = "wall", quality = "normal", radius = 1, checkerboard = 0, size = 1, offset = 0 },
+    [1] = { idx = 1, type = "lamp", name = "big-lamp", quality = "normal", size = 3, tile_w = 2, tile_h = 3, offset = 0, spacing = 6 },
+})
+local fitted, wides = 0, 0
+for _, e in ipairs(wide.entities) do
+    if e.name == "big-lamp" then
+        wides = wides + 1
+        if e.position.x == math.floor(e.position.x) and e.position.y ~= math.floor(e.position.y) then fitted = fitted + 1 end
+    end
+end
+check(wides > 3 and fitted == wides, "2x3 lamps: whole-number x, half y (" .. fitted .. "/" .. wides .. ")")
+
 print(string.format("%d/%d layer type checks passed", checks - failures, checks))
 os.exit(failures == 0 and 0 or 1)

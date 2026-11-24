@@ -100,12 +100,18 @@ step("layer settings window: locks the main window, OK keeps, Cancel and Esc rev
   local main = player.gui.screen.bezierio_window
   dev("click", P, "layer_settings_1")
   local frame = player.gui.screen.bezierio_layer_window
-  check(frame and player.opened == frame and main.ignored_by_interaction, "open, the main window locked")
+  check(frame and player.opened == frame and controller().ui.editing, "open, editing")
+  dev("click_raw", P, "main_narrow_button")
+  check(not controller().ui.narrow and player.gui.screen.bezierio_layer_window, "the main window is locked")
   local offset = layers()[1].offset
   dev("set_value", P, "offset_slider", offset + 3)
   check(layers()[1].offset == offset + 3, "live edit")
   dev("click", P, "layer_cancel")
-  check(not player.gui.screen.bezierio_layer_window and layers()[1].offset == offset and not main.ignored_by_interaction, "Cancel: back as it was, unlocked")
+  check(not player.gui.screen.bezierio_layer_window and layers()[1].offset == offset and not controller().ui.editing, "Cancel: back as it was")
+  dev("click_raw", P, "main_narrow_button")
+  check(controller().ui.narrow, "unlocked")
+  dev("click_raw", P, "main_narrow_button")
+  main = player.gui.screen.bezierio_window
   check(player.opened == main, "the main window is the opened GUI again")
   dev("click", P, "layer_settings_1")
   dev("set_value", P, "offset_slider", offset + 2)
@@ -124,6 +130,32 @@ step("layer settings window: locks the main window, OK keeps, Cancel and Esc rev
   check(layers()[top + 1] and player.gui.screen.bezierio_layer_window, "a new layer opens its settings")
   dev("click", P, "layer_cancel")
   check(layers()[top + 1] == nil and not el(player, "layer_select_" .. (top + 1)), "Cancel removes the new layer")
+end)
+
+step("Esc on the layer window: the main window is opened again", function(player)
+  local revision = controller().revision
+  dev("click", P, "layer_settings_1")
+  player.opened = nil -- (Esc)
+  check(not player.gui.screen.bezierio_layer_window, "closed")
+  check(controller().revision == revision, "nothing changed: no new plan")
+end)
+
+step("... (next tick); a chest opened over the layer window", function(player)
+  check(player.opened == player.gui.screen.bezierio_window, "the main window is the opened GUI")
+  dev("click", P, "layer_settings_1")
+  storage.chest = player.surface.create_entity { name = "wooden-chest", position = { x = 2, y = 2 }, force = player.force }
+  player.opened = storage.chest
+  check(not player.gui.screen.bezierio_layer_window, "the layer window closed (as Cancel)")
+end)
+
+step("... the chest stays open", function(player)
+  check(player.opened == storage.chest, "the chest is still the opened GUI")
+  player.opened = nil
+end)
+
+step("... closed: the main window is the opened GUI again", function(player)
+  check(player.opened == player.gui.screen.bezierio_window, "the main window is opened again")
+  storage.chest.destroy()
 end)
 
 step("pin: other GUIs don't close the window", function(player)
@@ -178,6 +210,19 @@ step("presets", function(player)
   local a, b = presets()[1].layers, presets()[3].layers
   check(b[2].type == "electric-turret" and b[2].spacing == a[2].spacing and b[-1].radius == a[-1].radius
     and b[1].red_wire == true and b[1].green_wire == true, "import matches the export")
+
+  -- out-of-range values in a string are clamped and rounded as the sliders would
+  local data = helpers.json_to_table(helpers.decode_string(text))
+  for _, entry in ipairs(data.layers) do
+    if entry.idx == -1 then entry.offset, entry.radius = 1e5, 2.5 end
+  end
+  dev("click", P, "preset_import")
+  el(player, "preset_import_text").text = helpers.encode_string(helpers.table_to_json(data))
+  dev("click", P, "preset_import_confirm")
+  local odd = presets()[4].layers[-1]
+  check(#presets() == 4 and odd.offset == 10 and odd.radius == 3, "import clamps and rounds: offset "
+    .. tostring(odd.offset) .. ", radius " .. tostring(odd.radius))
+  dev("click", P, "preset_delete")
 
   dev("click", P, "preset_delete")
   dev("click", P, "preset_delete")

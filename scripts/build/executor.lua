@@ -5,6 +5,7 @@
 --- skipping what's already there, the placement check, finding obstacles, wiring
 --- pole chains, and keeping everything in one undo item.
 local undo = require("scripts.build.undo")
+local wires = require("scripts.build.wires")
 
 local lib = {}
 
@@ -15,7 +16,7 @@ local lib = {}
 --- @field matching_tile_ghost fun(job: BuildJob, player: LuaPlayer, ghost: LuaEntity): "existing"|nil
 --- @field place_tile fun(job: BuildJob, player: LuaPlayer, tile: PlannedTile, undo_index: integer)
 --- @field flush fun(job: BuildJob, player: LuaPlayer, undo_index: integer)
---- @field matching_entity_ghost fun(job: BuildJob, player: LuaPlayer, ghost: LuaEntity): "placed"|"existing"
+--- @field matching_entity_ghost fun(job: BuildJob, player: LuaPlayer, ghost: LuaEntity, entity: PlannedEntity): "placed"|"existing", LuaEntity|nil  # the entity revived from it
 --- @field clear fun(job: BuildJob, player: LuaPlayer, obstacle: LuaEntity, undo_index: integer)
 --- @field create_entity fun(job: BuildJob, player: LuaPlayer, entity: PlannedEntity, undo_index: integer): LuaEntity|nil
 
@@ -33,7 +34,7 @@ lib.COST = { tile = 3, entity = 6, wire = 4 }
 --- @field existing integer
 --- @field blocked integer
 
---- @class BuildJob
+--- @class BuildJob: WireWalk
 --- @field player_index integer
 --- @field surface LuaSurface
 --- @field force LuaForce
@@ -42,21 +43,44 @@ lib.COST = { tile = 3, entity = 6, wire = 4 }
 --- @field plan BuildPlan         # finished plan (read only)
 --- @field stage "tiles"|"entities"|"wires"|"done"
 --- @field cursor integer
---- @field chain_keys integer[]   # layer indices of plan.chains, for the wires stage
---- @field chain_cursor integer
 --- @field tile_batch Tile[]      # used by the instant output
 --- @field undo UndoTracking
 --- @field result BuildResult
 --- @field own table<integer, true>|nil  # unit numbers of what this build made
+--- @field aborted boolean|nil  # stopped: its surface or force went away
 
-local IGNORED_IN_THE_WAY = {
-    ["character"] = true,
-    ["resource"] = true,
-    ["corpse"] = true,
-    ["entity-ghost"] = true,
-    ["tile-ghost"] = true,
-    ["item-on-ground"] = true,
+--- Entity types super force never clears: characters and their corpses, items on
+--- the ground, ore, robots in flight, effects, request proxies (entity types, not
+--- names: an item on the ground is an "item-entity").
+local IGNORED_IN_THE_WAY = {}
+for _, t in ipairs({
+    "character", "character-corpse", "corpse", "resource", "item-entity", "item-request-proxy",
+    "entity-ghost", "tile-ghost", "deconstructible-tile-proxy",
+    "construction-robot", "logistic-robot", "combat-robot", "capture-robot",
+    "projectile", "beam", "stream", "fire", "sticker", "explosion", "smoke-with-trigger", "particle-source",
+    "highlight-box", "speech-bubble",
+}) do IGNORED_IN_THE_WAY[t] = true end
+
+--- Types whose way round matters for "already there": a belt facing the other way
+--- isn't the planned belt. (Not rails: the game folds opposite directions together.)
+local DIRECTED = {
+    ["transport-belt"] = true, ["underground-belt"] = true, ["pipe-to-ground"] = true,
+    ["pump"] = true, ["inserter"] = true,
 }
+
+--- Does what's there (an entity or ghost of the planned name) face the planned way?
+--- @param found LuaEntity
+--- @param entity PlannedEntity
+--- @param kind string  # the prototype type
+--- @return boolean
+local function same_way(found, entity, kind)
+    if not DIRECTED[kind] or entity.direction == nil then return true end
+    if found.direction ~= entity.direction then return false end
+    if entity.belt_type and kind == "underground-belt" and found.belt_to_ground_type ~= entity.belt_type then
+        return false
+    end
+    return true
+end
 
 --- Players in the map editor or with cheat mode get real entities, not ghosts.
 --- @param player LuaPlayer
@@ -72,9 +96,7 @@ end
 --- @param mode BezierioBuildMode
 --- @return BuildJob
 function lib.new_job(player, plan, mode)
-    local chain_keys = {}
-    for idx in pairs(plan.chains) do table.insert(chain_keys, idx) end
-    table.sort(chain_keys)
+    local chain_keys = wires.chain_keys(plan)
     return {
         player_index = player.index,
         surface = player.surface,
@@ -177,7 +199,8 @@ for t in pairs(IS_ELEVATED) do IS_TRACK[t] = true end
 --- @param job BuildJob
 --- @param made LuaEntity|nil
 local function own(job, made)
-    if made and made.valid and made.unit_number then
+    if not (made and made.valid) then return nil end
+    if made.unit_number then
         job.own = job.own or {}
         job.own[made.unit_number] = true
     end
@@ -222,14 +245,50 @@ local function gate_walls(job, player, output, entity)
     local area = { { p.x - 1, p.y - 1 }, { p.x + 1, p.y + 1 } }
     local gate_direction = (entity.direction == defines.direction.north or entity.direction == defines.direction.south)
         and defines.direction.east or defines.direction.north
-    for _, wall in pairs(job.surface.find_entities_filtered { area = area, type = "wall", force = job.force }) do
-        local at = wall.position
-        with_undo(job, player, output.clear, wall)
-        if job.surface.can_place_entity { name = entity.gate, position = at, direction = gate_direction, force = job.force,
-                build_check_type = defines.build_check_type.manual_ghost } or job.output == "ghost" then
-            own(job, with_undo(job, player, output.create_entity, { name = entity.gate, quality = "normal", position = at, size = 1, direction = gate_direction }))
+    local surface, result = job.surface, job.result
+    for _, wall in pairs(surface.find_entities_filtered { area = area, type = "wall", force = job.force }) do
+        -- (built over before: its gate ghost is there already)
+        if wall.valid and not surface.find_entities_filtered { ghost_name = entity.gate, position = wall.position, limit = 1 }[1] then
+            local at, name, quality = wall.position, wall.name, wall.quality.name
+            local gate = { name = entity.gate, quality = "normal", position = at, size = 1, direction = gate_direction }
+            with_undo(job, player, output.clear, wall)
+            -- Ghosts go over a wall marked for removal; built for real, the wall is
+            -- gone first, and comes back if the gate can't go there after all.
+            local fits = job.output == "ghost" or surface.can_place_entity {
+                name = entity.gate, position = at, direction = gate_direction, force = job.force,
+                build_check_type = defines.build_check_type.manual_ghost,
+            }
+            if fits and own(job, with_undo(job, player, output.create_entity, gate)) then
+                result.placed = result.placed + 1
+            elseif job.output ~= "ghost" then
+                with_undo(job, player, output.create_entity, { name = name, quality = quality, position = at, size = 1 })
+                result.blocked = result.blocked + 1
+            end
         end
     end
+end
+
+--- Where obstacles are looked for: the collision box turned the planned way, or
+--- for diagonals and track a square around it (a curved rail's box isn't its
+--- footprint).
+--- @param prototype LuaEntityPrototype
+--- @param entity PlannedEntity
+--- @return BoundingBox
+local function obstacle_area(prototype, entity)
+    local box, p = prototype.collision_box, entity.position
+    local l, t, r, b = box.left_top.x, box.left_top.y, box.right_bottom.x, box.right_bottom.y
+    local d = entity.direction or 0
+    if IS_TRACK[prototype.type] or d % 4 ~= 0 then
+        local half = math.max(-l, -t, r, b)
+        l, t, r, b = -half, -half, half, half
+    elseif d == 4 then -- east: (x, y) -> (-y, x)
+        l, t, r, b = -b, l, -t, r
+    elseif d == 8 then -- south
+        l, t, r, b = -r, -b, -l, -t
+    elseif d == 12 then -- west: (x, y) -> (y, -x)
+        l, t, r, b = t, -r, b, -l
+    end
+    return { left_top = { x = p.x + l, y = p.y + t }, right_bottom = { x = p.x + r, y = p.y + b } }
 end
 
 local function build_entity(job, player, output, entity)
@@ -259,25 +318,34 @@ local function build_entity(job, player, output, entity)
     end
     local position = entity.position
 
-    if surface.find_entity(entity.name, position) then
+    -- Facing another way: in the way (the placement check may not say so: belts
+    -- can be placed over belts), replaced by super force.
+    local found = surface.find_entity(entity.name, position)
+    if found and same_way(found, entity, prototype.type) then
         result.existing = result.existing + 1
         return
+    elseif found then
+        if job.mode ~= "superforced" or is_own(job, found) or found.force ~= force then
+            result.blocked = result.blocked + 1
+            return
+        end
+        with_undo(job, player, output.clear, found)
     end
     local ghost = surface.find_entities_filtered { ghost_name = entity.name, position = position, limit = 1 }[1]
-    if ghost then
-        local outcome = output.matching_entity_ghost(job, player, ghost)
+    if ghost and same_way(ghost, entity, prototype.type) then
+        local outcome, revived = output.matching_entity_ghost(job, player, ghost, entity)
+        if revived then own(job, revived) end
         result[outcome] = result[outcome] + 1
         return
+    elseif ghost then
+        if job.mode ~= "superforced" or ghost.force ~= force then
+            result.blocked = result.blocked + 1
+            return
+        end
+        ghost.destroy()
     end
 
-    -- Obstacles: a square around the collision box, so rotated (and diagonal)
-    -- footprints are covered too.
-    local box = prototype.collision_box
-    local half = math.max(-box.left_top.x, -box.left_top.y, box.right_bottom.x, box.right_bottom.y)
-    local area = {
-        left_top = { x = position.x - half, y = position.y - half },
-        right_bottom = { x = position.x + half, y = position.y + half },
-    }
+    local area = obstacle_area(prototype, entity)
 
     -- Check with the real entity name: with name = "entity-ghost" + inner_name the
     -- engine's manual ghost check rejects free spots next to existing walls (2.1.24).
@@ -302,7 +370,8 @@ local function build_entity(job, player, output, entity)
                 if track and IS_TRACK[kind] then
                     -- rails over rails
                 elseif other.type == "entity-ghost" then
-                    other.destroy()
+                    -- (only our own force's ghosts)
+                    if other.force == force then other.destroy() end
                 elseif not IGNORED_IN_THE_WAY[other.type] and not (entity.gate and IS_RAIL[other.type])
                     and (other.force == force or other.force.name == "neutral") then
                     with_undo(job, player, output.clear, other)
@@ -358,38 +427,17 @@ end
 --- @param budget number
 --- @return number used
 local function step_wires(job, budget)
-    local used, plan = 0, job.plan
-    if job.chain_cursor > #job.chain_keys then
-        local links = plan.links or {}
-        job.link_cursor = job.link_cursor or 1
-        while job.link_cursor <= #links and used < budget do
-            local link = links[job.link_cursor]
-            local a = built_entity(job.surface, plan.entities[link.a])
-            local b = built_entity(job.surface, plan.entities[link.b])
-            if a and b then connect(a, b, false, link.red, link.green) end
-            job.link_cursor = job.link_cursor + 1
-            used = used + lib.COST.wire
-        end
-        if job.link_cursor > #links then job.stage = "done" end
-        return used
-    end
-    while job.chain_cursor <= #job.chain_keys and used < budget do
-        local chain = plan.chains[job.chain_keys[job.chain_cursor]]
-        local members = chain.members
-        local count = #members
-        local pairs_total = (plan.closed and count > 2) and count or count - 1
-        while job.cursor <= pairs_total and used < budget do
-            local a = built_entity(job.surface, plan.entities[members[job.cursor]])
-            local b = built_entity(job.surface, plan.entities[members[job.cursor % count + 1]])
-            if a and b then connect(a, b, true, chain.red, chain.green) end
-            job.cursor = job.cursor + 1
-            used = used + lib.COST.wire
-        end
-        if job.cursor > pairs_total then
-            job.chain_cursor = job.chain_cursor + 1
-            job.cursor = 1
-        end
-    end
+    local plan, surface = job.plan, job.surface
+    local used, done = wires.step(job, plan, budget, lib.COST.wire,
+        function(chain, a, b)
+            local x, y = built_entity(surface, plan.entities[a]), built_entity(surface, plan.entities[b])
+            if x and y then connect(x, y, true, chain.red, chain.green) end
+        end,
+        function(link)
+            local x, y = built_entity(surface, plan.entities[link.a]), built_entity(surface, plan.entities[link.b])
+            if x and y then connect(x, y, false, link.red, link.green) end
+        end)
+    if done then job.stage = "done" end
     return used
 end
 
@@ -400,7 +448,8 @@ end
 function lib.step(job, budget)
     local player = game.get_player(job.player_index)
     if not (player and player.valid and job.surface.valid and job.force.valid) then
-        job.stage = "done"
+        -- (the surface or force is gone: nothing to report)
+        job.stage, job.aborted = "done", true
         return true, 0
     end
     local output = lib.outputs[job.output]

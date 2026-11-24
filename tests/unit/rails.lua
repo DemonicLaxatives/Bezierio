@@ -171,5 +171,27 @@ for _, elevated in ipairs({ false, true }) do
     if elevated then check(ramps == 4, "a ramp up and down on each track: " .. ramps) end
 end
 
+-- Progress only goes up, through every stage (rails included)
+do
+    local planner = require("scripts.build.planner")
+    local curve = require("scripts.curve.curve")
+    local c = curve.new()
+    for _, p in ipairs({ { x = 0, y = 0 }, { x = 40, y = 10 }, { x = 70, y = 50 } }) do curve.append(c, p) end
+    local job = planner.new_job(c, {
+        [0] = rail_layer(),
+        [1] = { idx = 1, type = "wall", name = "wall", quality = "normal", radius = 1, checkerboard = 0, size = 1, offset = 0 },
+        [2] = { idx = 2, type = "lamp", name = "lamp", quality = "normal", size = 1, offset = 0, spacing = 5 },
+    })
+    local last, back, stages = 0, nil, {}
+    repeat
+        local done = planner.step(job, 20)
+        stages[job.stage] = true
+        local now = planner.progress(job)
+        if now < last and not back then back = string.format("%s: %.3f after %.3f", job.stage, now, last) end
+        last = now
+    until done
+    check(stages.rails and back == nil, "progress never goes back: " .. tostring(back))
+end
+
 print(string.format("%d/%d rail checks passed", checks - failures, checks))
 os.exit(failures == 0 and 0 or 1)

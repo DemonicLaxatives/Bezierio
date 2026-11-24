@@ -139,7 +139,7 @@ end
 --- @return table
 local function target_filters()
     local types = {}
-    for _, t in ipairs({ "unit", "unit-spawner", "turret", "spider-unit", "segmented-unit", "asteroid" }) do
+    for _, t in ipairs(registry.TARGET_TYPES) do
         local ok, found = pcall(prototypes.get_entity_filtered, { { filter = "type", type = t } })
         if ok and found and #found > 0 then types[#types + 1] = t end
     end
@@ -425,25 +425,16 @@ local function deep_copy(value)
     return out
 end
 
---- Lock or unlock the main window (it can't be used while a layer is edited).
---- @param player LuaPlayer
---- @param locked boolean
-local function lock_main(player, locked)
-    local main = window.get(player)
-    if main then main.ignored_by_interaction = locked end
-end
 
 --- Close the settings window, keeping the edits.
 --- @param player LuaPlayer
 function lib.accept(player)
     local ui = state.ui(player.index)
-    if not ui.editing then return end
-    ui.editing = nil
     local frame = player.gui.screen[lib.WINDOW]
+    if not (ui.editing or frame) then return end
+    ui.editing = nil
     if frame then frame.destroy() end
-    lock_main(player, false)
-    local main = window.get(player)
-    if main and not ui.pinned then player.opened = main end
+    window.focus_main(player, ui)
 end
 
 --- Close the settings window, putting the layer back as it was.
@@ -451,7 +442,10 @@ end
 function lib.cancel(player)
     local ui = state.ui(player.index)
     local editing = ui.editing
-    if not editing then return end
+    if not editing then return lib.accept(player) end -- (nothing to put back: just close)
+    if not editing.new and editing.revision == state.get(player.index).revision then
+        return lib.accept(player) -- (nothing changed: no need to plan again)
+    end
     local layers = state.layers(player.index)
     if editing.new then
         layers[editing.idx] = nil
@@ -474,7 +468,10 @@ function lib.open_settings(player, idx, new)
     if not layer then return end
     if ui.editing then lib.accept(player) end
     ui.selected_layer = idx
-    ui.editing = { idx = idx, backup = (not new) and deep_copy(layer) or nil, new = new or nil }
+    ui.editing = {
+        idx = idx, backup = (not new) and deep_copy(layer) or nil, new = new or nil,
+        revision = state.get(player.index).revision,
+    }
 
     local frame = player.gui.screen.add { type = "frame", name = lib.WINDOW, direction = "vertical" }
     local title_bar = frame.add { type = "flow", direction = "horizontal" }
@@ -513,7 +510,6 @@ function lib.open_settings(player, idx, new)
         tags = { group = "layer", action = "ok" },
     }
     frame.force_auto_center()
-    lock_main(player, true)
     player.opened = frame
     lib.refresh(player)
 end

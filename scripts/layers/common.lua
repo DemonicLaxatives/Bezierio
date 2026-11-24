@@ -128,19 +128,27 @@ function lib.decorate_turret(layer, entity, info, directions)
         direction = lib.direction(v, math.min(layer.directions or 4, directions or 16))
         entity.direction = direction
     end
+    lib.fit_footprint(layer, entity)
+end
+
+--- Non-square entities (a flamethrower is 2x3) on their own grid within the
+--- square the planner reserved: its centre is on the grid for `size`; an even
+--- side needs a whole-number centre, an odd one a half. Facing diagonally the
+--- square's centre is right. Fitting twice changes nothing.
+--- @param layer Layer
+--- @param entity PlannedEntity
+function lib.fit_footprint(layer, entity)
     local w, h = layer.tile_w or layer.size, layer.tile_h or layer.size
-    if w ~= h and direction % 4 == 0 then
-        if direction == 4 or direction == 12 then w, h = h, w end
-        -- The reserved square's centre is on the grid for `size`; an even side
-        -- needs a whole-number centre, an odd one a half.
-        local pos = entity.position
-        local function fit(c, side)
-            local whole = c == math.floor(c)
-            if (side % 2 == 0) ~= whole then return c - 0.5 end
-            return c
-        end
-        entity.position = { x = fit(pos.x, w), y = fit(pos.y, h) }
+    local direction = entity.direction or 0
+    if w == h or direction % 4 ~= 0 then return end
+    if direction == 4 or direction == 12 then w, h = h, w end
+    local pos = entity.position
+    local function fit(c, side)
+        local whole = c == math.floor(c)
+        if (side % 2 == 0) ~= whole then return c - 0.5 end
+        return c
     end
+    entity.position = { x = fit(pos.x, w), y = fit(pos.y, h) }
 end
 
 return lib

@@ -150,7 +150,7 @@ end
 --- @param index FrameIndex
 --- @param c Vector
 --- @return number|nil
-function lib.grid_distance(frames, index, c, closed)
+function lib.grid_distance(frames, index, c)
     local j0, d0 = lib.nearest_frame(frames, index, c)
     local best_u = frame_u(frames, j0, c)
     local best_j = j0

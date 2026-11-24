@@ -31,12 +31,16 @@ scripts/
   layers/
     registry.lua         layer types: lookup, fields, new layers, item picker filter
     common.lua           pieces shared by layer types
-    empty.lua wall.lua tile.lua electric_pole.lua electric_turret.lua roboport.lua rail.lua
+    empty.lua wall.lua tile.lua electric_pole.lua electric_turret.lua turret.lua roboport.lua rail.lua
+    belt.lua pipe.lua lamp.lua land_mine.lua radar.lua solar_panel.lua accumulator.lua
   build/
     geometry.lua         frames, spatial index, grid distance from the curve
     planner.lua          curve + layers -> BuildPlan, as a resumable job
     executor.lua         BuildPlan -> world, as a resumable job (incl. wiring)
     blueprint.lua        BuildPlan -> blueprint in the cursor, as a resumable job
+    wires.lua            walking a plan's pole chains and links, for the executor and the blueprint
+    paths.lua            belt and pipe lines: segments, corners, pieces
+    feeds.lua            turret feeds: fluid connections, inserters
     rails.lua            rail track fitted to a line, signals' sides, elevated supports
     rail_data.lua        the game's rail planner data, generated (tests/gen-rail-data.sh): don't edit
     smart_poles.lua      pole lines as far apart as reach allows, powering what needs it
@@ -45,14 +49,14 @@ scripts/
     outputs/instant.lua  ... as real entities (map editor, cheat mode)
   gui/
     interactions.lua     routes GUI events to lib[tags.group][tags.action](event)
-    window.lua           find window elements by name
+    window.lua           find window elements by name; give the main window back its place as the opened GUI
     layout.lua           main window: title bar (pin, narrow), the sections in one column (group "main")
     control.lua          Build section: Draw / Preview / Build buttons, status and totals lines (group "control")
     curve_control.lua    Curve section: pointer button, closed loop, reverse, point list (group "curve")
     view_settings.lua    settings window: colours, curve width, preview opacity, mark time, blueprint source (group "view")
     preset_control.lua   preset bar above the layer list (group "preset")
     string_window.lua    import / export window for curve and preset strings (group "strings")
-    layer_view.lua       layer list and the selected layer's detail pane
+    layer_view.lua       layer list, and the layer settings window
     layer_control.lua    layer actions (group "layer")
 tests/                   see Testing
 ```
@@ -74,7 +78,9 @@ changed:
 (`jobs.BUDGET`):
 
 0. **Clear old drawings.** Destroy retired render objects, a budgeted number per
-   tick (`draw.step_trash`).
+   tick, at most `draw.TRASH_SHARE` of the budget (`draw.step_trash`).
+   `draw.delete_sprites` moves whole caches into the trash without looking at
+   them, so clearing a 50,000-object preview costs nothing up front.
 1. **Reset if needed.** On a new revision, once edits have paused for
    `SETTLE_TICKS`, drop the plan and redraw. On a redraw request, retire the
    render objects and redraw the control points (cheap).
@@ -116,14 +122,19 @@ The shape is documented at the top of [scripts/state.lua](../scripts/state.lua):
 ```
 storage.schema_version
 storage.controllers[player_index]
-    ui        preset_index, draw_curve, preview_build, selected_point, selected_layer
+    ui        preset_index, draw_curve, preview_build, selected_point, selected_layer,
+              preset_mode, pointer_mode, narrow, pinned,
+              editing {idx, backup, new, revision} (the layer settings window is open),
+              reopen_main (give the main window back its place as the opened GUI next tick)
     view      colours (names from palette.NAMED), curve_width, preview_opacity
+    settings  the player's other settings, only where changed (state.SETTING_DEFAULTS)
     curve     {kind, points = {{x, y}, ...}, closed, handles = {circle, ellipse, arc}, reversed = {[kind] = true}}
     presets   {{name, layers = {[k] = Layer}}}             (layer k: … -1, 0, 1 …)
     revision  bumped on curve/layer changes (changed_tick: when)
     redraw    view needs redrawing (redraw_points: only the point markers)
     work      jobs: plan (PlannerJob), draw progress, pending_build, build (BuildJob or BlueprintJob)
-storage.sprites[player_index]   LuaRenderObjects: curve / control_points / preview / trash
+storage.sprites[player_index]   LuaRenderObjects: curve / control_points / preview / highlight_<kind>;
+                                trash: retired caches (arrays), emptied from the end
 storage.item_filter             ItemPrototypeFilter for the layer pickers
 storage.rebuild_needed          set by migrations: rebuild derived data on next access
 ```
@@ -332,6 +343,12 @@ clamped to the new range, plus the offset.
    - Each placement tries the 4 nearest grid-aligned positions, then the same
      with the target shifted up to ±2 tiles along the curve.
    - It is skipped only if all of those are taken.
+   - On a closed curve, a spot in the loop's second half within half a spacing
+     of the first entity is left out, so the seam gets 0.5 to 1.5 spacings instead
+     of an entity next to the first one (`walk.first`, `walk.centre`).
+   - Non-square entities (a 2x3 flamethrower, modded ones) are moved onto their
+     own grid within the reserved square (`common.fit_footprint`: an even side
+     needs a whole-number centre, an odd one a half).
    - **Pole layers** (with `wire_distance`) also form a chain (`plan.chains`, in
      order along the curve). If the next pole would be out of wire reach of the
      previous one, poles are inserted in between, halving the gap recursively;
@@ -351,7 +368,10 @@ clamped to the new range, plus the offset.
      previous pole and powers the first unpowered entity plus every unpowered one
      before the spot. If no spot can, that entity is given up on. At the end,
      entities still outside every pole's supply area are counted in
-     `plan.unpowered`. Spaced entities record the sample they were placed at
+     `plan.unpowered`, in a phase of its own (`count`): the poles are put in
+     buckets of `BUCKET` tiles square, and each consumer looks only at the
+     buckets its pole reach touches, a budgeted number per step. (Checking every
+     consumer against every pole in one call took 0.45 s at 8,000 tiles.) Spaced entities record the sample they were placed at
      (`frame`), so projection doesn't jump to another stretch where the curve
      crosses itself. Pole layers run last (lowest priority), so every consumer is
      already planned.
@@ -436,10 +456,19 @@ elevated-rails quality` if the game's rails change.
   the rails, so their ghosts are there when the elevated rail ghosts are placed.
 Rail items per piece come from `items_to_place_this` (curved pieces cost more).
 
+A finished job keeps only what's read afterwards (`planner.KEEP_WHEN_DONE`:
+stage, layers, closed, points for drawing the curve, the plan); the per-cell
+working tables would otherwise stay in the save.
+
 Values a layer derives from its prototype (size, wire reach, supply area,
 `needs_power` = has an electric energy source) are set by `registry.refresh`, for new
 layers and again on every configuration change; layers whose prototype is gone
-become empty.
+become empty, and so do layers whose item is gone. An unknown quality becomes
+normal. `registry.check_fields` then clamps the numbers into their (possibly
+new) ranges and drops items and priority targets that are gone or no longer
+fit; it also runs on new layers after their defaults, and import strings go
+through `registry.carry_over`, which rounds and clamps like the sliders and
+takes only enemy types as priority targets (`registry.is_target`).
 
 Entity sizes come from the prototype's `tile_width`/`tile_height`. The collision
 box is smaller than the footprint; rounding it outward made 1×1 entities 2×2.
@@ -457,18 +486,34 @@ Known geometric limits:
 
 The executor walks the plan's tiles, then its entities. For each placement it:
 
-1. skips anything already there;
+1. skips anything already there. For belts, undergrounds (and their input /
+   output), pipes-to-ground, pumps and inserters, only if it faces the planned
+   way (`same_way`; not rails, whose opposite directions the game folds
+   together). One facing another way is in the way: a normal build counts it
+   blocked, super force replaces it (the placement check doesn't catch it:
+   belts can be placed over belts). A matching ghost is revived by `instant`,
+   which then counts the entity as its own and gives it its priorities and
+   ammo (dropping the ghost's ammo request);
 2. runs the placement check;
 3. handles obstacles: forced = trees/rocks only, superforced = own and neutral
-   entities, only where the spot is blocked. Super force never clears anything
-   the build itself made (`job.own`, by unit number), and track (rails, signals,
+   entities, only where the spot is blocked, within the collision box turned
+   the planned way (`obstacle_area`; a square for diagonals and track). Super
+   force never clears anything the build itself made (`job.own`, by unit
+   number), only its own force's ghosts, and nothing of the types in
+   `IGNORED_IN_THE_WAY` (characters and corpses, items on the ground, ore,
+   robots, effects, proxies: entity types, not names). Track (rails, signals,
    supports) never clears other track: the square searched around a curved
    rail reaches far past it, and rails may cross and overlap. Elevated pieces
    clear nothing on the ground.
 
+The outputs return nil when what they created is already gone (another mod's
+`on_built` handler may destroy it), and a build whose surface or force went away
+stops (`job.aborted`) without a report.
+
 After the entities, the executor connects each pole chain's consecutive poles
 (ghosts or real) with copper wire, plus red and / or green wire as the layer's
-*Red wire* / *Green wire* say. Then it wires `plan.links` (land mines).
+*Red wire* / *Green wire* say. Then it wires `plan.links` (land mines). The
+blueprint writer walks the wires the same way (`build/wires.lua`).
 
 Every action carries an `undo_index`, so a build spread over many ticks is still
 one undo item (`build/undo.lua`). Items are addressed from the top of the stack,
@@ -521,8 +566,10 @@ unique across all of them):
 
 - **Layer settings** (`bezierio_layer_window`, `layer_view.open_settings`): a
   layer's item or settings button opens it, so does a new layer. It becomes
-  `player.opened` and the main window gets `ignored_by_interaction` until it
-  closes. Edits apply live; `ui.editing` keeps a copy of the layer from when it
+  `player.opened`, and the main window is locked until it closes:
+  `interactions.handle_event` ignores events from it while `ui.editing` is set.
+  (`ignored_by_interaction` on the main window would pass clicks through to the
+  world, where the pointer acts on them.) Edits apply live; `ui.editing` keeps a copy of the layer from when it
   opened. OK (`accept`) keeps the edits, Cancel or Esc (`on_gui_closed`) puts the
   copy back, or removes a new layer. Moving or deleting layers, switching
   presets, narrowing or closing the main window accept first.
@@ -536,6 +583,14 @@ unique across all of them):
   the same button again closes it). It becomes `player.opened`, so Esc closes it,
   but the main window stays usable. A successful import closes it; switching
   presets closes a preset's.
+
+When the layer or import window closes, the main window gets its place as the
+opened GUI back (`window.focus_main`), unless it's pinned. From an
+`on_gui_closed` handler that waits for the next tick (`ui.reopen_main`): the
+event may come from another GUI opening (a chest clicked), and setting
+`player.opened` there fights it. While another GUI is open it keeps waiting.
+A reset (schema change) and configuration changes close all four windows
+(`state.close_windows`).
 
 - **Narrow** (`ui.narrow`, the chevrons in the title bar) rebuilds the window
   where it was. Each section then shows only its everyday controls: the points as
@@ -555,11 +610,16 @@ unique across all of them):
 `gui/interactions.lua` sends each GUI event to `lib[tags.group][tags.action]`, but
 only for the element types listed in `routed_types`:
 
-- clicks → buttons, and labels with tags (the unpowered / unfed warnings);
+- clicks → buttons, and labels with tags (the unpowered / unfed warnings), left
+  mouse button only (a right-click on a delete button shouldn't delete);
 - elem changed → choose-elem-buttons;
 - confirmed → textfields;
 - value changed → sliders;
-- checked state changed → checkboxes.
+- checked state changed → checkboxes;
+- selection changed → drop-downs.
+
+Events from the main window are ignored while a layer's settings are open (see
+The window).
 
 Every element raises `on_gui_click`. Without this filter, clicking an item picker
 ran its "type changed" action, which rebuilt the row and destroyed the picker
@@ -568,9 +628,11 @@ before it could open.
 Pointer clicks (`bezierio-pointer`) are ignored when the event has `in_gui` or an
 `element` set. `element` alone isn't enough: slider clicks don't report one.
 
-Element names are unique within the window (`cp_x_3`, `radius_slider`,
+Element names are unique across the windows (`cp_x_3`, `radius_slider`,
 `layer_select_-1`, ...). `gui/window.lua` finds elements by name, so code and tests
-don't depend on the layout.
+don't depend on the layout. Found elements are remembered per player (in a plain
+Lua table, not saved: a valid element of that name is the one, so results don't
+depend on it).
 
 ## Testing
 
@@ -596,17 +658,17 @@ tests/run.sh bench                                     # timing (read the BENCH 
 
 | Test | What it checks |
 |---|---|
-| `plan_snapshot.lua` | Planner output for 30 fixed cases matches `snapshots/plans.txt`. Run with `--update` only for an intended change, and review the diff. |
-| `planner_jobs.lua` | Running the planner in tiny slices gives exactly the one-shot plan. |
+| `plan_snapshot.lua` | Planner output for 37 fixed cases matches `snapshots/plans.txt`. Run with `--update` only for an intended change, and review the diff. |
+| `planner_jobs.lua` | Running the planner in tiny slices gives exactly the one-shot plan; a finished job keeps only `KEEP_WHEN_DONE`. |
 | `plan_properties.lua` | Random curves and loops: no overlaps, wall layers never joined only at a corner where a corner cell was free, an unbroken layer 0 wall line (a ring through the seam for loops), poles in reach except counted gaps, and bend warnings where they belong. Adding an underlay anywhere never moves an entity or a tile. Smart poles: every powered entity is covered or counted in `plan.unpowered` (exactly), and without consumers the poles are about a wire reach apart. Circles and ellipses make an unbroken 1-wide wall ring; arcs are one piece. |
 | `curve_edit.lua` | Inserting (including where a shift-click goes); reversing keeps the points and samples the curve backwards. |
 | `layers.lua` | Which layer settings survive picking another item (`registry.carry_over`). |
 | `presets.lua` | Preset list operations; export data round trip and import validation. |
-| `layer_types.lua` | Turret facing (both sides, inward) and non-square footprints, ammo, lamp colours and rainbow, radar spacing, land mine density, determinism and wires; side wall layers around a circle joined side by side. |
+| `layer_types.lua` | Turret facing (both sides, inward) and non-square footprints (other types too), ammo, lamp colours and rainbow, radar spacing, land mine density, determinism and wires; side wall layers around a circle joined side by side. |
 | `paths.lua` | Belts fed only from behind and lines continuous, undergrounds paired within reach, pipe lines connected and apart, pumps; on a gentle curve, a loop and random curves. |
-| `feeds.lua` | Fluid connection targets in every facing (straight and diagonal, against the game), inserters picking from a belt and dropping into their turret (normal and long reach, straight and curved lines), pipe stubs reaching one network. |
-| `rails.lua` | The rail data; fits stay near calm curves, circles close, elevated track has ramps at both ends and supports in reach of every joint, slanted ends warn; signal counts follow the spacing (doubled both ways). |
-| `shapes.lua` | What the handles mean; samples exactly on circles, (rotated) ellipses and arcs; direction; editing shapes and moving curves. |
+| `feeds.lua` | Fluid connection targets in every facing (straight and diagonal, against the game), inserters picking from a belt and dropping into their turret (normal and long reach, straight and curved lines), pipe stubs reaching one network, and a plain pipe where the line has pipes-to-ground. |
+| `rails.lua` | The rail data; fits stay near calm curves, circles close, elevated track has ramps at both ends and supports in reach of every joint, slanted ends warn; signal counts follow the spacing (doubled both ways); planning progress never goes back. |
+| `shapes.lua` | What the handles mean; samples exactly on circles, (rotated) ellipses and arcs; direction; editing shapes and moving curves; spaced entities round a loop keep apart at the seam. |
 | `migrations.lua` | The files in `migrations/`, run like the game does, on old and current data. |
 
 `helpers.plan` is the only place the tests touch the planner API.
@@ -619,7 +681,11 @@ tests/run.sh bench                                     # timing (read the BENCH 
 - Scenarios use `--test-scenario`, which runs headless with one player. They drive
   the real GUI handlers through the `bezierio-dev` remote interface. Scripts can't
   click elements or fire custom inputs, so `dev.lua` imitates what the engine does
-  first.
+  first. The hooks act as a player would: on the main window while a layer's
+  settings are open, they press OK first; for a name that isn't there (a layer
+  setting after that), they open the selected layer's settings again.
+  `click_raw` clicks without either, to test the lock. `set_budget` sets the
+  work budget.
 - Steps that start work wait for `dev("idle")`, i.e. for jobs to catch up.
 - Scenarios share helpers, a standard curve and layer stack, and the step runner
   in `tests/bezierio-test/lib/flow.lua`.

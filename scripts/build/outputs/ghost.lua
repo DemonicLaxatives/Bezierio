@@ -17,7 +17,7 @@ return {
 
     flush = function(job, player, undo_index) end,
 
-    matching_entity_ghost = function(job, player, ghost)
+    matching_entity_ghost = function(job, player, ghost, entity)
         return "existing"
     end,
 
@@ -32,13 +32,15 @@ return {
             rail_layer = entity.rail_layer and defines.rail_layer[entity.rail_layer] or nil,
             force = job.force, player = player, raise_built = true, undo_index = undo_index,
         }
+        -- (raise_built: another mod may have removed it already)
+        if not (ghost and ghost.valid) then return nil end
         -- Targeting priorities: ghosts keep them, and so does the turret built from one.
-        if ghost and entity.priority_targets then
+        if entity.priority_targets then
             for i, name in ipairs(entity.priority_targets) do ghost.set_priority_target(i, name) end
             ghost.ignore_unprioritised_targets = entity.ignore_unprioritised == true
         end
         -- Ammo arrives with the robots that build it.
-        if ghost and entity.ammo then
+        if entity.ammo then
             local ammo = entity.ammo
             ghost.insert_plan = { {
                 id = { name = ammo.name, quality = ammo.quality },

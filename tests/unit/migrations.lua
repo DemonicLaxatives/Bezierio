@@ -16,7 +16,10 @@ end
 local cleared, destroyed = 0, 0
 script = { mod_name = "Bezierio" }
 rendering = { clear = function() cleared = cleared + 1 end }
-game = { players = { { gui = { screen = { bezierio_window = { destroy = function() destroyed = destroyed + 1 end } } } } } }
+local screen = {}
+game = { players = { { index = 1, gui = { screen = screen } } } }
+-- (a destroyed window is gone from the screen, as in the game)
+screen.bezierio_window = { destroy = function() destroyed = destroyed + 1; screen.bezierio_window = nil end }
 prototypes = {
     entity = {
         ["stone-wall"] = { type = "wall", tile_width = 1, tile_height = 1 },
@@ -162,6 +165,7 @@ check(#plan.entities > 0, "migrated data plans a build")
 
 -- 0.1.x data (no schema version, old shape) is discarded
 cleared, destroyed = 0, 0
+screen.bezierio_window = { destroy = function() destroyed = destroyed + 1; screen.bezierio_window = nil end }
 storage = { controllers = { [1] = { foo = 1 } }, curve_projectors = { 1, 2 } }
 load_save()
 check(storage.schema_version == state.SCHEMA_VERSION and next(storage.controllers) == nil, "0.1 data discarded")

@@ -277,6 +277,115 @@ priorities, facing tooltips (done).
 ## Phase post-pre-3:
 - A full code-review. Make sure the code reads well, doesn't reapeat itself and stays maintainable.
 
+Review findings (2026-11-24, four parallel reviews, each finding checked against
+the code; "repro" = reproduced with a script):
+
+Bugs:
+1. Super force clears things it shouldn't: `item-on-ground` is a name, the type
+   is `item-entity`, so dropped items, character corpses (`character-corpse`)
+   and flying robots are destroyed in instant mode; ghosts of any force are
+   destroyed (executor.lua IGNORED_IN_THE_WAY, the ghost branch).
+2. The pointer button overwrites whatever the player holds (curve_control
+   "pointer": `set_stack` without an empty-hand check; `take_pointer` does it
+   right). Items are lost.
+3. The "locked" main window uses `ignored_by_interaction`, which passes clicks
+   through: with the pointer in hand a click on it adds a curve point behind.
+4. Import: `offset` isn't clamped (an offset of 1e5 stalls planning forever,
+   repro) and numbers aren't rounded (radius 2.5 changes the plan, repro);
+   `valid()` sees non-string item values; priority targets accept any entity.
+5. Belt reroutes lose the curve sample of corner cells (`use()` stores j = 0),
+   so a rerouted line splits at that corner (repro: 51 of 300 random plans change).
+6. A closed spline with a repeated point is planned as a loop but sampled open
+   (`curve.is_closed` counts raw points, the sampler distinct ones; repro).
+7. Crashes when another mod destroys what we just built (no `.valid` after
+   `create_entity` in the outputs; `own()` counts invalid entities as placed);
+   and after an aborted build (deleted surface) `highlight.show` reads an invalid
+   surface.
+8. Rail gates: the wall is removed before checking the gate fits (instant mode
+   leaves a hole); gates aren't counted.
+9. A finished build's work isn't taken off the tick budget (jobs.lua drops
+   `used`), so that tick can run up to twice the budget.
+10. `state.reset` (schema mismatch) destroys only the main window: a layer window
+    open then can never be closed. Windows also survive mod updates unchanged.
+11. Removed quality / item / entity: `refresh` doesn't check `layer.quality`
+    (wire reach calls with an unknown quality), nor `ammo`, `inserter`,
+    `priority_targets`, `placed_by` (pickers would get unknown values).
+
+Budget (single-tick spikes):
+- Smart pole "count" phase is O(consumers × poles) in one call (repro: 0.45 s
+  at 8000 tiles, 2.5 s at 16000).
+- Catmull-Rom pieces aren't split: one 20000-tile segment samples in one call
+  (repro: 0.25 s); also ~30% more samples than the 0.25 step needs.
+- `draw.delete_sprites` walks every render object (up to 50 000) in one call;
+  `step_trash` then blocks all other work while it drains.
+- Whole path lines, rail laying and `rails.close` run in one call each.
+- The finished PlannerJob keeps dead per-cell tables (`feed_*`, `recent`,
+  `bands`) in storage.
+
+Risks:
+- `player.opened` is set inside on_gui_closed handlers (the API force-closes the
+  new GUI then): opening a chest while the layer / import window is open can
+  leave the main window not `opened`.
+- Closed loops can get two spaced entities ~1 tile apart at the seam (repro).
+- Pipe stubs may end beside a pipe-to-ground's side (not connected in game).
+- Clicks with the right mouse button run actions (delete layer, build).
+- "Already there" ignores direction (belts / rails facing another way count as
+  built); the super force clearing square is bigger than non-square footprints.
+- Electric pole spacing range can be empty for odd modded poles; defaults aren't
+  clamped; non-square non-turret modded entities are centred wrongly.
+- Revived ghosts aren't remembered as this build's own, and lose their ammo
+  request.
+
+Status (2026-11-24, uncommitted on `refactor`; `tests/run_all.sh` passes):
+
+- Bugs 1-11: fixed, each with a unit or game test (super force leaves items on
+  the ground and corpses; the pointer keeps the hand, or refuses on a full
+  inventory; the lock via `click_raw`; import clamps offset 1e5 and rounds radius
+  2.5; ...). The dev hooks now act as a player would: they press OK before using
+  the main window while a layer's settings are open, and open the selected
+  layer's settings again for a layer setting.
+- Budget: smart pole counting bucketed (445 ms -> 18 ms worst step at 8,000
+  tiles); long spline segments split (first step on a 20,000-tile segment: 8
+  ms; the remaining spikes there are Lua's garbage collector, ~10 ms with it
+  stopped); old previews go into the trash as whole caches, and the trash takes
+  at most half the budget; a finished PlannerJob keeps only `KEEP_WHEN_DONE`.
+  (A save from before keeps its finished job's tables until the next plan.)
+- Risks: all handled.
+  - The main window gets `player.opened` back on the next tick when it was
+    lost inside `on_gui_closed`, and only once nothing else is open
+    (`window.focus_main`).
+  - Spaced entities skip a spot within half a spacing of the first one at a
+    loop's seam (lamps round r = 10.52: 1.00 -> 5.39 apart; 3 snapshot cases
+    lost their seam duplicate).
+  - Turret pipe stubs join only plain pipes (pipes-to-ground and pumps don't
+    connect sideways).
+  - Right clicks don't act.
+  - Belts, undergrounds, pipes-to-ground, pumps and inserters facing another way
+    aren't "already there"; super force replaces them (in ghost mode: marked for
+    deconstruction, ghost placed).
+  - The super force clearing area is the collision box turned the planned way.
+  - Pole spacing range and defaults clamped.
+  - Every non-square entity is fitted to its grid.
+  - Revived ghosts are this build's own, with priorities and ammo.
+- Cleanup: all done (`build/wires.lua` shared by the executor and the blueprint;
+  class annotations; DEVELOPMENT.md; dead locale key; `ammo_quality`; progress
+  monotonic through rails, with a test; `window.find` remembers what it found;
+  Cancel without changes doesn't plan again; `grid_distance`'s parameter; one
+  sort of path cells).
+
+Left from the review:
+- Budget: a whole path line is routed and made into entities in one call. On an
+  8,000-tile curve with 2 belt and 2 pipe lines the worst `paths` step is ~53 ms
+  (every other stage stays under 10 ms). Rail laying and `rails.close` likewise
+  (not measured). Splitting a line's routing across steps is the next item.
+
+## Phase post-post-pre-3: more features and findings
+
+- force build and super force build has to place landfill/foundations/ice platforms for entites that collide with the underlying tiles. The tile to place should be automatically detected and applied. Like landfill on water or foundation on lava, etc. Foundation and landfill can bothj build over water, but it makes more sense to use landfill when applicable. Give the user a setting in per player settings to set priority on these tiles, autodetect and decide when no valid tiles are set in the priority list.
+- we need a build action "Build", which does not mark trees for deconstruction or lay landfill or alike.
+- non square power consumers can end up unpowered and the fact undetected, because they're treated as squares in the check. Planning the overall layout with them assumed as squares is an acceptable trade-off, but smart pole placement should not make the same assumption.
+- Sometimes the build work ends up split in the LuaUndoRedoStack, ensure that the whole build is one item.
+
 ## Phase 3: release, CI and automated release
 
 ### CI (GitHub Actions, on every push and PR)
@@ -303,27 +412,49 @@ priorities, facing tooltips (done).
 4. Make `run.sh` print the failing step clearly and upload the full log as a job
    artifact on failure.
 
-### Automated release (on pushing a tag `vX.Y.Z`)
+### Automated release/detail sync/image sync (on pushing a tags)
+**Use Python scripts (with tests) for interfacing with the API, packaging, version bumps, validation, etc**
+- portal API key stored as a repository secret.
+- edit version numbers, release dates and refrence jsons in the repo.
 
+## Release 
+
+0. **Version bumps:** a small script `release/bump.py --version "X.Y.Z"`, that updates 
+  - `info.json`, ensure the correct version, edit it repo if needed
+  - `changelog.txt` match the latest version for 0.0.0 - fail if the latest version isn't matched, update the date on that entry to the current date
 1. **Validate:**
-   - the tag matches `info.json` `version`;
+   - the tag matches `info.json` and `changelog.txt`
    - `changelog.txt` has a correctly formatted entry for that version (Factorio's
      format is strict about the dashes line and indentation);
    - `debug.lua` has `lib.debug = false`.
 2. **Package:** `Bezierio_X.Y.Z.zip` containing a top-level `Bezierio_X.Y.Z/`
-   folder. Exclude `tests/`, `python_scripts/`, `docs/`, `.vscode/` and `.github/`.
+   folder. Exclude `tests/`, `python_scripts/`, `docs/`, `.vscode/`, `mod-portal`, `release` and `.github/`.
    Generate it with `git archive` plus an exclude list (`.gitattributes`
    `export-ignore`), so local and CI zips are identical.
+
 3. **Run the CI jobs** against the packaged zip (unzip it into the test mod
    directory), so what's tested is what ships.
 4. **Publish:**
    - create a GitHub release with the zip and the changelog section as notes;
-   - upload to the Factorio mod portal via its upload API
-     (`/api/v2/mods/releases/init_upload`, then POST the file to the returned URL),
-     with the portal API key stored as a repository secret.
-5. **Version bumps:** a small script (`scripts/release.sh X.Y.Z`, or a manual
-   workflow) that updates `info.json`, adds the changelog header and creates the
-   tag, so releasing is one step.
+   - https://wiki.factorio.com/Mod_upload_API,
+
+### Modportal sync
+- not via `vX.Y.Z`, let's figure out a different tag format, so we can update the details in between releases
+- as one tag for both images and details, images first, then details
+
+## Modpage image sync
+- keep the one source of truth for modpage images in the repo.
+- https://wiki.factorio.com/Mod_images_API
+- write mod portal id refrences in the repo, the `mod-portal/images/mod-portal-ids.json`
+- order them with respect to `mod-portal/images/order.txt`
+- detect changes, reordering, etc, and keep that in sync with mod portal. Skip if nothing is changed
+
+## Modpage detail sync
+- keep the one source of truth for details on the mod page in the repo.
+- API (`api/v2/mods/edit_detail`) https://wiki.factorio.com/Mod_details_API
+- use details files from `/mod-portal/`
+- autodetect the changed detail files from the last tagged commit, and only push the changed fields
+- details in the desciption will contain github refrences, for the upload replace them with the mod portal links. Keep them as is in the repo.
 
 ### Release hygiene for the first release (0.2.0)
 
@@ -337,7 +468,7 @@ priorities, facing tooltips (done).
   nothing crashes (`--test-save`). Releases are when old saves start to matter.
 - Update the changelog
 - Cleanup the completed roadmap, no need to summaraize everything that's done on main, git history will still be there.
-- Add some default presets to ship it with.
+- Add some default presets to ship it with. They're in the folder builtin-presets, bake them into the scripts.
 - Shorten tooltips, some of them are far too verbose.
 - Make a markdown document for the mod page. It will link against images in the actual mod page, once we have them there.
 

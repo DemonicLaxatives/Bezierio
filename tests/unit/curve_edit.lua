@@ -93,5 +93,15 @@ for _ = 1, 50 do
     end
 end
 
+-- A "closed" spline needs 3 distinct points (a double click repeats one)
+do
+    local c = curve_lib.new()
+    for _, p in ipairs({ { x = 0, y = 0 }, { x = 0, y = 0 }, { x = 10, y = 0 } }) do curve_lib.append(c, p) end
+    c.closed = true
+    check(not curve_lib.is_closed(c), "two distinct points: not a loop")
+    curve_lib.append(c, { x = 5, y = 8 })
+    check(curve_lib.is_closed(c), "three distinct points: a loop")
+end
+
 print(string.format("%d/%d curve edit checks passed", checks - failures, checks))
 os.exit(failures == 0 and 0 or 1)

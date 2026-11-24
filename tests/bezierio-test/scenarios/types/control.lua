@@ -10,9 +10,11 @@ local function on_layer(plan, idx)
   return out
 end
 
-local function clear_all(s)
+local function clear_all(s, keep_ghosts_of)
   for _, e in pairs(s.find_entities_filtered { area = { { -80, -80 }, { 80, 80 } } }) do
-    if e.type ~= "character" then e.destroy() end
+    if e.type ~= "character" and not (keep_ghosts_of and e.type == "entity-ghost" and e.ghost_name == keep_ghosts_of) then
+      e.destroy()
+    end
   end
 end
 
@@ -120,7 +122,7 @@ step("ghosts face, request ammo, are wired", function(player)
   check(wired > #mines * 0.8 and green == 0, "mine ghosts wired red only: " .. wired .. "/" .. #mines .. ", green " .. green)
   check(#s.find_entities_filtered { ghost_name = "small-lamp" } == #on_layer(plan, 2), "lamp ghosts")
   check(#s.find_entities_filtered { ghost_name = "solar-panel" } == #on_layer(plan, 3), "solar panel ghosts")
-  clear_all(s)
+  clear_all(s, "gun-turret") -- (the gun turret ghosts get revived)
   player.cheat_mode = true
   dev("click", P, "build")
 end, "idle")
@@ -133,6 +135,8 @@ step("instant: loaded turrets, red lamps", function(player)
     check(t.get_item_count("firearm-magazine") == 25, "loaded with 25 magazines: " .. t.get_item_count("firearm-magazine"))
     check(#t.priority_targets == 2 and t.ignore_unprioritised_targets, "built with the priorities")
   end
+  check(#s.find_entities_filtered { type = "entity-ghost" } == 0, "the gun turret ghosts were revived")
+  check(#s.find_entities_filtered { type = "item-request-proxy" } == 0, "no ammo request left over")
   for _, lamp in pairs(s.find_entities_filtered { name = "small-lamp" }) do
     check(lamp.color and lamp.color.r > 0.9 and lamp.color.g < 0.2, "lamp is red")
   end

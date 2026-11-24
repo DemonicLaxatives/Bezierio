@@ -13,13 +13,22 @@ local custom_input = require("scripts.custom_input")
 local state = require("scripts.state")
 local planner = require("scripts.build.planner")
 local jobs = require("scripts.jobs")
+local layer_view = require("scripts.gui.layer_view")
 
 --- @param player_index integer
 --- @param path string[]|LuaGuiElement  # element names, starting from player.gui
 --- @return LuaGuiElement
 local function find(player_index, path)
     if type(path) == "string" then -- an element name in the main window
-        local element = window.find(game.get_player(player_index), path)
+        local player = game.get_player(player_index) --[[@as LuaPlayer]]
+        local element = window.find(player, path)
+        if not element and not state.ui(player_index).editing and window.get(player) then
+            -- (a layer setting, after the hooks pressed OK: open the selected layer's
+            -- settings again, as the player would)
+            layer_view.open_settings(player, state.ui(player_index).selected_layer)
+            element = window.find(player, path)
+            if not element then layer_view.accept(player) end
+        end
         if not element then error("No GUI element named " .. path) end
         return element
     end
@@ -32,6 +41,20 @@ local function find(player_index, path)
     return element --[[@as LuaGuiElement]]
 end
 
+--- The main window is locked while a layer's settings are open (its events are
+--- ignored). A player would press OK first; so do the test hooks, unless `raw`.
+--- @param player_index integer
+--- @param element LuaGuiElement
+local function as_player(player_index, element)
+    local root = element
+    while root.parent and root.parent.parent do root = root.parent end
+    local player = game.get_player(player_index)
+    if player and root.name == "bezierio_window" and state.ui(player_index).editing then
+        layer_view.accept(player)
+    end
+    return element
+end
+
 local function event(name, player_index, element, extra)
     local e = { name = defines.events[name], player_index = player_index, element = element, tick = game.tick }
     for k, v in pairs(extra or {}) do e[k] = v end
@@ -39,8 +62,16 @@ local function event(name, player_index, element, extra)
 end
 
 remote.add_interface("bezierio-dev", {
-    click = function(player_index, path, button)
+    --- A click exactly as the player makes it, locks included.
+    click_raw = function(player_index, path)
         local element = find(player_index, path)
+        if element.auto_toggle then element.toggled = not element.toggled end
+        interactions.handle_event(event("on_gui_click", player_index, element, {
+            button = defines.mouse_button_type.left, alt = false, control = false, shift = false,
+        }))
+    end,
+    click = function(player_index, path, button)
+        local element = as_player(player_index, find(player_index, path))
         if element.type == "button" or element.type == "sprite-button" then
             if element.auto_toggle then element.toggled = not element.toggled end
         end
@@ -49,27 +80,27 @@ remote.add_interface("bezierio-dev", {
         }))
     end,
     set_value = function(player_index, path, value)
-        local element = find(player_index, path)
+        local element = as_player(player_index, find(player_index, path))
         element.slider_value = value
         interactions.handle_event(event("on_gui_value_changed", player_index, element))
     end,
     set_text = function(player_index, path, text)
-        local element = find(player_index, path)
+        local element = as_player(player_index, find(player_index, path))
         element.text = text
         interactions.handle_event(event("on_gui_confirmed", player_index, element, { text = text }))
     end,
     set_elem = function(player_index, path, value)
-        local element = find(player_index, path)
+        local element = as_player(player_index, find(player_index, path))
         element.elem_value = value
         interactions.handle_event(event("on_gui_elem_changed", player_index, element))
     end,
     set_checked = function(player_index, path, checked)
-        local element = find(player_index, path)
+        local element = as_player(player_index, find(player_index, path))
         element.state = checked
         interactions.handle_event(event("on_gui_checked_state_changed", player_index, element))
     end,
     select = function(player_index, path, index)
-        local element = find(player_index, path)
+        local element = as_player(player_index, find(player_index, path))
         element.selected_index = index
         interactions.handle_event(event("on_gui_selection_state_changed", player_index, element))
     end,

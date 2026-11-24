@@ -124,7 +124,7 @@ end
 --- when neither corner is free.
 --- @param segment PathCell[]
 --- @param usable fun(x: integer, y: integer): integer|false  # whether a corner cell may be used: 1 free, 2 taken from another line (only if no free one)
---- @param use fun(x: integer, y: integer)              # it is used now
+--- @param use fun(x: integer, y: integer, j: integer)  # it is used now (j: its sample along the curve)
 --- @return PathCell[][]
 function lib.join_corners(segment, usable, use)
     local out, current = {}, {}
@@ -138,7 +138,7 @@ function lib.join_corners(segment, usable, use)
             end
             local joined = best ~= nil
             if best then
-                use(best.x, best.y)
+                use(best.x, best.y, prev.j)
                 current[#current + 1] = { x = best.x, y = best.y, j = prev.j }
             end
             if not joined then

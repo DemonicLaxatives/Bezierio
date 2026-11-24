@@ -25,7 +25,8 @@ local lib = {}
 --- @field pointer_mode "move"|nil        # clicks move the curve (until right-click)
 --- @field narrow boolean|nil            # the window is narrowed (everyday controls only)
 --- @field pinned boolean|nil            # the window stays open when other GUIs open
---- @field editing {idx: integer, backup: Layer|nil, new: boolean|nil}|nil  # layer settings window open (backup: to cancel to)
+--- @field editing {idx: integer, backup: Layer|nil, new: boolean|nil, revision: integer|nil}|nil  # layer settings window open (backup: to cancel to; revision: when it opened)
+--- @field reopen_main boolean|nil      # make the main window the opened GUI next tick (window.focus_main)
 
 --- @class Preset
 --- @field name string
@@ -68,7 +69,7 @@ local lib = {}
 --- @field preview LuaRenderObject[]
 --- @field highlight_unpowered LuaRenderObject[]|nil  # marks (highlight.lua): kept when the drawing is redone
 --- @field highlight_unfed LuaRenderObject[]|nil
---- @field trash LuaRenderObject[]|nil   # retired, destroyed a few per tick
+--- @field trash (LuaRenderObject[]|LuaRenderObject)[]|nil  # retired caches, destroyed a few objects per tick
 
 --- @return DrawProgress
 function lib.new_draw_progress()
@@ -148,16 +149,28 @@ end
 --- access do what on_configuration_changed does (lib.ensure_rebuilt).
 lib.SCHEMA_VERSION = 9
 
+--- Bézierio's windows (the main one, settings, a layer's settings, import / export).
+local WINDOWS = { "bezierio_window", "bezierio_settings_window", "bezierio_layer_window", "bezierio_string_window" }
+
+--- Close every Bézierio window of every player: after a mod change they may be
+--- built by older code (other names, tags), and a layer edit can't be cancelled
+--- any more (its edits are kept).
+local function close_windows()
+    if not game then return end
+    for _, player in pairs(game.players) do
+        for _, name in ipairs(WINDOWS) do
+            local window = player.gui.screen[name]
+            if window then window.destroy() end
+        end
+        local controller = storage.controllers and storage.controllers[player.index]
+        if controller and controller.ui then controller.ui.editing = nil end
+    end
+end
+
 --- Discard everything: a fresh, empty layout.
 local function reset()
     if rendering then rendering.clear(script.mod_name) end
-    if game then
-        for _, player in pairs(game.players) do
-            if player.gui.screen.bezierio_window then
-                player.gui.screen.bezierio_window.destroy()
-            end
-        end
-    end
+    close_windows()
     for key in pairs(storage) do storage[key] = nil end
     storage.controllers = {}
     storage.sprites = {}
@@ -180,6 +193,7 @@ function lib.on_configuration_changed()
         reset()
     end
     if rendering then rendering.clear(script.mod_name) end
+    close_windows()
     storage.sprites = {}
     storage.item_filter = nil -- (kept in storage before schema 9; now derived on use)
     for _, controller in pairs(storage.controllers) do

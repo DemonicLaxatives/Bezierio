@@ -16,6 +16,7 @@ local vect = require("scripts.vector_math")
 local geometry = require("scripts.build.geometry")
 local curve_lib = require("scripts.curve.curve")
 local registry = require("scripts.layers.registry")
+local common = require("scripts.layers.common")
 local smart_poles = require("scripts.build.smart_poles")
 local paths = require("scripts.build.paths")
 local rails = require("scripts.build.rails")
@@ -101,6 +102,15 @@ lib.COST = {
 
 --- @alias PlannerStage "sample"|"tangents"|"fill"|"normals"|"bands"|"bends"|"rails"|"rasterize"|"paths"|"joins"|"spaced"|"done"
 
+--- @class SpacedWalk
+--- @field i integer              # next frame
+--- @field travelled number       # along the layer's line so far
+--- @field next_at number         # where the next entity goes
+--- @field aim number             # where the current one was aimed
+--- @field last Vector|nil        # the previous entity
+--- @field first Vector|nil       # where the first one was aimed (closed loops: the seam)
+--- @field centre number|nil      # along the centre line so far
+
 --- @class PlannerJob
 --- @field stage PlannerStage
 --- @field layers table<integer, Layer>   # copied at creation; later edits don't affect the job
@@ -118,7 +128,7 @@ lib.COST = {
 --- @field occupied table<string, boolean|"rail">  # cells taken by entities ("rail": by a rail piece)
 --- @field spaced integer[]               # indices into bands, in placement order
 --- @field spaced_cursor integer
---- @field walk {i: integer, travelled: number, next_at: number, last: Vector|nil}|SmartWalk|nil
+--- @field walk SpacedWalk|SmartWalk|nil
 --- @field outer_plus number              # outermost built distance on the + side (grid units)
 --- @field outer_minus number             # ... on the - side
 --- @field last_warning Vector|nil
@@ -781,13 +791,9 @@ local function route_path_line(job, item)
     local layer = job.layers[item.idx]
     local line = item.line
     local pipes = registry.type_of(layer).name == "pipe"
+    -- (in any order: paths.segments sorts them along the curve)
     local cells = {}
-    for key, c in pairs(job.line_cells[line]) do cells[#cells + 1] = c end
-    table.sort(cells, function(a, b)
-        if a.j ~= b.j then return a.j < b.j end
-        if a.x ~= b.x then return a.x < b.x end
-        return a.y < b.y
-    end)
+    for _, c in pairs(job.line_cells[line]) do cells[#cells + 1] = c end
     -- A corner cell may be free (and, for pipes, not touch another pipe line), or
     -- (belts) belong to another line of this layer, unless it was taken already.
     local function usable(x, y)
@@ -809,10 +815,11 @@ local function route_path_line(job, item)
         end
         return rank
     end
-    local function use(x, y)
+    local function use(x, y, j)
         local key = cell_key(x, y)
         local owner = job.line_of[key]
-        local c = { x = x, y = y, j = 0 }
+        -- (its sample along the curve: a reroute orders the line's cells by it)
+        local c = { x = x, y = y, j = j or 0 }
         if owner and owner ~= line then
             c.j = job.line_cells[owner][key].j
             job.line_cells[owner][key] = nil
@@ -841,7 +848,7 @@ local function route_path_line(job, item)
                 for _, corner in ipairs({ { x = first.x, y = last.y }, { x = last.x, y = first.y } }) do
                     if math.abs(segment[#segment].x - first.x) + math.abs(segment[#segment].y - first.y) == 2
                         and usable(corner.x, corner.y) then
-                        use(corner.x, corner.y)
+                        use(corner.x, corner.y, last.j)
                         segment[#segment + 1] = { x = corner.x, y = corner.y, j = last.j }
                     end
                 end
@@ -902,9 +909,10 @@ local function emit_path_line(job, item)
                         name = layer.name, quality = layer.quality, position = { x = piece.x, y = piece.y },
                         size = 1, layer = layer.idx,
                     }
-                    -- Turrets placed later feed from these lines (build/feeds.lua).
+                    -- Turrets placed later feed from these lines (build/feeds.lua): from
+                    -- plain pipes only (a pipe-to-ground or pump doesn't connect sideways).
                     local cell = cell_key(math.floor(piece.x), math.floor(piece.y))
-                    if pipes and piece.kind ~= "pump" then
+                    if pipes and piece.kind == "line" then
                         job.feed_pipes[cell] = item.line
                         job.feed_pipe_names[item.line] = layer.name
                     elseif not pipes and piece.kind == "line" then
@@ -1154,6 +1162,7 @@ make_entity = function(job, layer, pos, frame, arc)
         local side = layer.idx < 0 and -1 or 1
         def.decorate(layer, entity, { outward = { x = side * n.x, y = side * n.y }, arc = arc })
     end
+    common.fit_footprint(layer, entity)
     return entity
 end
 
@@ -1318,10 +1327,11 @@ local function stage_spaced(job, budget)
                 walk = smart_poles.new_walk()
                 job.walk = walk
             else
-                walk = { i = 2, travelled = 0, next_at = spacing, last = nil }
+                walk = { i = 2, travelled = 0, next_at = spacing, last = nil, centre = 0 }
                 job.walk = walk
                 walk.aim = 0
-                used = used + place(job, layer, walk, geometry.offset_point(frames[1], u_mid), frames[1].t)
+                walk.first = geometry.offset_point(frames[1], u_mid)
+                used = used + place(job, layer, walk, walk.first, frames[1].t)
             end
         end
         local walked = false
@@ -1334,14 +1344,22 @@ local function stage_spaced(job, budget)
             local a = geometry.offset_point(frames[walk.i - 1], u_mid)
             local b = geometry.offset_point(frames[walk.i], u_mid)
             local seg = vect.distance(a, b)
+            -- A loop ends where it started: in its second half, a spot within half a
+            -- spacing of the first entity is left out (the seam gets 0.5 to 1.5
+            -- spacings, not an entity a tile from the first one).
+            local seam = job.closed and walk.first and walk.centre > job.plan.length / 2
             while seg > 0 and walk.travelled + seg >= walk.next_at do
                 local k = (walk.next_at - walk.travelled) / seg
                 local direction = vect.scale(1 / seg, vect.sub(b, a))
+                local target = vect.add(a, vect.scale(k, vect.sub(b, a)))
                 walk.aim = walk.next_at
-                used = used + place(job, layer, walk, vect.add(a, vect.scale(k, vect.sub(b, a))), direction)
+                if not (seam and vect.distance(target, walk.first) < spacing / 2) then
+                    used = used + place(job, layer, walk, target, direction)
+                end
                 walk.next_at = walk.next_at + spacing
             end
             walk.travelled = walk.travelled + seg
+            walk.centre = (walk.centre or 0) + vect.distance(frames[walk.i - 1].p, frames[walk.i].p)
             walk.i = walk.i + 1
             used = used + lib.COST.frame
         end
@@ -1378,6 +1396,9 @@ local STAGES = {
     spaced = stage_spaced,
 }
 
+--- What a finished job keeps: the rest is working data.
+lib.KEEP_WHEN_DONE = { stage = true, layers = true, closed = true, points = true, plan = true }
+
 --- Do up to about `budget` units of work.
 --- @param job PlannerJob
 --- @param budget number
@@ -1390,8 +1411,11 @@ function lib.step(job, budget, until_stage)
     end
     if job.stage == "done" and not job.plan.done then
         job.plan.done = true
-        -- Working data is no longer needed; keep `points` for drawing the curve.
-        job.frames, job.index, job.seen, job.occupied = {}, {}, {}, {}
+        -- Working data is no longer needed (it would stay in the save); keep
+        -- `points` for drawing the curve.
+        for field in pairs(job) do
+            if not lib.KEEP_WHEN_DONE[field] then job[field] = nil end
+        end
     end
     return job.stage == "done", used
 end
@@ -1406,6 +1430,7 @@ function lib.progress(job)
     local n = math.max(1, #job.frames)
     if stage == "tangents" or stage == "fill" or stage == "normals" or stage == "bands" then return 0.05 end
     if stage == "bends" then return 0.05 + 0.05 * job.cursor / n end
+    if stage == "rails" then return 0.1 end
     if stage == "rasterize" then return 0.1 + 0.7 * job.cursor / n end
     if stage == "paths" or stage == "joins" then return 0.8 end
     local spaced = math.max(1, #job.spaced)

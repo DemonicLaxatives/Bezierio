@@ -51,9 +51,7 @@ function lib.close_window(player)
     if not frame then return end
     frame.destroy()
     sync_buttons(player)
-    local ui = state.ui(player.index)
-    local main = window.get(player)
-    if main and not ui.pinned and not ui.editing then player.opened = main end
+    window.focus_main(player, state.ui(player.index))
 end
 
 --- @param player LuaPlayer

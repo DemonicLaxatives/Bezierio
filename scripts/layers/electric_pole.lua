@@ -14,7 +14,7 @@ return {
         {
             name = "spacing", widget = "slider",
             min = function(layer) return layer.size end,
-            max = function(layer) return layer.wire_distance end,
+            max = function(layer) return math.max(layer.size, layer.wire_distance) end,
             -- Leave a tile of slack: positions get snapped to the grid after spacing.
             default = function(layer) return math.max(layer.size, layer.wire_distance - 1) end,
             disabled_by = "smart",

@@ -1,5 +1,20 @@
 --- Output: real entities and tiles, straight away (map editor, cheat mode).
 --- Obstacles are removed; existing ghosts on the curve are revived.
+
+--- Turret priorities and ammo, as planned.
+--- @param built LuaEntity
+--- @param entity PlannedEntity
+local function finish(built, entity)
+    if entity.priority_targets then
+        for i, name in ipairs(entity.priority_targets) do built.set_priority_target(i, name) end
+        built.ignore_unprioritised_targets = entity.ignore_unprioritised == true
+    end
+    if entity.ammo then
+        local ammo = entity.ammo
+        built.insert { name = ammo.name, quality = ammo.quality, count = ammo.count }
+    end
+end
+
 --- @type BuildOutput
 return {
     name = "instant",
@@ -20,9 +35,14 @@ return {
         end
     end,
 
-    matching_entity_ghost = function(job, player, ghost)
-        if ghost.revive { raise_revive = true } then return "placed" end
-        return "existing"
+    matching_entity_ghost = function(job, player, ghost, entity)
+        local _, revived, proxy = ghost.revive { raise_revive = true }
+        -- (raise_revive: another mod may have removed it already)
+        if not (revived and revived.valid) then return "existing" end
+        -- The ghost's item request (our ammo, from a ghost build) is filled here.
+        if entity.ammo and proxy and proxy.valid then proxy.destroy() end
+        finish(revived, entity)
+        return "placed", revived
     end,
 
     clear = function(job, player, obstacle, undo_index)
@@ -37,14 +57,9 @@ return {
             force = job.force, player = player, raise_built = true, move_stuck_players = true,
             undo_index = undo_index,
         }
-        if built and entity.priority_targets then
-            for i, name in ipairs(entity.priority_targets) do built.set_priority_target(i, name) end
-            built.ignore_unprioritised_targets = entity.ignore_unprioritised == true
-        end
-        if built and entity.ammo then
-            local ammo = entity.ammo
-            built.insert { name = ammo.name, quality = ammo.quality, count = ammo.count }
-        end
+        -- (raise_built: another mod may have removed it already)
+        if not (built and built.valid) then return nil end
+        finish(built, entity)
         return built
     end,
 }

@@ -128,5 +128,39 @@ local total = 0
 for _ in pairs(pipes) do total = total + 1 end
 check(count == total, "pipe line and stubs are one network: " .. count .. "/" .. total)
 
+-- With pipes-to-ground in the line: every stub joins a plain pipe of the line
+-- (a pipe-to-ground connects only along its own direction, not to a stub beside it)
+local with_ug = layers(1)
+with_ug[-1] = { idx = -1, type = "pipe", name = "pipe", quality = "normal", size = 1, offset = 0, lines = 1, line_gap = 1,
+    undergrounds = true, underground_name = "ptg", underground_distance = 10 }
+for ci, pts in ipairs(curves) do
+    local ug_plan = helpers.plan(pts, with_ug)
+    local line, stubs = {}, {}
+    for _, e in ipairs(ug_plan.entities) do
+        local key = math.floor(e.position.x) .. "," .. math.floor(e.position.y)
+        if e.name == "pipe" and e.layer == -1 then line[key] = true end
+        if e.name == "pipe" and e.layer == -2 then stubs[key] = true end
+    end
+    local seen_stub, groups, cut = {}, 0, 0
+    for start in pairs(stubs) do
+        if not seen_stub[start] then
+            groups = groups + 1
+            local todo, joined = { start }, false
+            seen_stub[start] = true
+            while #todo > 0 do
+                local x, y = table.remove(todo):match("(-?%d+),(-?%d+)")
+                x, y = tonumber(x), tonumber(y)
+                for _, s in pairs(STEP) do
+                    local n = (x + s[1]) .. "," .. (y + s[2])
+                    if line[n] then joined = true end
+                    if stubs[n] and not seen_stub[n] then seen_stub[n] = true; todo[#todo + 1] = n end
+                end
+            end
+            if not joined then cut = cut + 1 end
+        end
+    end
+    check(cut == 0, "curve " .. ci .. ": every stub joins a plain pipe (" .. cut .. " of " .. groups .. " don't)")
+end
+
 print(string.format("%d/%d feed checks passed", checks - failures, checks))
 os.exit(failures == 0 and 0 or 1)
