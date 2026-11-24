@@ -1,6 +1,30 @@
 [
     {
-        "name_in_repo": "image.png",
-        "id_on_mod_portal": "*************"
+        "name_in_repo": "belt-bus.png",
+        "sha1": "1a11409bccbb27c61577ab98454b5d4bf2d77d67",
+        "id_on_mod_portal": "1a11409bccbb27c61577ab98454b5d4bf2d77d67",
+        "url": "https://assets-mod.factorio.com/assets/1a11409bccbb27c61577ab98454b5d4bf2d77d67.png",
+        "thumbnail": "https://assets-mod.factorio.com/assets/1a11409bccbb27c61577ab98454b5d4bf2d77d67.thumb.png"
+    },
+    {
+        "name_in_repo": "gun-turret-wall.png",
+        "sha1": "802ea1d24896a2d2f7351c3a97cea411c5c6aa94",
+        "id_on_mod_portal": "802ea1d24896a2d2f7351c3a97cea411c5c6aa94",
+        "url": "https://assets-mod.factorio.com/assets/802ea1d24896a2d2f7351c3a97cea411c5c6aa94.png",
+        "thumbnail": "https://assets-mod.factorio.com/assets/802ea1d24896a2d2f7351c3a97cea411c5c6aa94.thumb.png"
+    },
+    {
+        "name_in_repo": "fluid-turret-wall.png",
+        "sha1": "b49f16290dd64e938d4bd9c6c2341d9107639ea2",
+        "id_on_mod_portal": "b49f16290dd64e938d4bd9c6c2341d9107639ea2",
+        "url": "https://assets-mod.factorio.com/assets/b49f16290dd64e938d4bd9c6c2341d9107639ea2.png",
+        "thumbnail": "https://assets-mod.factorio.com/assets/b49f16290dd64e938d4bd9c6c2341d9107639ea2.thumb.png"
+    },
+    {
+        "name_in_repo": "railway.png",
+        "sha1": "bb156b097c8c4ce949d2be004f2ee84397f46f50",
+        "id_on_mod_portal": "bb156b097c8c4ce949d2be004f2ee84397f46f50",
+        "url": "https://assets-mod.factorio.com/assets/bb156b097c8c4ce949d2be004f2ee84397f46f50.png",
+        "thumbnail": "https://assets-mod.factorio.com/assets/bb156b097c8c4ce949d2be004f2ee84397f46f50.thumb.png"
     }
 ]

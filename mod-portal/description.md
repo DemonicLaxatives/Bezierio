@@ -4,13 +4,13 @@ Draw a curve, stack up layers of walls, floors, power lines, turrets, belts, pip
 or rails along it, and build the lot in one go: as ghosts for your robots, as a
 blueprint, or straight away in the map editor.
 
-![Belt lines side by side along a curve](https://raw.githubusercontent.com/DemonicLaxatives/Bezierio/refs/heads/main/mod-portal/images/belt-bus.png "A belt bus")
+![Belt lines side by side along a curve](images/belt-bus.png "A belt bus")
 
-![A wall with gun turrets, fed by inserters from a belt](https://raw.githubusercontent.com/DemonicLaxatives/Bezierio/refs/heads/main/mod-portal/images/gun-turret-wall.png "A gun turret wall")
+![A wall with gun turrets, fed by inserters from a belt](images/gun-turret-wall.png "A gun turret wall")
 
-![A wall with flamethrower turrets, piped to a pipe line](https://raw.githubusercontent.com/DemonicLaxatives/Bezierio/refs/heads/main/mod-portal/images/fluid-turret-wall.png "A flamethrower wall")
+![A wall with flamethrower turrets, piped to a pipe line](images/fluid-turret-wall.png "A flamethrower wall")
 
-![A double-track railway with poles alongside](https://raw.githubusercontent.com/DemonicLaxatives/Bezierio/refs/heads/main/mod-portal/images/railway.png "A railway")
+![A double-track railway with poles alongside](images/railway.png "A railway")
 
 ## What it does
 

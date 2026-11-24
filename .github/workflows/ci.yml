@@ -1,9 +1,11 @@
-# Unit tests, lint and the release scripts' tests, on every push and pull request.
+# Unit tests, lint and the release scripts' tests, on pushes to main and on pull
+# requests.
 # The game tests (tests/run.sh) need a Factorio install and stay a local step.
 name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:

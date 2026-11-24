@@ -5,7 +5,8 @@ images.py, or by hand with FACTORIO_API_KEY ("ModPortal: Edit Mods").
 
 Only fields whose file changed since the previous portal-* tag are sent (all of
 them when there's no earlier tag, or with --all). Links to images in
-mod-portal/images/ (raw GitHub URLs, as the repository shows them) are swapped
+mod-portal/images/ (relative, images/NAME, so GitHub shows them on any branch;
+full GitHub URLs work too) are swapped
 for the portal's own image URLs from mod-portal-ids.json; the repository keeps
 its links. When an image's portal URL changed, the description goes again.
 

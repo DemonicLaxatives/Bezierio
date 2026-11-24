@@ -52,7 +52,7 @@ python3 -m pytest release/tests tests/lint   # the release scripts' tests (pip i
 ```
 
 CI (`.github/workflows/ci.yml`) runs the unit tests, the lint and the Python tests
-on every push and pull request. For the lint locally: `LUALS=` the
+on pushes to `main` and on pull requests. For the lint locally: `LUALS=` the
 `lua-language-server` binary (the VS Code extension has one), `LUALS_LIBRARY=` a
 folder made with `npx factoriomod-debug luals-addon --online 2.1.25 <folder>`.
 
@@ -92,11 +92,11 @@ releases too (`.github/workflows/portal.yml`):
 - `release/images.py` uploads images that are new or whose file changed (by
   SHA1), sets the page's images in order (ones not in `order.txt` come off), and
   records each image's SHA1 and portal id, URL and thumbnail in
-  `images/mod-portal-ids.json`. The workflow commits that file to the default
-  branch when the tag is its latest commit, otherwise leaves it as an artifact.
+  `images/mod-portal-ids.json`. The workflow commits that file to the branch
+  the tag is the latest commit of, otherwise leaves it as an artifact.
 - `release/detail.py` sends the texts changed since the previous `portal-*` tag
-  (all of them the first time), with the description's image links (raw GitHub
-  URLs in the repository) swapped for the portal's.
+  (all of them the first time), with the description's image links (relative,
+  `images/NAME`, so GitHub shows them on any branch) swapped for the portal's.
 
 Both take `--dry-run` (they only read the public page then; any non-empty
 `FACTORIO_API_KEY` will do). The key needs "ModPortal: Edit Mods" for this, and
