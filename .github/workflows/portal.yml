@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # (the previous portal-* tag, for what changed)
+          fetch-depth: 0  # (all branches' history: the tag's branch, for the ids commit)
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -31,20 +31,20 @@ jobs:
         run: |
           python release/images.py
           if git diff --quiet -- mod-portal/images/mod-portal-ids.json; then
-            echo "IMAGES_CHANGED=" >> "$GITHUB_ENV"
+            echo "IDS_CHANGED=" >> "$GITHUB_ENV"
           else
-            echo "IMAGES_CHANGED=--images-changed" >> "$GITHUB_ENV"
+            echo "IDS_CHANGED=true" >> "$GITHUB_ENV"
           fi
       - name: Texts
         env:
           FACTORIO_API_KEY: ${{ secrets.FACTORIO_API_KEY }}
-        run: python release/detail.py $IMAGES_CHANGED
+        run: python release/detail.py
 
       # The portal's ids and URLs belong in the repository: commit them to the
       # branch the tag is the latest commit of (main, refactor, ...); when that's
       # no branch, or more than one, keep them as an artifact to commit by hand.
       - name: Record the image ids
-        if: env.IMAGES_CHANGED != ''
+        if: env.IDS_CHANGED != ''
         id: record
         run: |
           git fetch origin '+refs/heads/*:refs/remotes/origin/*'

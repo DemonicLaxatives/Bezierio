@@ -3,18 +3,18 @@
 truth): summary.txt, description.md, faq.md. Run by the portal workflow after
 images.py, or by hand with FACTORIO_API_KEY ("ModPortal: Edit Mods").
 
-Only fields whose file changed since the previous portal-* tag are sent (all of
-them when there's no earlier tag, or with --all). Links to images in
+A field is sent when it differs from what the page shows now (read from the
+portal's public page data), so a sync that failed halfway is caught up by the
+next one; the FAQ isn't in that data, so it's always sent (that changes nothing
+when it's the same). --all sends every field. Links to images in
 mod-portal/images/ (relative, images/NAME, so GitHub shows them on any branch;
-full GitHub URLs work too) are swapped
-for the portal's own image URLs from mod-portal-ids.json; the repository keeps
-its links. When an image's portal URL changed, the description goes again.
+full GitHub URLs work too) are swapped for the portal's own image URLs from
+mod-portal-ids.json; the repository keeps its links.
 
-Usage: python3 release/detail.py [--all] [--since TAG] [--images-changed] [--dry-run]
+Usage: python3 release/detail.py [--all] [--dry-run]
 """
 import argparse
 import re
-import subprocess
 import sys
 
 import common
@@ -39,30 +39,19 @@ def portal_links(text, urls):
     return re.sub(pattern, swap, text)
 
 
-def previous_tag(repo=common.REPO):
-    """The latest portal-* tag before HEAD, or None."""
-    result = subprocess.run(["git", "describe", "--tags", "--abbrev=0", "--match", "portal-*", "HEAD^"],
-                            cwd=repo, capture_output=True, text=True)
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip() or None
+def same_text(a, b):
+    """Equal as the page shows them (line endings, surrounding blank lines aside)."""
+    def norm(t):
+        return (t or "").replace("\r\n", "\n").strip()
+    return norm(a) == norm(b)
 
 
-def changed_files(since, repo=common.REPO):
-    """mod-portal/ files changed between `since` and HEAD."""
-    out = subprocess.run(["git", "diff", "--name-only", since, "HEAD", "--", "mod-portal/"],
-                         cwd=repo, capture_output=True, text=True, check=True).stdout
-    return {line.split("/", 1)[1] for line in out.splitlines() if line.startswith("mod-portal/")}
-
-
-def fields_to_send(changed, images_changed, everything):
-    """Which page fields go: those whose file changed (all, with everything)."""
+def fields_to_send(local, live, everything=False):
+    """Which fields go: those that differ from the live page (fields it doesn't
+    show, like the FAQ, always)."""
     if everything:
-        return list(FIELDS)
-    out = [field for field, name in FIELDS.items() if name in changed]
-    if images_changed and "description" not in out:
-        out.append("description")
-    return out
+        return list(local)
+    return [f for f, text in local.items() if f not in live or not same_text(text, live[f])]
 
 
 def build(fields, page_dir=PAGE, urls=None):
@@ -82,26 +71,25 @@ def build(fields, page_dir=PAGE, urls=None):
 def main(argv=None, client=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--all", action="store_true", help="send every field")
-    parser.add_argument("--since", help="compare with this tag (default: the previous portal-* tag)")
-    parser.add_argument("--images-changed", action="store_true", help="an image's portal URL changed")
     parser.add_argument("--dry-run", action="store_true", help="print what would be sent")
     args = parser.parse_args(argv)
-    since = args.since or previous_tag()
-    everything = args.all or since is None
+    mod = common.read_info()["name"]
     try:
-        fields = fields_to_send(set() if everything else changed_files(since), args.images_changed, everything)
-        if not fields:
-            print(f"details: nothing changed since {since}")
-            return 0
+        client = client or portal.Portal()
         urls = {name: e.get("url") for name, e in images.read_ids().items()}
-        data = build(fields, urls=urls)
+        local = build(list(FIELDS), urls=urls)
+        live = {f: v for f, v in client.mod_info(mod).items() if f in FIELDS}
+        fields = fields_to_send(local, live, args.all)
+        if not fields:
+            print("details: the page has them already")
+            return 0
+        data = {f: local[f] for f in fields}
         if args.dry_run:
             for field, text in data.items():
                 print(f"--- {field} ---\n{text}\n")
             return 0
-        mod = common.read_info()["name"]
-        (client or portal.Portal()).edit_details(mod, data)
-    except (portal.PortalError, common.ReleaseError, subprocess.CalledProcessError) as e:
+        client.edit_details(mod, data)
+    except (portal.PortalError, common.ReleaseError) as e:
         print(f"details: {e}", file=sys.stderr)
         return 1
     print("details: sent " + ", ".join(fields))

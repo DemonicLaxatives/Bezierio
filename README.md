@@ -94,9 +94,11 @@ releases too (`.github/workflows/portal.yml`):
   records each image's SHA1 and portal id, URL and thumbnail in
   `images/mod-portal-ids.json`. The workflow commits that file to the branch
   the tag is the latest commit of, otherwise leaves it as an artifact.
-- `release/detail.py` sends the texts changed since the previous `portal-*` tag
-  (all of them the first time), with the description's image links (relative,
-  `images/NAME`, so GitHub shows them on any branch) swapped for the portal's.
+- `release/detail.py` sends the texts that differ from what the page shows now
+  (so a sync that failed halfway is caught up by the next one; the FAQ, which
+  the portal's page data doesn't include, always goes), with the description's
+  image links (relative, `images/NAME`, so GitHub shows them on any branch)
+  swapped for the portal's.
 
 Both take `--dry-run` (they only read the public page then; any non-empty
 `FACTORIO_API_KEY` will do). The key needs "ModPortal: Edit Mods" for this, and
