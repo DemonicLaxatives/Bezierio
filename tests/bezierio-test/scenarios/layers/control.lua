@@ -240,7 +240,7 @@ step("presets", function(player)
     and b[1].red_wire == true and b[1].green_wire == true, "import matches the export")
 
   -- out-of-range values in a string are clamped and rounded as the sliders would
-  local data = helpers.json_to_table(helpers.decode_string(text))
+  local data = helpers.json_to_table(helpers.decode_string(text) --[[@as string]]) --[[@as table]]
   for _, entry in ipairs(data.layers) do
     if entry.idx == -1 then entry.offset, entry.radius = 1e5, 2.5 end
   end

@@ -21,7 +21,9 @@ tests/            unit tests (plain Lua) and game test scenarios
 docs/             DEVELOPMENT.md (how it works), ROADMAP.md (what's next)
 mod-portal/       the mod portal page: description, FAQ, summary, images (with
                   their order and portal ids)
-release/          release and mod portal sync scripts (stubs, see Releasing)
+release/          release scripts and their tests (see Releasing); mod portal
+                  sync (images.py, detail.py) still to come
+.github/          CI and release workflows
 ```
 
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) explains how the mod works: storage,
@@ -45,7 +47,15 @@ tests/run.sh <scenario> [mods] # one game scenario headless (smoke, points, laye
 tests/run_all.sh               # everything: unit tests, every scenario (some also
                                # with the DLC), the save migration test
 tests/run.sh bench             # timing (BENCH lines in the log)
+tests/lint/check.sh            # type check with the Lua language server and the API stubs
+python3 tests/lint/locale_keys.py   # every locale key the code names exists
+python3 -m pytest release/tests tests/lint   # the release scripts' tests (pip install -r release/requirements.txt)
 ```
+
+CI (`.github/workflows/ci.yml`) runs the unit tests, the lint and the Python tests
+on every push and pull request. For the lint locally: `LUALS=` the
+`lua-language-server` binary (the VS Code extension has one), `LUALS_LIBRARY=` a
+folder made with `npx factoriomod-debug luals-addon --online 2.1.25 <folder>`.
 
 The game tests need a local Factorio 2.1 (`FACTORIO=/path/to/bin/x64/factorio`,
 default `~/Games/factorio/bin/x64/factorio`) and run in a throwaway config and mod
@@ -54,18 +64,24 @@ See docs/DEVELOPMENT.md, Testing, for what each test checks and how to add one.
 
 ## Releasing
 
-The plan, in [docs/ROADMAP.md](docs/ROADMAP.md) (Phase 3):
+1. Put the release's changes in `changelog.txt` under the top section, which
+   stays `Version: 0.0.0` while unreleased.
+2. `python3 release/bump.py --version X.Y.Z`: sets the version in `info.json` and
+   on that section, with today's date (fails if the changelog isn't ready).
+3. Commit, tag `vX.Y.Z`, push the tag.
 
-- `release/upload.py`: package the mod (without the repository files), bump the
-  version in `info.json` and `changelog.txt`, upload through the mod portal API
-  and make a GitHub release, on pushing a version tag.
-- `release/images.py`: keep the portal's images in sync with
-  `mod-portal/images/` (order from `order.txt`, ids in `mod-portal-ids.json`).
-- `release/detail.py`: push changed `mod-portal/` texts to the portal page, with
-  repository image links replaced by portal ones.
+The release workflow (`.github/workflows/release.yml`) then checks the tag against
+`info.json` and the changelog, the changelog's format and that no locale comment
+is still `[unreviewed]` (`release/validate.py`); builds `Bezierio_X.Y.Z.zip` with
+`git archive`, leaving out what `.gitattributes` marks `export-ignore` and with
+`lib.debug = false` (`release/package.py`, the same bytes locally and in CI);
+runs the unit tests and the lint on the unpacked zip; makes a GitHub release
+with the changelog section as notes, and uploads the zip to the mod portal
+(`release/upload.py`, needing the repository secret `FACTORIO_API_KEY` with
+the "ModPortal: Upload Mods" permission).
 
-They are stubs so far. Until then: zip the mod folder without the repository
-files, named `Bezierio_<version>.zip`, and upload it on the mod portal.
+To try it locally: `python3 release/package.py --out dist` and
+`python3 release/validate.py --tag vX.Y.Z --zip dist/Bezierio_X.Y.Z.zip`.
 
 ## Contributing
 

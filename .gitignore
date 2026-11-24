@@ -2,3 +2,5 @@
 **/**/**.kra
 **/__pycache__/**
 *.png~
+dist/
+.pytest_cache/

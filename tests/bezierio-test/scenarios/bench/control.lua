@@ -1,6 +1,7 @@
 -- Measures how long Bézierio's jobs take per tick (wall clock, from log timestamps).
 -- tests/run.sh bench, then read "BENCH" lines. Not part of the regular test run.
 local P = 1
+---@diagnostic disable-next-line: param-type-mismatch
 local function dev(fn, ...) return remote.call("bezierio-dev", fn, ...) end
 local phase, started_tick = "warmup", 0
 

@@ -13,6 +13,7 @@ local flow = {}
 flow.P = 1 -- player index
 local P = flow.P
 
+---@diagnostic disable-next-line: param-type-mismatch
 function flow.dev(fn, ...) return remote.call("bezierio-dev", fn, ...) end
 local dev = flow.dev
 function flow.controller() return dev("controller", P) end

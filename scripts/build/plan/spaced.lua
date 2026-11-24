@@ -15,11 +15,12 @@ local feed_context
 local make_entity
 local feed_spot
 
---- The free grid position nearest to `target` for an entity of `size`, if any.
+--- The free grid positions for an entity of `size` among the nearest to `target`,
+--- nearest first.
 --- @param job PlannerJob
 --- @param size integer
 --- @param target Vector
---- @return Vector|nil
+--- @return Vector[]
 local function free_spots(job, size, target)
     local occupied = job.occupied
     local xa, xb = snap_candidates(target.x, size)
@@ -223,7 +224,7 @@ end
 --- Place one spaced entity near `target`, keeping pole chains within reach.
 --- @param job PlannerJob
 --- @param layer Layer
---- @param walk {last: Vector|nil}
+--- @param walk SpacedWalk|SmartWalk
 --- @param target Vector
 --- @param direction Vector
 --- @return number used
@@ -308,7 +309,7 @@ local function stage_spaced(job, budget)
         local walked = false
         if walk.smart then
             local u
-            u, walked = smart_poles.step(job, walk, band, budget - used, SMART_HELPERS)
+            u, walked = smart_poles.step(job, walk --[[@as SmartWalk]], band, budget - used, SMART_HELPERS)
             used = used + u
         end
         while not walk.smart and walk.i <= #frames and used < budget do

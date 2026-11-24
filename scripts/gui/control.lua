@@ -134,7 +134,7 @@ lib["highlight_unfed"] = function(e) toggle_highlight(e, "unfed") end
 --- The blueprint the player holds: from the inventory or the blueprint library, the
 --- active one in a book.
 --- @param player LuaPlayer
---- @return LuaItemStack|LuaRecord|nil
+--- @return LuaItemStack|LuaItemCommon|LuaRecord|nil
 local function held_blueprint(player)
     local stack = player.cursor_stack
     if stack and stack.valid_for_read then

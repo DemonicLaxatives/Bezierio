@@ -37,6 +37,8 @@ local function stage_tangents(job, budget)
         else
             job.last_tangent = t
         end
+        -- (t may still be nil, filled backwards; n and w come with finish_frame)
+        ---@diagnostic disable-next-line: missing-fields, assign-type-mismatch
         frames[i] = { p = points[i], t = t } --[[@as CurveFrame]]
         if i > 1 then job.plan.length = job.plan.length + vect.distance(points[i - 1], points[i]) end
         job.cursor = i + 1

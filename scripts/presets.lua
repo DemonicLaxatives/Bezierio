@@ -26,8 +26,9 @@ local function int(v)
     return nil
 end
 
---- @param layers table<integer, Layer>
---- @return table<integer, Layer>
+--- @generic T
+--- @param value T
+--- @return T
 local function deep_copy(value)
     if type(value) ~= "table" then return value end
     local out = {}

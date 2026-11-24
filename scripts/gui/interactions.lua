@@ -25,7 +25,7 @@ lib.routed_types = {
     [defines.events.on_gui_selection_state_changed] = {["drop-down"] = true},
 }
 
---- @param e {name: defines.events, element: LuaGuiElement, player_index: integer}
+--- @param e {name: defines.events, element: LuaGuiElement, player_index: integer, button: defines.mouse_button_type|nil}
 function lib.handle_event(e)
     -- (a rebuild after migrations closes the windows: do it before looking at them)
     state.ensure_rebuilt()

@@ -397,7 +397,7 @@ Status (2026-11-24, uncommitted on `refactor`; `tests/run_all.sh` passes):
 
 ## Phase 3: release, CI and automated release
 
-### CI (GitHub Actions, on every push and PR)
+### CI (GitHub Actions, on every push and PR) (done: `.github/workflows/ci.yml`, `tests/lint/`)
 
 1. **Unit job:** install `lua5.4` and run `tests/unit/run_all.sh`. It finishes in
    seconds and needs no game.
@@ -413,7 +413,7 @@ Status (2026-11-24, uncommitted on `refactor`; `tests/run_all.sh` passes):
 - portal API key stored as a repository secret.
 - edit version numbers, release dates and refrence jsons in the repo.
 
-## Release 
+## Release (done: `release/`, `.github/workflows/release.yml`; to try on the first real tag)
 
 0. **Version bumps:** a small script `release/bump.py --version "X.Y.Z"`, that updates 
   - `info.json`, ensure the correct version, edit it repo if needed

@@ -108,7 +108,7 @@ lib.bands = bands.bands
 --- @field i integer              # next frame
 --- @field travelled number       # along the layer's line so far
 --- @field next_at number         # where the next entity goes
---- @field aim number             # where the current one was aimed
+--- @field aim number|nil         # where the current one was aimed
 --- @field last Vector|nil        # the previous entity
 --- @field first Vector|nil       # where the first one was aimed (closed loops: the seam)
 --- @field centre number|nil      # along the centre line so far
@@ -137,6 +137,24 @@ lib.bands = bands.bands
 --- @field join_cells {x: integer, y: integer, band: LayerBand}[]|nil  # cells of layers that join corners, in order
 --- @field join_at table<string, integer>|nil  # cell -> layer index, for those layers
 --- @field tiled table<string, true>|nil       # cells with a (non-underlay) tile
+--- @field recent table<integer, integer[]>|nil  # rasterize: latest band entities per wired layer (plan/raster.lua)
+--- @field path_cells table<integer, table<integer, PathCell[]>>|nil  # rasterize: path layers' cells per line
+--- @field rail_queue integer[]|nil             # rails: bands left to lay track in (plan/track.lua)
+--- @field rail_line RailLine|nil               # rails: the band being fitted
+--- @field rail_fit RailFit|nil
+--- @field path_setup {lines: {line: string, cells: PathCell[], belts: boolean}[], li: integer, ci: integer}|nil  # paths: filing the lines' cells (plan/lines.lua)
+--- @field path_queue table[]|nil               # paths: route and emit items, in order
+--- @field path_emits table[]|nil               # paths: the emit items, queued once routing is done
+--- @field line_cells table<string, table<string, PathCell>>|nil  # line -> its cells by key
+--- @field line_of table<string, string>|nil    # cell -> the line it belongs to
+--- @field line_layer table<string, integer>|nil  # line -> its layer
+--- @field locked table<string, true>|nil       # corner cells taken from another line
+--- @field routes table<string, PathCell[][]>|nil  # line -> its route
+--- @field reroutes table<string, integer>|nil  # line -> times routed again
+--- @field belt_cells table<string, true>|nil   # cells of belt lines
+--- @field feed_pipes table<string, string>|nil # plain pipe cells -> their line (turret feeds)
+--- @field feed_pipe_names table<string, string>|nil  # line -> its pipe
+--- @field feed_belts table<string, true>|nil   # belt cells (turret feeds)
 --- @field plan BuildPlan
 
 --- @param curve Curve

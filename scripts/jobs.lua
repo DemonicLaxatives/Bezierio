@@ -351,7 +351,7 @@ function lib.update(player, controller)
                 work.build = blueprint.new_job(player, plan_job.plan, "Bézierio: " .. preset.name,
                     blueprint_source(player, controller, preset))
             else
-                work.build = executor.new_job(player, plan_job.plan, work.pending_build,
+                work.build = executor.new_job(player, plan_job.plan, work.pending_build --[[@as BezierioBuildMode]],
                     state.setting(player.index, "cover_tiles"))
             end
             work.pending_build = nil

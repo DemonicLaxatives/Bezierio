@@ -97,7 +97,7 @@ local function route_path_line(job, item, budget)
     if item.si <= #segments then return used, false end
     if job.closed then
         -- Close a loop whose ends meet only diagonally.
-        for _, segment in ipairs(joined) do
+        for _, segment in ipairs(joined --[[@as PathCell[][] ]]) do
             local first, last = segment[1], segment[#segment]
             if #segment >= 3 and math.abs(first.x - last.x) == 1 and math.abs(first.y - last.y) == 1 then
                 for _, corner in ipairs({ { x = first.x, y = last.y }, { x = last.x, y = first.y } }) do
@@ -156,12 +156,12 @@ end
 --- long stretch of the line (left over where a loop's ends meet, or at a tight
 --- corner) would be belts going nowhere.
 --- @param job PlannerJob
---- @param item {line: string, longest: integer}
+--- @param item {line: string, longest: integer|nil}
 --- @param segment PathCell[]
 --- @return PathCell[][]
 local function kept_parts(job, item, segment)
     local kept, current = {}, {}
-    if #segment < lib.MIN_SCRAP and item.longest >= 5 * lib.MIN_SCRAP then return kept end
+    if #segment < lib.MIN_SCRAP and (item.longest or 0) >= 5 * lib.MIN_SCRAP then return kept end
     for _, c in ipairs(segment) do
         if job.line_of[cell_key(c.x, c.y)] == item.line then
             current[#current + 1] = c

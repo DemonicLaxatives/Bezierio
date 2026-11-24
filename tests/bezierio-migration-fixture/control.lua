@@ -5,6 +5,7 @@
 -- result on the first tick (the game doesn't raise on_configuration_changed when
 -- it only applied migrations; Bézierio's tick handler runs first, as this mod
 -- depends on it).
+---@diagnostic disable-next-line: param-type-mismatch
 local function dev(fn, ...) return remote.call("bezierio-dev", fn, ...) end
 
 -- Storage as written by schema 2 (the first 2.1 dev layout).

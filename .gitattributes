@@ -1,0 +1,12 @@
+# Not in the release zip (release/package.py uses git archive).
+tests/ export-ignore
+docs/ export-ignore
+mod-portal/ export-ignore
+release/ export-ignore
+.github/ export-ignore
+.vscode/ export-ignore
+python_scripts/ export-ignore
+CLAUDE.md export-ignore
+README.md export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore

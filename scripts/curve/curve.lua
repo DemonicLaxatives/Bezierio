@@ -316,9 +316,9 @@ end
 function lib.step(sampler, out, budget)
     local used
     if sampler.state.kind == "shape" then
-        used = shapes.step(sampler.state, out, budget)
+        used = shapes.step(sampler.state --[[@as ShapeSampler]], out, budget)
     else
-        used = catmull_rom.step(sampler.state, out, budget)
+        used = catmull_rom.step(sampler.state --[[@as CatmullRomSampler]], out, budget)
     end
     sampler.done = sampler.state.done
     return used

@@ -1,0 +1,70 @@
+# A release, on pushing a version tag (vX.Y.Z, after release/bump.py and a commit):
+# validate, package, test what ships, then publish to GitHub and the mod portal.
+# Needs the repository secret FACTORIO_API_KEY ("ModPortal: Upload Mods").
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      LUALS_VERSION: "3.19.2"
+      FMTK_VERSION: "2.1.9"
+      FACTORIO_DOCS: "2.1.25"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r release/requirements.txt
+      - name: Release scripts' tests
+        run: python -m pytest -q release/tests tests/lint
+
+      - name: Validate the repository
+        run: python release/validate.py --tag "$GITHUB_REF_NAME"
+      - name: Package
+        id: package
+        run: echo "zip=$(python release/package.py --out dist)" >> "$GITHUB_OUTPUT"
+      - name: Validate the zip
+        run: python release/validate.py --tag "$GITHUB_REF_NAME" --zip "${{ steps.package.outputs.zip }}"
+
+      # What ships is what's tested: the zip unpacked, with the tests next to it.
+      - name: Unpack
+        run: |
+          mkdir -p "$RUNNER_TEMP/shipped"
+          unzip -q "${{ steps.package.outputs.zip }}" -d "$RUNNER_TEMP/shipped"
+          SHIPPED="$(echo "$RUNNER_TEMP"/shipped/*/)"
+          cp -r tests "$SHIPPED/tests"
+          echo "SHIPPED=$SHIPPED" >> "$GITHUB_ENV"
+      - name: Unit tests on the zip
+        run: |
+          sudo apt-get update && sudo apt-get install -y lua5.4
+          "$SHIPPED/tests/unit/run_all.sh"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Lint the zip
+        run: |
+          mkdir -p "$RUNNER_TEMP/luals"
+          curl -sL "https://github.com/LuaLS/lua-language-server/releases/download/$LUALS_VERSION/lua-language-server-$LUALS_VERSION-linux-x64.tar.gz" \
+            | tar xz -C "$RUNNER_TEMP/luals"
+          npx --yes "factoriomod-debug@$FMTK_VERSION" luals-addon --online "$FACTORIO_DOCS" "$RUNNER_TEMP/stubs"
+          LUALS="$RUNNER_TEMP/luals/bin/lua-language-server" LUALS_LIBRARY="$RUNNER_TEMP/stubs" "$SHIPPED/tests/lint/check.sh"
+          (cd "$SHIPPED" && python3 tests/lint/locale_keys.py)
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python release/notes.py --version "${GITHUB_REF_NAME#v}" > notes.md
+          gh release create "$GITHUB_REF_NAME" "${{ steps.package.outputs.zip }}" --title "$GITHUB_REF_NAME" --notes-file notes.md
+      - name: Mod portal
+        env:
+          FACTORIO_API_KEY: ${{ secrets.FACTORIO_API_KEY }}
+        run: python release/upload.py "${{ steps.package.outputs.zip }}"

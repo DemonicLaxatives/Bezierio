@@ -48,7 +48,7 @@ end
 
 --- A spacing slider: from the entity's size up to `max(layer)`.
 --- @param max fun(layer: Layer): integer
---- @param default fun(layer: Layer): integer|nil
+--- @param default (fun(layer: Layer): integer)|nil  # (default: the max)
 --- @return LayerField
 function lib.spacing(max, default)
     return {

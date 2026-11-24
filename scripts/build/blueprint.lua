@@ -31,6 +31,10 @@ lib.COST = { entity = 1, tile = 1, wire = 1, write = 0.5 }
 --- @field source BlueprintSource|nil
 --- @field stage "bounds"|"entities"|"tiles"|"wires"|"write"|"done"
 --- @field cursor integer
+--- @field min_x number|nil                    # bounds: the plan's extent
+--- @field min_y number|nil
+--- @field max_x number|nil
+--- @field max_y number|nil
 --- @field origin {x: integer, y: integer}|nil   # world position of blueprint (0, 0)
 --- @field size {x: integer, y: integer}|nil
 --- @field entities BlueprintEntity[]

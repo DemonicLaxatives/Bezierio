@@ -38,6 +38,10 @@ lib.MARGIN = 0.3
 --- @field half number     # half the footprint's longer side, minus the margin (for reach along the line)
 --- @field hx number|nil   # half its width, minus the margin (non-square footprints: per axis)
 --- @field hy number|nil   # half its height, minus the margin
+--- @field size integer     # footprint size (square)
+--- @field w number|nil     # footprint, as placed
+--- @field h number|nil
+--- @field order integer    # index in plan.entities (a stable sort)
 --- @field s number        # arc length of its projection onto the centre line
 --- @field done boolean    # powered, or given up on
 --- @field powered boolean

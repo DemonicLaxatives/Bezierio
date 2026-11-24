@@ -250,10 +250,6 @@ local function build_tile(job, player, output, tile)
     result.placed = result.placed + 1
 end
 
---- @param job BuildJob
---- @param player LuaPlayer
---- @param output BuildOutput
---- @param entity PlannedEntity
 --- Entity types a rail is made of (a gate goes over them; never cleared for one).
 local RAIL_TYPES = { "straight-rail", "half-diagonal-rail", "curved-rail-a", "curved-rail-b", "rail-ramp", "legacy-straight-rail", "legacy-curved-rail" }
 local IS_RAIL = {}

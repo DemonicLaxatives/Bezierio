@@ -14,7 +14,7 @@ lib.MAX_STUB = 4
 local SIDES = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
 
 --- Rotate a vector by a direction (0, 4, 8, 12: quarter turns clockwise; map y down).
---- @param v {x: number, y: number}
+--- @param v Vector
 --- @param direction integer
 --- @return {x: number, y: number}
 function lib.rotate(v, direction)
@@ -27,7 +27,7 @@ local function key(x, y) return x .. "," .. y end
 
 --- An inserter for an ammo turret: a free cell beside the turret where the
 --- inserter drops into the turret and picks up from a belt cell.
---- @param ctx {occupied: fun(x: integer, y: integer): boolean, belt: fun(x: integer, y: integer): boolean}
+--- @param ctx FeedContext
 --- @param entity PlannedEntity  # the turret
 --- @param inserter {pickup: Vector, drop: Vector}  # facing north
 --- @return {x: integer, y: integer, direction: integer}|nil
@@ -108,7 +108,7 @@ end
 --- A pipe stub from one of the targets to a pipe line: a path of free cells (the
 --- target included, unless it is already pipe) whose last cell touches the line,
 --- and none touching another pipe line.
---- @param ctx {occupied: fun(x: integer, y: integer): boolean, pipe_line: fun(x: integer, y: integer): string|nil}
+--- @param ctx FeedContext
 --- @param targets {x: integer, y: integer}[]
 --- @return {x: integer, y: integer}[]|nil  # cells to put pipe in (empty: already connected)
 function lib.pipe_stub(ctx, targets)

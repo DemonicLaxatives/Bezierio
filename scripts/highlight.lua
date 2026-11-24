@@ -33,6 +33,7 @@ local ICONS = {
 --- @field surface integer      # surface index
 --- @field ttl integer|nil      # ticks; nil: until hidden
 --- @field gen table<HighlightKind, integer>  # current generation per kind (older items are dropped)
+--- @field last_gen integer|nil  # the latest generation handed out
 
 --- @param kind HighlightKind
 local function cache_key(kind) return "highlight_" .. kind end

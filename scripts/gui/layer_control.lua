@@ -209,7 +209,7 @@ lib["set_item"] = function(e)
     local idx = tonumber(e.element.tags.idx)
     local layer = idx and state.layers(e.player_index)[idx]
     local field = layer and registry.field(layer, field_name)
-    if not (field and field.widget == "item") then return end
+    if not (layer and field and field.widget == "item") then return end
     local value = e.element.elem_value --[[@as string?]]
     if value and field.valid and not field.valid(layer, value) then
         local player = game.get_player(e.player_index)

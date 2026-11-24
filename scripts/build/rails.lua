@@ -35,6 +35,7 @@ lib.TOLERANCE = 1.5
 --- @field direction integer
 --- @field from TrackEnd   # the end it attaches to
 --- @field goal TrackEnd   # its other end
+--- @field ground_name string|nil  # elevated: the piece's ground rail name (rail-ramp for ramps)
 
 --- The extensions at an end facing `direction` (relative to the end).
 --- @param direction integer
@@ -66,7 +67,7 @@ end
 local function parity(direction)
     local key = next(data.ends[direction])
     local px, py = key:match("(%d),(%d)")
-    return tonumber(px), tonumber(py)
+    return tonumber(px) --[[@as integer]], tonumber(py) --[[@as integer]]
 end
 
 --- @param direction integer
@@ -157,6 +158,12 @@ end
 --- @field off TrackEnd[]     # ends further than TOLERANCE from the line
 --- @field done boolean
 --- @field start TrackEnd
+--- @field elevated boolean|nil   # elevated rails (needing supports)
+--- @field ramps boolean|nil      # a ramp up at the start and down at the end
+--- @field ramped_down boolean|nil
+--- @field closed boolean|nil     # a loop that got back to its start
+--- @field stalled boolean|nil    # stopped getting along the line
+--- @field progress_at integer|nil  # pieces when it last got further along
 
 --- @param line RailLine
 --- @param opts {elevated: boolean|nil, ramps: boolean|nil}|nil

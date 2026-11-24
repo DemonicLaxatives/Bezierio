@@ -149,7 +149,7 @@ end
 --- @param frames CurveFrame[]
 --- @param index FrameIndex
 --- @param c Vector
---- @return number|nil
+--- @return number|nil u, integer|nil j  # j: the sample it belongs to
 function lib.grid_distance(frames, index, c)
     local j0, d0 = lib.nearest_frame(frames, index, c)
     local best_u = frame_u(frames, j0, c)

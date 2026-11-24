@@ -11,7 +11,7 @@ end
 
 script.on_event(defines.events.on_tick, function(e)
   if e.tick ~= 5 then return end
-  local s, force = game.surfaces[1], game.forces.player
+  local s, force = game.surfaces[1], game.forces["player"]
   s.request_to_generate_chunks({ 0, 0 }, 12); s.force_generate_chunk_requests()
   for _, ent in pairs(s.find_entities_filtered { area = { { -400, -400 }, { 400, 400 } } }) do
     if ent.type ~= "character" then ent.destroy() end

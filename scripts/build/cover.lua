@@ -63,10 +63,10 @@ end
 
 --- Every tile item, by its tile's order (then name): the fallback choices.
 --- (A per-session cache: prototypes don't change while the game runs.)
---- @type {tile: string, item: string}[]|nil
+--- @type {tile: string, item: string, order: string}[]|nil
 local all_items
 
---- @return {tile: string, item: string}[]
+--- @return {tile: string, item: string, order: string}[]
 local function tile_items()
     if all_items then return all_items end
     all_items = {}

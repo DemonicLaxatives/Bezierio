@@ -33,6 +33,8 @@ local lib = {}
 ---@field keep? fun(layer: Layer, x: integer, y: integer): boolean  # band layers: whether a cell gets one (default: the checkerboard)
 ---@field decorate? fun(layer: Layer, entity: PlannedEntity, info: PlacementInfo)  # spaced layers: direction, colour, ammo, ...
 ---@field attach? fun(layer: Layer, entity: PlannedEntity, ctx: FeedContext)  # spaced layers: what goes with each entity (turret feeds)
+---@field wants_feed? fun(layer: Layer): boolean  # spaced layers: whether each entity gets a feed (attach)
+---@field can_attach? fun(layer: Layer, entity: PlannedEntity, ctx: FeedContext): boolean  # ... and whether it fits there
 ---@field thickness? fun(layer: Layer): number  # band width in grid units (default: footprint size)
 ---@field join_corners? boolean        # band layers: cells meeting only at a corner get a corner cell (walls; not with a checkerboard)
 

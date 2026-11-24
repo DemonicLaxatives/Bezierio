@@ -1,0 +1,54 @@
+# Unit tests, lint and the release scripts' tests, on every push and pull request.
+# The game tests (tests/run.sh) need a Factorio install and stay a local step.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y lua5.4
+      - run: tests/unit/run_all.sh
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    env:
+      LUALS_VERSION: "3.19.2"
+      FMTK_VERSION: "2.1.9"
+      FACTORIO_DOCS: "2.1.25"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Lua language server
+        run: |
+          mkdir -p "$RUNNER_TEMP/luals"
+          curl -sL "https://github.com/LuaLS/lua-language-server/releases/download/$LUALS_VERSION/lua-language-server-$LUALS_VERSION-linux-x64.tar.gz" \
+            | tar xz -C "$RUNNER_TEMP/luals"
+      - name: Factorio API stubs
+        run: npx --yes "factoriomod-debug@$FMTK_VERSION" luals-addon --online "$FACTORIO_DOCS" "$RUNNER_TEMP/stubs"
+      - name: Type check
+        env:
+          LUALS: ${{ runner.temp }}/luals/bin/lua-language-server
+          LUALS_LIBRARY: ${{ runner.temp }}/stubs
+        run: tests/lint/check.sh
+      - name: Locale keys
+        run: python3 tests/lint/locale_keys.py
+
+  python:
+    name: Release scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r release/requirements.txt
+      - run: python -m pytest -q release/tests tests/lint

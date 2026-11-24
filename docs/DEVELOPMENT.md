@@ -782,4 +782,13 @@ tests/run.sh bench                                     # timing (read the BENCH 
   its storage. It then loads the save with the real mod and the fixture checks the
   result on the first tick.
 
-The `tests/` folder sits inside the mod folder; leave it out of release zips.
+**Lint** (`tests/lint/`, also in CI): `check.sh` type-checks the mod with the Lua
+language server and FMTK's Factorio API stubs (`LUALS=`, `LUALS_LIBRARY=`, see
+the README), as the editor does; `need-check-nil` is off (optional API returns
+the logic already guards), and the stubs' `LocalisedString` (a variadic tuple
+the server can't match `{ "key", value }` against) is filtered out by message.
+New fields on a job or class go into its `@class` (undeclared ones fail the
+check). `locale_keys.py` checks every fully written locale key exists.
+
+The `tests/` folder sits inside the mod folder; `.gitattributes` leaves it (and
+the other repository files) out of release zips.

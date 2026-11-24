@@ -188,7 +188,7 @@ function lib.load(player, text)
         return false
     end
     if #result > 0 then
-        player.print({ "bezierio-message.preset-missing-items", table.concat(result, ", ") })
+        player.print({ "bezierio-message.preset-missing-items", table.concat(result --[[@as string[] ]], ", ") })
     end
     preset_changed(player)
     return true
