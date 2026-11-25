@@ -36,12 +36,12 @@ Draw a curve, stack up layers of walls, floors, power lines, turrets, belts, pip
 
 1. **Open the window** with the Bézierio button at the top left. It has three sections: Curve, Layers and Build.
 
-2. **Draw the curve.** Take the pointer (the pointer button, or Alt+B):
+2. **Draw the curve.** Take the pointer (the pointer button, or Alt+Z):
 
     - click empty ground to add a point at the end;
     - click a point to select it, then click elsewhere to move it there;
     - Shift + click near the curve to insert a point;
-    - Shift + mouse wheel selects the next or previous point;
+    - Alt + mouse wheel selects the next or previous point;
     - right-click deselects, or removes the point under the cursor.
 
     The drop-down next to the pointer picks a **curve**, **circle**, **ellipse** or **arc** (the window says which handle to place next). The circular arrows close the loop, ⇄ reverses the direction (the layers swap sides), and the point list lets you type coordinates. Export and import share a curve as a string.

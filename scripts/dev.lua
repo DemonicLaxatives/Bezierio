@@ -153,7 +153,7 @@ remote.add_interface("bezierio-dev", {
             input_name = "bezierio-pointer-remove", in_gui = false,
         })
     end,
-    --- step: 1 = next point (shift + wheel down), -1 = previous
+    --- step: 1 = next point (alt + wheel down), -1 = previous
     select_step = function(player_index, step)
         local e = { player_index = player_index, in_gui = false }
         if step > 0 then custom_input.on_select_next(e) else custom_input.on_select_previous(e) end

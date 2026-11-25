@@ -9,7 +9,7 @@ settings.lua             map setting: work budget per tick
 migrations/              storage upgrades, run by the game once per save (see Storage)
 prototypes/
   items.lua              bezierio-pointer: cursor-only item for placing control points
-  custom_input.lua       pointer click / shift-click / right-click / shift-wheel, Alt+B
+  custom_input.lua       pointer click / shift-click / right-click / alt-wheel, Alt+Z
   sprites.lua            GUI icons: centred build icons, reverse, narrow / widen, colour swatches
   style.lua              GUI styles: shaded lists, add-layer bars, point chips
 scripts/
@@ -214,7 +214,7 @@ The pointer (`custom_input.lua`) edits the list. One point can be selected
   first / after the last point when the click lies beyond an end of an open curve.
   The new point is selected;
 - right-click deselects, or removes the point under the cursor;
-- shift + mouse wheel selects the next / previous point.
+- alt + mouse wheel selects the next / previous point.
 
 Changing the selection only redraws the point markers, not the preview. The
 reverse button flips the active kind's direction (see Curve kinds); the

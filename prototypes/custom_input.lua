@@ -26,20 +26,20 @@ data:extend {
   {
     type = "custom-input",
     name = "bezierio-select-next",
-    key_sequence = "SHIFT + mouse-wheel-down",
+    key_sequence = "ALT + mouse-wheel-down",
     consuming = "none",
   },
   {
     type = "custom-input",
     name = "bezierio-select-previous",
-    key_sequence = "SHIFT + mouse-wheel-up",
+    key_sequence = "ALT + mouse-wheel-up",
     consuming = "none",
   },
   -- Take the pointer.
   {
     type = "custom-input",
     name = "bezierio-get-pointer",
-    key_sequence = "ALT + B",
+    key_sequence = "ALT + Z",
     consuming = "game-only",
     action = "spawn-item",
     item_to_spawn = "bezierio-pointer",

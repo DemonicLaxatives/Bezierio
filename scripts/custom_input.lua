@@ -5,7 +5,7 @@
 --- stays selected); otherwise add a point at the end (shapes: until they have all
 --- their handles). Shift + left click: add a spline point into the nearest stretch
 --- of curve (and select it). Right click: with a point selected, deselect it;
---- otherwise remove the point under the cursor. Shift + mouse wheel: select the
+--- otherwise remove the point under the cursor. Alt + mouse wheel: select the
 --- next / previous point.
 ---
 --- In move mode (the move button), left click moves the curve's centre there and
