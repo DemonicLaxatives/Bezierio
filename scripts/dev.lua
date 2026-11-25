@@ -15,6 +15,7 @@ local planner = require("scripts.build.planner")
 local jobs = require("scripts.jobs")
 local layer_view = require("scripts.gui.layer_view")
 local presets = require("scripts.presets")
+local rails = require("scripts.build.rails")
 
 -- (the scenarios count presets: test players start with "Default" only)
 state.with_builtin_presets = false
@@ -106,6 +107,10 @@ remote.add_interface("bezierio-dev", {
     end,
     --- A drop-down choice as the player makes it, locks included (nothing on a
     --- disabled one).
+    --- The tiles a rail piece needs under it on water (build/rails.lua).
+    rail_cover = function(name, direction)
+        return rails.cover_cells(name, direction)
+    end,
     --- Add the built-in presets to this player's, as a new player gets them.
     add_builtin_presets = function(player_index)
         local list = state.get(player_index).presets

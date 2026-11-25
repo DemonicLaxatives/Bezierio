@@ -343,6 +343,57 @@ local function rails_need_gravity()
   return false
 end
 
+-- On water, a forced build lays landfill only where each rail piece stands (the
+-- game's own minimum, scripts/build/rail_data.lua), not the square around a curve.
+step("on water: landfill just under the track", function(player)
+  local s = player.surface
+  clear_all(s)
+  local water = {}
+  for x = -90, 89 do for y = -90, 89 do water[#water + 1] = { name = "water", position = { x, y } } end end
+  s.set_tiles(water)
+  dev("click", P, "super_build") -- (two tracks here, overlapping at the bend: rails over rails)
+end, "idle")
+
+step("... the landfill ghosts are exactly the pieces' cells", function(player)
+  local s = player.surface
+  local expected, rails_planned = {}, 0
+  for _, e in pairs(dev("plan", P).entities) do
+    local offsets = e.track and dev("rail_cover", e.name, e.direction or 0)
+    if offsets then
+      rails_planned = rails_planned + 1
+      for _, o in ipairs(offsets) do expected[math.floor(e.position.x + o[1]) .. "," .. math.floor(e.position.y + o[2])] = true end
+    elseif not e.track and (e.size or 1) == 1 then
+      expected[math.floor(e.position.x) .. "," .. math.floor(e.position.y)] = true
+    end
+  end
+  local got, extra = {}, 0
+  for _, g in pairs(s.find_entities_filtered { type = "tile-ghost" }) do
+    if g.ghost_name == "landfill" then
+      local key = math.floor(g.position.x) .. "," .. math.floor(g.position.y)
+      got[key] = true
+      if not expected[key] then extra = extra + 1 end
+    end
+  end
+  local missing = 0
+  for key in pairs(expected) do if not got[key] then missing = missing + 1 end end
+  check(rails_planned > 10, "rail pieces planned: " .. rails_planned)
+  check(extra == 0 and missing == 0, "landfill where the pieces stand: " .. extra .. " extra, " .. missing .. " missing")
+  local rail_ghosts = 0
+  for _, name in ipairs(RAILS) do rail_ghosts = rail_ghosts + #s.find_entities_filtered { ghost_name = name } end
+  local lost = {}
+  for _, e in pairs(dev("plan", P).entities) do
+    if e.track and dev("rail_cover", e.name, e.direction or 0)
+        and not s.find_entities_filtered { ghost_name = e.name, position = e.position, limit = 1 }[1] then
+      lost[#lost + 1] = e.name .. "/" .. (e.direction or 0) .. "@" .. e.position.x .. "," .. e.position.y
+    end
+  end
+  check(rail_ghosts == rails_planned, "every rail ghost placed: " .. rail_ghosts .. "/" .. rails_planned .. " " .. table.concat(lost, " "))
+  clear_all(s)
+  local grass = {}
+  for x = -90, 89 do for y = -90, 89 do grass[#grass + 1] = { name = "grass-1", position = { x, y } } end end
+  s.set_tiles(grass)
+end)
+
 step("no gravity: super force places no rail ghosts", function(player)
   if not rails_need_gravity() then return end
   local s = player.surface

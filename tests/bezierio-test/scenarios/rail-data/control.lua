@@ -33,7 +33,8 @@ script.on_event(defines.events.on_tick, function(e)
     return rail, shift
   end
 
-  local data = { ends = {}, cells = {}, ramps = { up = {}, down = {} } }
+  local data = { ends = {}, cells = {}, cover = {}, ramps = { up = {}, down = {} } }
+  local pieces = {} -- key -> {name, direction, position}: for the cover cells
   local GROUND = { ["straight-rail"] = true, ["half-diagonal-rail"] = true, ["curved-rail-a"] = true, ["curved-rail-b"] = true }
   --- The tiles a rail covers (where a 1x1 wall no longer fits), relative to its position.
   local function record_cells(rail)
@@ -48,6 +49,7 @@ script.on_event(defines.events.on_tick, function(e)
       end
     end
     data.cells[key] = out
+    pieces[key] = { name = rail.name, direction = rail.direction, position = rail.position }
   end
   local queue = {}
   local first = build("straight-rail", { x = 0, y = 0 }, defines.direction.north)
@@ -129,6 +131,44 @@ script.on_event(defines.events.on_tick, function(e)
     local support = prototypes.entity["rail-support"]
     data.support = { name = "rail-support", range = support and support.support_range, ramp_range = prototypes.entity["rail-ramp"].support_range }
   end
+  -- Cover: the tiles a piece needs under it on water (landfill), relative to its
+  -- position. On water with landfill under the piece's box, give each cell back to
+  -- the water while the piece can still be placed: what's left is needed.
+  local keys = {}
+  for key in pairs(pieces) do keys[#keys + 1] = key end
+  table.sort(keys)
+  for _, key in ipairs(keys) do
+    local piece = pieces[key]
+    local spot = fresh_spot()
+    local shift = { x = spot.x - math.floor(piece.position.x / 2) * 2, y = spot.y - math.floor(piece.position.y / 2) * 2 }
+    local at = { x = piece.position.x + shift.x, y = piece.position.y + shift.y }
+    local function can()
+      return s.can_place_entity { name = piece.name, position = at, direction = piece.direction, force = force,
+        build_check_type = defines.build_check_type.manual }
+    end
+    local water = {}
+    for x = at.x - 12, at.x + 12 do for y = at.y - 12, at.y + 12 do water[#water + 1] = { name = "water", position = { x, y } } end end
+    s.set_tiles(water)
+    local cells = {}
+    for x = at.x - 8, at.x + 7 do for y = at.y - 8, at.y + 7 do cells[#cells + 1] = { x, y } end end
+    local land = {}
+    for _, c in ipairs(cells) do land[#land + 1] = { name = "landfill", position = c } end
+    s.set_tiles(land)
+    if not can() then
+      log("RAILDATA-COVER cannot place " .. key)
+    else
+      local out = {}
+      for _, c in ipairs(cells) do
+        s.set_tiles({ { name = "water", position = c } })
+        if not can() then
+          s.set_tiles({ { name = "landfill", position = c } })
+          out[#out + 1] = { c[1] - at.x, c[2] - at.y }
+        end
+      end
+      data.cover[key] = out
+    end
+  end
+
   local count = 0
   for d in pairs(data.ends) do count = count + 1 end
   log("RAILDATA-DIRECTIONS " .. count)

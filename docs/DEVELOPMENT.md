@@ -522,7 +522,9 @@ way. A cover ghost already in the cell is built on. Ghosts: tile ghosts, stacked
 the other (concrete on ice platform becomes the game's frozen concrete, the
 ocean and the platform hidden below). A force build checks first that nothing
 it won't remove is in the way, so a blocked spot isn't left with landfill.
-Elevated pieces need none.
+Elevated pieces need none. Rail pieces need it only on the tiles they stand on
+(`rails.cover_cells`, from `rail_data.lua`'s `cover`: the game's own minimum,
+measured by `tests/gen-rail-data.sh` on water), not the square around a curve.
 
 With ghosts, nothing is placed that the player couldn't place, in any mode: an
 entity whose `surface_conditions` the surface doesn't meet (rails need gravity:

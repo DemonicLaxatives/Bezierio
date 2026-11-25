@@ -61,6 +61,17 @@ function lib.cells(name, direction)
     return data.cells[name .. "/" .. direction] or {}
 end
 
+--- The tiles a piece needs under it to stand on water (landfill), relative to its
+--- position, or nil when the game data has none for it. Smaller than the square
+--- around a curved piece, and not the same as `cells` (where a 1x1 wall no longer
+--- fits): a piece that only grazes a tile still needs ground there.
+--- @param name string
+--- @param direction integer
+--- @return integer[][]|nil
+function lib.cover_cells(name, direction)
+    return data.cover and data.cover[name .. "/" .. direction] or nil
+end
+
 --- The parity (x % 2, y % 2) rail ends facing `direction` have.
 --- @param direction integer
 --- @return integer, integer

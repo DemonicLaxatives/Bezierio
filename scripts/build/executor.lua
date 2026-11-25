@@ -7,6 +7,7 @@
 local undo = require("scripts.build.undo")
 local wires = require("scripts.build.wires")
 local cover = require("scripts.build.cover")
+local rails = require("scripts.build.rails")
 
 local lib = {}
 
@@ -393,19 +394,34 @@ local function cells_of(area)
     return out
 end
 
+--- The cells under a planned entity that may need cover: for rail pieces the ones
+--- they stand on (from the game, build/rails.lua); for others the cells under its
+--- obstacle area.
+--- @param entity PlannedEntity
+--- @param area BoundingBox
+--- @return {x: integer, y: integer}[]
+local function cover_cells_of(entity, area)
+    local offsets = rails.cover_cells(entity.name, entity.direction or 0)
+    if not offsets then return cells_of(area) end
+    local out, p = {}, entity.position
+    for _, o in ipairs(offsets) do out[#out + 1] = { x = math.floor(p.x + o[1]), y = math.floor(p.y + o[2]) } end
+    return out
+end
+
 --- Lay cover where the ground under an entity can't take it (water under a
 --- wall). False when some cell has no cover that fits: then nothing is laid.
 --- @param job BuildJob
 --- @param player LuaPlayer
 --- @param output BuildOutput
 --- @param prototype LuaEntityPrototype
+--- @param entity PlannedEntity
 --- @param area BoundingBox
 --- @return boolean ok
-local function lay_cover(job, player, output, prototype, area)
+local function lay_cover(job, player, output, prototype, entity, area)
     local surface = job.surface
     local function takes(t) return not cover.entity_needs(prototype, t) end
     local todo = {}
-    for _, c in ipairs(cells_of(area)) do
+    for _, c in ipairs(cover_cells_of(entity, area)) do
         if cover.entity_needs(prototype, surface.get_tile(c.x, c.y).prototype) then
             local layers = cover_plan(job, c.x, c.y, prototype.name, takes, false)
             if not layers then return false end
@@ -510,7 +526,7 @@ local function build_entity(job, player, output, entity)
     -- stays is in the way).
     if job.mode ~= "normal" and entity.rail_layer ~= "elevated" and not IS_ELEVATED[prototype.type] then
         local needs = false
-        for _, c in ipairs(cells_of(area)) do
+        for _, c in ipairs(cover_cells_of(entity, area)) do
             if cover.entity_needs(prototype, surface.get_tile(c.x, c.y).prototype) then needs = true break end
         end
         if needs then
@@ -518,7 +534,7 @@ local function build_entity(job, player, output, entity)
                 result.blocked = result.blocked + 1
                 return
             end
-            if not lay_cover(job, player, output, prototype, area) then
+            if not lay_cover(job, player, output, prototype, entity, area) then
                 result.blocked = result.blocked + 1
                 return
             end
