@@ -1,5 +1,6 @@
 --- The settings window (group = "view"), opened with the gear in the main window's
---- title bar: how this player's curve, points and preview are drawn, and the
+--- title bar: how this player's curve, points and preview are drawn (and whether
+--- on the map too), and the
 --- player's other settings (how long unpowered / unfed marks stay, whether
 --- blueprints carry their curve and preset).
 local palette = require("scripts.palette")
@@ -61,13 +62,21 @@ local function fill(pane, player_index)
             maximum_value = number.max,
             value_step = number.step,
             discrete_values = true,
-            value = view[number.name],
+            value = view[number.name] or palette.VIEW_DEFAULTS[number.name], -- (a save from before it)
             tags = { group = "view", action = "set_number", setting = number.name },
         }
         slider.style.width = 110
-        local value = flow.add { type = "label", name = "view_" .. number.name .. "_value", caption = tostring(view[number.name]) }
+        local value = flow.add { type = "label", name = "view_" .. number.name .. "_value", caption = tostring(view[number.name] or palette.VIEW_DEFAULTS[number.name]) }
         value.style.width = 30
     end
+    grid.add { type = "label", caption = { "label.setting-draw-on-map" }, tooltip = { "tooltip.setting-draw-on-map" } }
+    grid.add {
+        type = "checkbox",
+        name = "setting_draw_on_map",
+        state = state.setting(player_index, "draw_on_map") == true,
+        tooltip = { "tooltip.setting-draw-on-map" },
+        tags = { group = "view", action = "set_draw_on_map" },
+    }
 
     pane.add { type = "line" }
     pane.add { type = "label", caption = { "label.settings-builds" }, style = "caption_label" }
@@ -246,6 +255,14 @@ end
 --- @param e EventData.on_gui_checked_state_changed
 lib["set_blueprint_source"] = function(e)
     state.set_setting(e.player_index, "blueprint_source", e.element.state)
+end
+
+--- The curve and the warning marks on the map too (the curve is redrawn; marks
+--- already shown stay as they are).
+--- @param e EventData.on_gui_checked_state_changed
+lib["set_draw_on_map"] = function(e)
+    state.set_setting(e.player_index, "draw_on_map", e.element.state)
+    state.request_redraw(e.player_index)
 end
 
 --- Everything back to its default.

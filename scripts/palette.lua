@@ -67,6 +67,7 @@ end
 --- @field order_color string        # the dashed lines joining the points in order
 --- @field warning_color string
 --- @field curve_width integer       # pixels
+--- @field map_scale integer         # the curve and points on the map: sizes times this
 --- @field preview_opacity integer   # percent, for entities; tiles get half
 
 --- Per-player drawing settings (the view settings pane). Defaults match the
@@ -79,6 +80,7 @@ lib.VIEW_DEFAULTS = {
     order_color = "violet",
     warning_color = "red",
     curve_width = 5,
+    map_scale = 3,
     preview_opacity = 30,
 }
 
@@ -88,6 +90,7 @@ lib.VIEW_COLORS = { "curve_color", "point_color", "selected_color", "order_color
 --- The number settings: range and step.
 lib.VIEW_NUMBERS = {
     { name = "curve_width",     min = 1, max = 10,  step = 1 },
+    { name = "map_scale",       min = 1, max = 10,  step = 1 },
     { name = "preview_opacity", min = 5, max = 100, step = 5 },
 }
 

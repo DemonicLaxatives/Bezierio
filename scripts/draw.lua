@@ -1,4 +1,5 @@
---- All rendering: control points, the curve, and the build preview.
+--- All rendering: control points, the curve, and the build preview. The points
+--- and the curve go on the map too (draw.render_modes), larger by view.map_scale.
 ---
 --- Drawing follows the planner job (see jobs.lua): curve segments are drawn as
 --- samples appear and the preview fills in as placements are found, a budgeted
@@ -20,6 +21,52 @@ lib.CURVE_SEGMENT = 0.5
 
 --- Work units per render object, for budgeting.
 lib.COST = { line = 2, rectangle = 2, destroy = 1, circle = 2, cell = 0.5, arrow = 2 }
+
+local GAME_AND_MAP = { "game", "chart" }
+local GAME_ONLY = { "game" }
+
+--- Where the curve and the warning marks are drawn (ScriptRenderMode: there is no
+--- mode for both, so each is drawn once per mode, and costs that many times as
+--- much): the game world, and the map too unless the player turned that off.
+--- @param player_index integer
+--- @return ScriptRenderMode[]
+function lib.render_modes(player_index)
+    return state.setting(player_index, "draw_on_map") and GAME_AND_MAP or GAME_ONLY
+end
+
+--- The sizes a render object's parameters may have: larger on the map by the
+--- player's map scale (view.map_scale), so the curve stays visible zoomed out.
+local MAP_SCALED = { "width", "radius", "scale", "dash_length", "gap_length" }
+
+--- @param view ViewSettings
+--- @return number
+function lib.map_scale(view)
+    return view.map_scale or palette.VIEW_DEFAULTS.map_scale -- (a save from before the setting)
+end
+
+--- Draw one object once per render mode, its sizes scaled on the map.
+--- @param modes ScriptRenderMode[]   # draw.render_modes
+--- @param map_scale number
+--- @param sprites LuaRenderObject[]  # where the objects go
+--- @param draw_fn fun(params: table): LuaRenderObject  # rendering.draw_line, draw_circle, ...
+--- @param params table               # left as it was given
+local function draw_each_mode(modes, map_scale, sprites, draw_fn, params)
+    for _, mode in ipairs(modes) do
+        params.render_mode = mode
+        if mode == "chart" and map_scale ~= 1 then
+            local saved = {}
+            for _, key in ipairs(MAP_SCALED) do
+                local size = params[key]
+                if size then saved[key], params[key] = size, size * map_scale end
+            end
+            table.insert(sprites, draw_fn(params))
+            for key, size in pairs(saved) do params[key] = size end
+        else
+            table.insert(sprites, draw_fn(params))
+        end
+    end
+    params.render_mode = nil
+end
 
 --- Directed entities (belts, turrets facing a way) share an arrow per straight run
 --- of at most this many cells.
@@ -94,6 +141,10 @@ local function draw_control_points(player, controller)
     local sprites = state.sprites(player.index).control_points
     local points = curve_lib.active(curve)
     local names = shapes.HANDLES[curve.kind]
+    local modes, map_scale = lib.render_modes(player.index), lib.map_scale(view)
+    --- @param draw_fn fun(params: table): LuaRenderObject
+    --- @param params table
+    local function add(draw_fn, params) draw_each_mode(modes, map_scale, sprites, draw_fn, params) end
 
     local circle = base_params(player)
     circle.radius = 0.5
@@ -107,10 +158,10 @@ local function draw_control_points(player, controller)
     for i, point in ipairs(points) do
         circle.target = point
         circle.color = (i == selected) and selected_color or point_color
-        table.insert(sprites, rendering.draw_circle(circle))
+        add(rendering.draw_circle, circle)
         label.target = point
         label.text = names and { "bezierio-handle-short." .. (names[i] or "center") } or ("P" .. i)
-        table.insert(sprites, rendering.draw_text(label))
+        add(rendering.draw_text, label)
     end
 
     local line = base_params(player)
@@ -128,12 +179,12 @@ local function draw_control_points(player, controller)
         for _, u in ipairs(construction and construction.used or {}) do used[u.handle] = u.at end
         for _, axis in ipairs(construction and construction.axes or {}) do
             line.from, line.to = axis.from, axis.to
-            table.insert(sprites, rendering.draw_line(line))
+            add(rendering.draw_line, line)
         end
         for i = 2, count do
             if not (construction and construction.axes[1] and i == 2) then -- the axis covers it
                 line.from, line.to = points[1], used[i] or points[i]
-                table.insert(sprites, rendering.draw_line(line))
+                add(rendering.draw_line, line)
             end
         end
         local thin = base_params(player)
@@ -147,18 +198,18 @@ local function draw_control_points(player, controller)
         marker.color = palette.named(view.point_color, 0.8)
         for i, at in pairs(used) do
             thin.from, thin.to = points[i], at
-            table.insert(sprites, rendering.draw_line(thin))
+            add(rendering.draw_line, thin)
             marker.target = at
-            table.insert(sprites, rendering.draw_circle(marker))
+            add(rendering.draw_circle, marker)
         end
     else
         for i = 1, count - 1 do
             line.from, line.to = points[i], points[i + 1]
-            table.insert(sprites, rendering.draw_line(line))
+            add(rendering.draw_line, line)
         end
         if curve.closed and count >= 3 then
             line.from, line.to = points[count], points[1]
-            table.insert(sprites, rendering.draw_line(line))
+            add(rendering.draw_line, line)
         end
     end
 
@@ -169,7 +220,7 @@ local function draw_control_points(player, controller)
         marker.radius = 0.8
         marker.filled = true
         marker.color = palette.named(view.selected_color, 0.6)
-        table.insert(sprites, rendering.draw_circle(marker))
+        add(rendering.draw_circle, marker)
     end
 end
 
@@ -203,6 +254,12 @@ local function step_curve(player, view, progress, points, sampling_done, budget)
     local line = base_params(player)
     line.color = palette.named(view.curve_color)
     line.width = view.curve_width
+    local modes = lib.render_modes(player.index)
+    local cost = lib.COST.line * #modes
+    local function draw_segment()
+        draw_each_mode(modes, lib.map_scale(view), sprites, rendering.draw_line, line)
+        used = used + cost
+    end
     while progress.curve_cursor <= #points and used < budget do
         local p = points[progress.curve_cursor]
         local last = progress.curve_last
@@ -210,9 +267,8 @@ local function step_curve(player, view, progress, points, sampling_done, budget)
             progress.curve_last = p
         elseif vect.distance(last, p) >= lib.CURVE_SEGMENT then
             line.from, line.to = last, p
-            table.insert(sprites, rendering.draw_line(line))
+            draw_segment()
             progress.curve_last = p
-            used = used + lib.COST.line
         end
         progress.curve_cursor = progress.curve_cursor + 1
     end
@@ -220,8 +276,7 @@ local function step_curve(player, view, progress, points, sampling_done, budget)
         local last, p = progress.curve_last, points[#points]
         if last and p and (last.x ~= p.x or last.y ~= p.y) then
             line.from, line.to = last, p
-            table.insert(sprites, rendering.draw_line(line))
-            used = used + lib.COST.line
+            draw_segment()
         end
         progress.curve_finished = true
     end

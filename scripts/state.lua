@@ -28,6 +28,7 @@ local lib = {}
 --- @field pinned boolean|nil            # the window stays open when other GUIs open
 --- @field editing {idx: integer, backup: Layer|nil, new: boolean|nil, revision: integer|nil, locked: table<integer, true>|nil}|nil  # layer settings window open (backup: to cancel to; revision: when it opened; locked: main window elements greyed out, window.lock_main)
 --- @field reopen_main boolean|nil      # make the main window the opened GUI next tick (window.focus_main)
+--- @field marks_off table<HighlightKind, true>|nil  # warning marks the player clicked off (shown by default)
 
 --- @class Preset
 --- @field name string
@@ -50,6 +51,7 @@ local lib = {}
 --- @field build BuildJob|BlueprintJob|nil
 --- @field status string|nil              # last status line shown (to update only on change)
 --- @field totals_revision integer|nil    # revision whose totals are shown
+--- @field marks_revision integer|nil     # revision whose warning marks were shown by default
 --- @field highlight HighlightQueue|nil    # unpowered / unfed marks being drawn (highlight.lua)
 
 --- @class Controller
@@ -116,8 +118,9 @@ end
 --- @field highlight_seconds integer   # unpowered / unfed marks fade after this (0: until hidden)
 --- @field blueprint_source boolean    # blueprints carry the curve and preset
 --- @field cover_tiles string[]|nil    # cover items for force builds, in order (build/cover.lua)
+--- @field draw_on_map boolean         # the curve and the warning marks are drawn on the map too (draw.render_modes)
 --- (cover_tiles: none set means each tile's own default cover, build/cover.lua)
-lib.SETTING_DEFAULTS = { highlight_seconds = 60, blueprint_source = true, cover_tiles = nil }
+lib.SETTING_DEFAULTS = { highlight_seconds = 60, blueprint_source = true, cover_tiles = nil, draw_on_map = true }
 
 --- A player's setting (its default if never set).
 --- @param player_index integer

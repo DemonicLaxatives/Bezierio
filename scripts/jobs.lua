@@ -88,10 +88,9 @@ local function report_build(player, controller, job)
     if (plan.unfed or 0) > 0 then
         player.print({ "bezierio-message.unfed", tostring(plan.unfed) })
     end
-    -- Mark them on the map (fading after the player's highlight setting).
-    local kinds = {}
-    if plan.unpowered > 0 then kinds[#kinds + 1] = "unpowered" end
-    if (plan.unfed or 0) > 0 then kinds[#kinds + 1] = "unfed" end
+    -- Mark them on the map (fading after the player's highlight setting), unless
+    -- the player turned them off.
+    local kinds = highlight.wanted(controller, plan)
     if #kinds > 0 then highlight.show(player, controller, plan, kinds, job.surface) end
 end
 
@@ -286,6 +285,16 @@ local function update_window(player, controller)
         if work.totals_revision ~= work.revision then
             work.totals_revision = work.revision
             show_totals(player, controller, plan_job.plan)
+        end
+        -- The warnings' marks come with them, once per plan (not again when the
+        -- window is rebuilt; a build that just ended has shown its own already).
+        if work.marks_revision ~= work.revision then
+            work.marks_revision = work.revision
+            local kinds = {}
+            for _, kind in ipairs(highlight.wanted(controller, plan_job.plan)) do
+                if not highlight.showing(player, controller, kind) then kinds[#kinds + 1] = kind end
+            end
+            if #kinds > 0 then highlight.show(player, controller, plan_job.plan, kinds, player.surface) end
         end
     elseif work.totals_revision then
         work.totals_revision = nil

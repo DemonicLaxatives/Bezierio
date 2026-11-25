@@ -112,8 +112,56 @@ step("draw curve", function(player)
   check(controller().ui.draw_curve, "draw toggled on")
 end, "idle")
 
+--- The mod's objects drawn on the map, by type, and the widest map line and
+--- largest map circle (the curve, a point marker).
+local function on_map()
+  local count, width, radius = {}, 0, 0
+  for _, o in pairs(rendering.get_all_objects("Bezierio")) do
+    if o.valid and o.render_mode == "chart" then
+      count[o.type] = (count[o.type] or 0) + 1
+      if o.type == "line" then width = math.max(width, o.width) end
+      if o.type == "circle" then radius = math.max(radius, o.radius) end
+    end
+  end
+  return count, width, radius
+end
+
+local function map_lines() return on_map().line or 0 end
+
 step("curve rendered", function(player)
   check(dev("render_count") > 10, "curve sprites drawn: " .. dev("render_count"))
+  local count, width, radius = on_map()
+  local view = controller().view
+  check((count.line or 0) > 10, "the curve on the map too: " .. tostring(count.line))
+  check((count.circle or 0) == #controller().curve.points and (count.text or 0) == #controller().curve.points,
+    "the control points and their labels on the map")
+  check(width == view.curve_width * view.map_scale, "map curve width scaled: " .. width)
+  check(radius == 0.5 * view.map_scale, "map point markers scaled: " .. radius)
+  dev("click", P, "settings_button")
+  dev("set_value", P, "view_map_scale", 6)
+  dev("click", P, "settings_button")
+end, "idle")
+
+step("a larger map scale", function(player)
+  local _, width, radius = on_map()
+  check(controller().view.map_scale == 6 and width == controller().view.curve_width * 6 and radius == 3,
+    "redrawn larger: width " .. width .. ", radius " .. radius)
+  dev("click", P, "settings_button")
+  dev("set_checked", P, "setting_draw_on_map", false)
+  dev("click", P, "settings_button")
+end, "idle")
+
+step("map drawing off: the curve and points in the world only", function(player)
+  check(controller().settings.draw_on_map == false, "setting off")
+  check(next((on_map())) == nil and dev("render_count") > 10, "nothing on the map, world ones redrawn: " .. map_lines())
+  dev("click", P, "settings_button")
+  dev("set_checked", P, "setting_draw_on_map", true)
+  dev("click", P, "view_reset")
+  dev("click", P, "settings_button")
+end, "idle")
+
+step("map drawing on again", function(player)
+  check(map_lines() > 10 and controller().view.map_scale == 3, "the curve back on the map, scale reset: " .. map_lines())
 end)
 
 step("closed loop", function(player)

@@ -138,11 +138,15 @@ end)
 
 -- Unfed turrets are marked on the map after a build; the warning toggles the marks.
 --- The mod's marks: icon sprites by name.
+--- Marks with this icon in the world (and the same count on the map, checked).
 local function marks(icon)
-  local n, ttl = 0, nil
+  local n, chart, ttl = 0, 0, nil
   for _, o in pairs(rendering.get_all_objects("Bezierio")) do
-    if o.valid and o.type == "sprite" and o.sprite == icon then n, ttl = n + 1, o.time_to_live end
+    if o.valid and o.type == "sprite" and o.sprite == icon then
+      if o.render_mode == "chart" then chart = chart + 1 else n, ttl = n + 1, o.time_to_live end
+    end
   end
+  check(chart == n, "each mark on the map too: " .. chart .. " on the map, " .. n .. " in the world")
   return n, ttl
 end
 
@@ -198,13 +202,25 @@ step("an edit drops the plan: warning and marks go together", function(player)
   dev("click", P, "preview_build")
 end, "idle")
 
-step("preview on again: the warning is back, marks on a click", function(player)
-  check(el(player, "totals_unfed").visible and marks("utility/ammo_icon") == 0, "warning shown, no marks yet")
+step("preview on again: the warning is back, and its marks by default", function(player)
+  check(el(player, "totals_unfed").visible, "warning shown")
+  check(marks("utility/ammo_icon") == dev("plan", P).unfed, "marked without a click")
   dev("click", P, "totals_unfed")
 end, "idle")
 
-step("clicked: marked", function(player)
+step("clicked off", function(player)
+  check(marks("utility/ammo_icon") == 0, "marks hidden")
+  dev("set_value", P, "radius_slider", 2)
+end, "idle")
+
+step("... they stay off for the next plan", function(player)
+  check(el(player, "totals_unfed").visible and marks("utility/ammo_icon") == 0, "warning shown, no marks")
+  dev("click", P, "totals_unfed")
+end, "idle")
+
+step("clicked on again: marked, and on by default once more", function(player)
   check(marks("utility/ammo_icon") == dev("plan", P).unfed, "marks for the new plan")
+  check(flow.controller().ui.marks_off == nil, "nothing left turned off")
 end)
 
 flow.run("feeds")

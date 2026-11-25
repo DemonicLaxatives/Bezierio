@@ -1,9 +1,12 @@
 --- Marks on the map for the entities a build leaves unpowered or unfed: a coloured
---- frame and an icon on each, for this player only. They are drawn a budgeted
+--- frame and an icon on each, for this player only, in the world and on the map
+--- (unless the player turned that off: draw.render_modes). They are drawn a budgeted
 --- number per tick (jobs.lua), and fade by themselves after the player's
---- `highlight_seconds` setting (0: they stay until hidden). Shown after a build,
---- and toggled by clicking the warning in the window. They belong to the plan whose
---- totals and warnings the window shows: an edit that drops the plan hides them.
+--- `highlight_seconds` setting (0: they stay until hidden). Shown by default with
+--- the warnings in the window (a finished preview, a build); clicking a warning
+--- hides its marks, and they stay off for later plans until it's clicked again
+--- (ui.marks_off). They belong to the plan whose totals and warnings the window
+--- shows: an edit that drops the plan hides them.
 ---
 --- The queue lives in controller.work.highlight, the render objects in
 --- storage.sprites[i].highlight_<kind>.
@@ -14,7 +17,7 @@ local lib = {}
 
 --- @alias HighlightKind "unpowered"|"unfed"
 
---- Work units per mark (two render objects).
+--- Work units per mark and render mode (two render objects: a frame and an icon).
 lib.COST = 4
 
 local COLORS = {
@@ -117,16 +120,36 @@ function lib.show(player, controller, plan, kinds, surface)
     end
 end
 
---- Show the kind if hidden, hide it if shown (the warning was clicked).
+--- The kinds this plan has marks for that the player hasn't turned off.
+--- @param controller Controller
+--- @param plan BuildPlan
+--- @return HighlightKind[]
+function lib.wanted(controller, plan)
+    local off = controller.ui.marks_off or {}
+    local kinds = {}
+    if plan.unpowered > 0 and not off.unpowered then kinds[#kinds + 1] = "unpowered" end
+    if (plan.unfed or 0) > 0 and not off.unfed then kinds[#kinds + 1] = "unfed" end
+    return kinds
+end
+
+--- Show the kind if hidden, hide it if shown (the warning was clicked), and keep
+--- that for later plans.
 --- @param player LuaPlayer
 --- @param controller Controller
 --- @param plan BuildPlan
 --- @param kind HighlightKind
 function lib.toggle(player, controller, plan, kind)
+    local ui = controller.ui
     if lib.showing(player, controller, kind) then
         lib.hide(player, controller, kind)
+        ui.marks_off = ui.marks_off or {}
+        ui.marks_off[kind] = true
     else
         lib.show(player, controller, plan, { kind }, player.surface)
+        if ui.marks_off then
+            ui.marks_off[kind] = nil
+            if not next(ui.marks_off) then ui.marks_off = nil end
+        end
     end
 end
 
@@ -141,6 +164,8 @@ function lib.step(player, controller, budget)
     local surface = game.get_surface(queue.surface)
     local used = 0
     local sprites = state.sprites(player.index)
+    local modes = draw.render_modes(player.index)
+    local cost = lib.COST * #modes
     while surface and queue.items[queue.cursor] and used < budget do
         local item = queue.items[queue.cursor]
         queue.cursor = queue.cursor + 1
@@ -154,9 +179,12 @@ function lib.step(player, controller, budget)
                 left_top = { x = m.x - hw, y = m.y - hh }, right_bottom = { x = m.x + hw, y = m.y + hh } }
             local icon = { sprite = ICONS[m.icon or item.kind], target = { x = m.x, y = m.y }, x_scale = 0.6, y_scale = 0.6 }
             for k, v in pairs(common) do frame[k], icon[k] = v, v end
-            table.insert(sprites[key], rendering.draw_rectangle(frame))
-            table.insert(sprites[key], rendering.draw_sprite(icon))
-            used = used + lib.COST
+            for _, mode in ipairs(modes) do
+                frame.render_mode, icon.render_mode = mode, mode
+                table.insert(sprites[key], rendering.draw_rectangle(frame))
+                table.insert(sprites[key], rendering.draw_sprite(icon))
+            end
+            used = used + cost
         else
             used = used + 0.1
         end

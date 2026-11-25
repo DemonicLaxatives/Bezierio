@@ -112,7 +112,12 @@ Heavy work is never done in a single tick. Every job is plain data in
 `storage.controllers[i].work`: no closures or coroutines. So jobs survive
 save/load and run identically on every multiplayer peer. Costs per operation
 are in each module's `COST` table, and the budget counts work units, not time,
-which keeps it deterministic.
+which keeps it deterministic. The curve, the control points with their lines,
+and the warning marks are drawn once per render mode (`draw.render_modes`: the
+world, and the map unless the player's `draw_on_map` setting is off, since no
+mode does both), so they cost that many times as much. On the map, the curve's
+and the points' sizes (widths, radii, dashes, label scale) are multiplied by the
+view setting `map_scale` (`draw_each_mode`), so they stay visible zoomed out.
 
 The budget is the map setting `bezierio-work-budget` (default 1000). Measured
 with the `bench` scenario:
@@ -595,14 +600,18 @@ from the held blueprint (cursor item, the active one in a book, or a library
 record) and loads both through the import paths (`curve_control.load`,
 `preset_control.load`).
 
-After an executor build, `jobs.lua` marks the plan's unpowered and unfed entities
+When a plan's warnings are shown (a finished preview, once per plan revision:
+`work.marks_revision`) and again after an executor build, `jobs.lua` marks the
+plan's unpowered and unfed entities
 (`plan.unpowered_at`, `plan.unfed_at`, recorded by `smart_poles.lua` and the feed
-context) with `highlight.lua`: a frame and an icon each, drawn a budgeted number
+context) with `highlight.lua`: a frame and an icon each, in the world and again on
+the map (`render_mode = "chart"`, unless `draw_on_map` is off), drawn a budgeted number
 per tick from `work.highlight`, with `time_to_live` from the player's
 `highlight_seconds` setting. They live in `storage.sprites[i].highlight_<kind>`,
 which a redraw of the preview leaves alone. They belong to the plan whose totals
 and warnings are shown: when an edit drops that plan, they are hidden with it
-(`highlight.hide_all`). Clicking the warning label toggles them.
+(`highlight.hide_all`). Clicking the warning label toggles them; a kind clicked
+off stays off for later plans and builds (`ui.marks_off`) until clicked on again.
 
 Placement is checked with the real entity name and
 `build_check_type.manual_ghost, forced = true`. Don't check with
