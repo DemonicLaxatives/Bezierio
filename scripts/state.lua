@@ -331,18 +331,23 @@ function lib.request_build(player_index, mode)
     lib.get(player_index).work.pending_build = mode
 end
 
---- @return ItemPrototypeFilter[]
 --- Every item a layer can be (the layer type picker offers the ones the player's
 --- force has unlocked, scripts/unlocks.lua): built from the layer types and the prototypes,
 --- so it's the same on every machine and kept out of storage (a save made before a
 --- layer type existed offers it all the same).
---- @type ItemPrototypeFilter[]|nil
-local item_filter_cache = nil
+--- @type string[]|nil
+local layer_items_cache = nil
 
+--- @return string[]
+function lib.layer_items()
+    if not layer_items_cache then layer_items_cache = registry.layer_item_names() end
+    return layer_items_cache
+end
+
+--- The same as a picker filter.
 --- @return ItemPrototypeFilter[]
 function lib.item_filter()
-    if not item_filter_cache then item_filter_cache = registry.build_item_filter() end
-    return item_filter_cache
+    return { { filter = "name", name = lib.layer_items() } }
 end
 
 --- @param player_index integer

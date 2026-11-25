@@ -212,7 +212,7 @@ local function fill_detail(detail, layer)
         name = "layer_type",
         tags = { group = "layer", action = "type", idx = layer.idx },
         elem_type = "item-with-quality",
-        elem_filters = unlocks.filter(detail.gui.player.force --[[@as LuaForce]], state.item_filter()[1].name, layer.placed_by),
+        elem_filters = unlocks.filter(detail.gui.player.force --[[@as LuaForce]], state.layer_items(), layer.placed_by),
         tooltip = { "tooltip.layer-type" },
     }
     if layer.placed_by then
@@ -433,7 +433,7 @@ function lib.refresh_item_filters(player)
     local force = player.force --[[@as LuaForce]]
     local header = detail.layer_detail_header
     if header and header.layer_type then
-        header.layer_type.elem_filters = unlocks.filter(force, state.item_filter()[1].name, layer.placed_by)
+        header.layer_type.elem_filters = unlocks.filter(force, state.layer_items(), layer.placed_by)
     end
     for _, field in ipairs(registry.type_of(layer).fields) do
         local frame = field.widget == "item" and detail[field.name .. "_frame"]

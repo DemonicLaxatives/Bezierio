@@ -182,7 +182,7 @@ would run before `0.9.0.lua`: once versions get there, rename or pad accordingly
 **Keep derived data out of storage.** Anything computed from the mod's code and
 the prototypes (the item picker filter, layer values like sizes and wire reach)
 is recomputed instead of stored: the filter is a per-session cache
-(`state.item_filter`), and layers are refreshed (`state.refresh_layers`) on
+(`state.layer_items`), and layers are refreshed (`state.refresh_layers`) on
 configuration changes and before every plan. Otherwise a code update without a
 migration leaves saves with stale data: a save from before belts existed didn't
 offer them in the picker. The layer settings pickers offer only what the player's

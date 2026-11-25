@@ -349,10 +349,9 @@ function lib.check_fields(layer)
     end
 end
 
---- Filter for the layer item pickers: every item that places a supported entity
---- type or a tile.
---- @return ItemPrototypeFilter[]
-function lib.build_item_filter()
+--- Every item that places a supported entity type or a tile, sorted.
+--- @return string[]
+function lib.layer_item_names()
     local entity_types = {}
     for entity_type, def in pairs(by_entity_type) do
         if not def.hidden then table.insert(entity_types, entity_type) end
@@ -378,7 +377,7 @@ function lib.build_item_filter()
         table.insert(names, name)
     end
     table.sort(names)
-    return { { filter = "name", name = names } }
+    return names
 end
 
 return lib
