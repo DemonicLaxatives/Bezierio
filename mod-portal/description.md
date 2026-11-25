@@ -79,10 +79,14 @@ Some issues will crop up, and some manual post-processing is expected.
 - Parallel belts in the same layer can collide with one another.
 - Turrets don't always get properly fed; in most cases there should be a warning on that.
 
+## AI disclosure
+Claude opus 5.5 was heavily used in the development. If it's any consolation, the project was started in late 2023 by hand, touched here and there over the years, so there is some human written base to it all. But ultimately my ambition outgrew the scope I was able to manage in a LUA project, so I stopped working on it for over a year. That didn't end the dream of having this tool, so despite knowing how the community felt about AI work, I had to make it work.
+
 ## Compatibility
 
 - Factorio 2.1.
-- Space Age: works on every surface, with its turrets, foundation, ice platform and elevated rails.
-- Quality: pick the quality to build with.
+- Space Age: works on every surface.
+- Elevated rails are supported.
+- Quality: quality items can be selected and will be used in the plan.
 
 Feedback and crash logs are welcome on the mod portal or on GitHub.
