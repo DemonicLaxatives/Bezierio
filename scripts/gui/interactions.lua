@@ -13,6 +13,8 @@ lib["view"]    = require("scripts.gui.view_settings")
 lib["preset"]  = require("scripts.gui.preset_control")
 lib["strings"] = require("scripts.gui.string_window")
 
+local layer_view = require("scripts.gui.layer_view")
+
 --- Which element types each event is routed for. Every element raises on_gui_click,
 --- but e.g. a click on a choose-elem-button must not run its "value changed" action
 --- (that rebuilt the row and destroyed the picker before it could open).
@@ -96,5 +98,17 @@ script.on_event(defines.events.on_gui_closed,
             if not ok then error(err, 0) end
         end
     end)
+
+--- The layer settings pickers offer what the force has unlocked: follow research
+--- (and anything else that resets what it has) while the window is open.
+--- @param force LuaForce|nil
+local function refresh_force(force)
+    if not (force and force.valid) then return end
+    for _, player in pairs(force.players) do layer_view.refresh_item_filters(player) end
+end
+script.on_event(defines.events.on_research_finished, function(e) refresh_force(e.research.force) end)
+script.on_event(defines.events.on_research_reversed, function(e) refresh_force(e.research.force) end)
+script.on_event(defines.events.on_technology_effects_reset, function(e) refresh_force(e.force) end)
+script.on_event(defines.events.on_force_reset, function(e) refresh_force(e.force) end)
 
 return lib

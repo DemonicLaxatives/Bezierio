@@ -9,6 +9,7 @@ local registry = require("scripts.layers.registry")
 local state = require("scripts.state")
 local palette = require("scripts.palette")
 local window = require("scripts.gui.window")
+local unlocks = require("scripts.unlocks")
 
 local lib = {}
 
@@ -175,7 +176,8 @@ local function add_targets_field(flow, layer, field)
     end
 end
 
---- A captioned item picker (e.g. ammo). Name: <field> (the picker).
+--- A captioned item picker (e.g. ammo), offering what the force has unlocked.
+--- Name: <field> (the picker).
 --- @param flow LuaGuiElement
 --- @param layer Layer
 --- @param field LayerField
@@ -189,7 +191,7 @@ local function add_item_field(flow, layer, field)
         type = "choose-elem-button",
         name = field.name,
         elem_type = "item",
-        elem_filters = field.item_filters,
+        elem_filters = unlocks.filter(flow.gui.player.force --[[@as LuaForce]], unlocks.names(field.item_filters), layer[field.name]),
         tags = { group = "layer", action = "set_item", field = field.name, idx = layer.idx },
     }
     picker.elem_value = layer[field.name]
@@ -210,7 +212,7 @@ local function fill_detail(detail, layer)
         name = "layer_type",
         tags = { group = "layer", action = "type", idx = layer.idx },
         elem_type = "item-with-quality",
-        elem_filters = state.item_filter(),
+        elem_filters = unlocks.filter(detail.gui.player.force --[[@as LuaForce]], state.item_filter()[1].name, layer.placed_by),
         tooltip = { "tooltip.layer-type" },
     }
     if layer.placed_by then
@@ -416,6 +418,30 @@ function lib.refresh(player)
     local detail = window.find(player, "layer_detail")
     local layer = editing and state.layers(player.index)[editing.idx]
     if detail and layer then fill_detail(detail, layer) end
+end
+
+--- Offer what the force has unlocked now (research finished or was undone while
+--- the settings window was open). The pickers' filters change in place, so a
+--- chooser the player has open stays open.
+--- @param player LuaPlayer
+function lib.refresh_item_filters(player)
+    local controller = storage.controllers and storage.controllers[player.index]
+    local editing = controller and controller.ui.editing
+    local layer = editing and state.layers(player.index)[editing.idx]
+    local detail = layer and window.find(player, "layer_detail")
+    if not (layer and detail) then return end
+    local force = player.force --[[@as LuaForce]]
+    local header = detail.layer_detail_header
+    if header and header.layer_type then
+        header.layer_type.elem_filters = unlocks.filter(force, state.item_filter()[1].name, layer.placed_by)
+    end
+    for _, field in ipairs(registry.type_of(layer).fields) do
+        local frame = field.widget == "item" and detail[field.name .. "_frame"]
+        local picker = frame and frame[field.name]
+        if picker then
+            picker.elem_filters = unlocks.filter(force, unlocks.names(field.item_filters), layer[field.name])
+        end
+    end
 end
 
 -- Layer settings window -----------------------------------------------------------

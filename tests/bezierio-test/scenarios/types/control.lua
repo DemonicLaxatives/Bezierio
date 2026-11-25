@@ -28,6 +28,28 @@ step("setup: a straight curve east", function(player)
   dev("set_elem", P, "layer_type", { name = "stone-wall", quality = "normal" })
 end)
 
+--- The item names a picker offers (its elem_filters, as the game hands them back).
+local function picker_offers(player, name)
+  local set = {}
+  for _, f in pairs(el(player, name).elem_filters or {}) do
+    for _, n in pairs(type(f.name) == "table" and f.name or { f.name }) do set[n] = true end
+  end
+  return set
+end
+
+step("the layer item picker offers what the force has unlocked", function(player)
+  local artillery = player.force.technologies["artillery"]
+  local picker = el(player, "layer_type")
+  local offers = picker_offers(player, "layer_type")
+  check(offers["transport-belt"] and offers["stone-wall"], "belts, and the wall the layer holds, offered")
+  check(not offers["artillery-turret"], "artillery turrets not offered before artillery is researched")
+  artillery.researched = true
+  check(picker.valid, "the picker is updated in place, not rebuilt")
+  check(picker_offers(player, "layer_type")["artillery-turret"], "artillery turrets offered once researched")
+  artillery.researched = false
+  check(not picker_offers(player, "layer_type")["artillery-turret"], "and gone again when the research is undone")
+end)
+
 step("pick the new types", function(player)
   local offered = {}
   for _, n in pairs(dev("item_filter")[1].name) do offered[n] = true end
@@ -45,6 +67,8 @@ step("pick the new types", function(player)
   dev("click", P, "add_layer_below")
   dev("set_elem", P, "layer_type", { name = "gun-turret", quality = "normal" })
   check(not el(player, "facing") and el(player, "ammo"), "gun turret: ammo, no facing")
+  check(picker_offers(player, "ammo")["firearm-magazine"] and not picker_offers(player, "ammo")["rocket"],
+    "ammo picker: magazines, no rockets before rocketry")
   dev("set_elem", P, "ammo", "rocket")
   check(layers()[-1].ammo == nil and el(player, "ammo").elem_value == nil, "rockets refused for a gun turret")
   dev("set_elem", P, "ammo", "firearm-magazine")

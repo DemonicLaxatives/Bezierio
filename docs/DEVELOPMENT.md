@@ -19,6 +19,7 @@ scripts/
   highlight.lua          marks on unpowered / unfed entities after a build, toggled from the window
   presets.lua            named layer stacks: copy, rename, delete, export/import strings
   palette.lua            one colour per layer; named colours and defaults for the view settings
+  unlocks.lua            which items a force has unlocked (an enabled recipe makes them), for the layer pickers
   init.lua               on_init / on_configuration_changed / players, mod-gui button
   custom_input.lua       the curve pointer in the world
   dev.lua                remote interface for the test scenarios (only when `bezierio-test` is active)
@@ -179,7 +180,10 @@ is recomputed instead of stored: the filter is a per-session cache
 (`state.item_filter`), and layers are refreshed (`state.refresh_layers`) on
 configuration changes and before every plan. Otherwise a code update without a
 migration leaves saves with stale data: a save from before belts existed didn't
-offer them in the picker.
+offer them in the picker. The layer settings pickers offer only what the player's
+force has unlocked (`unlocks.lua`: an enabled recipe makes it, or no recipe does),
+plus the item the layer already holds; that is worked out from the force each time
+the window is built, and the open window's pickers are updated on research events.
 
 **Changing the layout:**
 1. Bump `state.SCHEMA_VERSION`.
@@ -254,7 +258,8 @@ A layer type is one file in `scripts/layers/`, listed in `TYPE_FILES` in
 - `fields`: editable settings. The GUI builds its controls from these:
   - `widget`: `"slider"` (min/max as numbers or functions of the layer, optional
     word labels), `"checkbox"`, `"choice"` (a drop-down of `options`, labels from
-    `label_prefix`), `"item"` (an item picker with `item_filters`; `valid(layer,
+    `label_prefix`), `"item"` (an item picker with `item_filters`, narrowed to what the force has
+    unlocked; `valid(layer,
     value)` refuses items the layer can't use, e.g. the wrong ammo) or
     `"targets"` (a list of entity pickers, at most `registry.MAX_TARGETS`: turret
     targeting priorities, carried to ghosts, built turrets and blueprints as

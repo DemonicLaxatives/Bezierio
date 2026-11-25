@@ -329,7 +329,8 @@ function lib.request_build(player_index, mode)
 end
 
 --- @return ItemPrototypeFilter[]
---- The layer item pickers' filter: built from the layer types and the prototypes,
+--- Every item a layer can be (the layer type picker offers the ones the player's
+--- force has unlocked, scripts/unlocks.lua): built from the layer types and the prototypes,
 --- so it's the same on every machine and kept out of storage (a save made before a
 --- layer type existed offers it all the same).
 --- @type ItemPrototypeFilter[]|nil
