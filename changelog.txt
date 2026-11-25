@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.2.1
+Date: 25.11.2026
+  Features:
+    - The curve as well as the unfed and unpowered entity warnings can now be drawn on the map too.
+  Changes:
+    - Item picker filters now respect the research status,
+---------------------------------------------------------------------------------------------------
 Version: 0.2.0
 Date: 25.11.2026
   Features:

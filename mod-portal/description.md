@@ -73,11 +73,12 @@ Draw a curve, stack up layers of walls, floors, power lines, turrets, belts, pip
 Planning, preview and building take a moment for big curves; *Work per tick* in the map settings trades speed against smoothness.
 
 ## Known issues
-Some issues will crop up, and some manual post-processing is expected.
+Some build mistakes will crop up, not everything gets a warning, so some manual inspection and intervention is expected.
 
 - Sometimes layers collide and override each other.
 - Parallel belts in the same layer can collide with one another.
 - Turrets don't always get properly fed; in most cases there should be a warning on that.
+- Not everything scales well, so bigger build jobs will still tank the UPS.
 
 ## AI disclosure
 Claude opus 5.5 was heavily used in the development. If it's any consolation, the project was started in late 2023 by hand, touched here and there over the years, so there is some human written base to it all. But ultimately my ambition outgrew the scope I was able to manage in a LUA project, so I stopped working on it for over a year. That didn't end the dream of having this tool, so despite knowing how the community felt about AI work, I had to make it work.
