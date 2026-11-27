@@ -30,11 +30,17 @@ step("setup: belts and pipes along a bend", function(player)
   dev("click", P, "add_layer_below")
   dev("set_elem", P, "layer_type", { name = "pipe", quality = "normal" })
   check(layers()[-1].type == "pipe" and layers()[-1].underground_name == "pipe-to-ground" and layers()[-1].pump_name == "pump", "pipe layer")
-  check(not el(player, "pump_spacing_slider"), "pump spacing hidden until pumps are on")
+  check(not el(player, "pump_spacing_slider") and not el(player, "pump"), "pump spacing and pump picker hidden until pumps are on")
   check(layers()[-1].pipeline_extent == 320, "pipeline extent from the pipe's fluidbox: " .. tostring(layers()[-1].pipeline_extent))
   dev("set_value", P, "lines_slider", 2)
   dev("set_checked", P, "undergrounds", true)
   dev("set_checked", P, "pumps", true)
+  -- The pump picker: the base game's pump by default; one that doesn't fit in a
+  -- pipe line (a test 2x2) is refused
+  check(el(player, "pump") and el(player, "pump").elem_value == "pump" and layers()[-1].pump == "pump"
+    and layers()[-1].pump_length == 2, "pump picker shows the base pump, 1x2: " .. tostring(layers()[-1].pump_length))
+  dev("set_elem", P, "pump", "bezierio-test-wide-pump")
+  check(layers()[-1].pump == "pump" and el(player, "pump").elem_value == "pump", "a 2x2 pump refused")
   check(layers()[-1].pump_spacing == 318 and el(player, "pump_spacing_slider").get_slider_maximum() == 318,
     "pump spacing defaults to and stops at the extent less the pump: " .. layers()[-1].pump_spacing)
   dev("set_value", P, "pump_spacing_slider", 40)
@@ -157,6 +163,36 @@ step("blueprint keeps underground types", function(player)
   end
   check(ins > 0 and ins == outs, "blueprint undergrounds: " .. ins .. " in, " .. outs .. " out")
   player.clear_cursor()
+end)
+
+step("another pump: a 1x3 one in the lines", function(player)
+  clear_all(player.surface)
+  dev("click", P, "layer_select_-1")
+  dev("set_elem", P, "pump", "bezierio-test-long-pump")
+  local layer = layers()[-1]
+  check(layer.pump == "bezierio-test-long-pump" and layer.pump_name == "bezierio-test-long-pump" and layer.pump_length == 3,
+    "1x3 pump chosen: " .. tostring(layer.pump_length))
+  check(el(player, "pump_spacing_slider").get_slider_maximum() == 317, "spacing stops at the extent less the longer pump")
+  dev("click", P, "layer_select_0")
+  player.cheat_mode = true
+  dev("click", P, "build")
+end, "idle")
+
+step("1x3 pumps join their lines", function(player)
+  local s = player.surface
+  local pumps = s.find_entities_filtered { name = "bezierio-test-long-pump" }
+  check(#pumps >= 2 and s.count_entities_filtered { name = "pump" } == 0, "1x3 pumps built, no base ones: " .. #pumps)
+  for _, p in pairs(pumps) do
+    local names = {}
+    for _, n in pairs(p.get_fluid_box_neighbours(1) or {}) do names[#names + 1] = n.entity.name end
+    check(#names == 2, "pump at " .. p.position.x .. "," .. p.position.y .. " connected at both ends: " .. table.concat(names, " "))
+  end
+  local ids = {}
+  for _, p in pairs(s.find_entities_filtered { name = { "pipe", "pipe-to-ground" } }) do ids[p.get_fluid_segment_id(1)] = true end
+  local segments = 0
+  for _ in pairs(ids) do segments = segments + 1 end
+  check(segments == 2 + #pumps, "pipe segments: 2 lines + 1 per pump = " .. (2 + #pumps) .. ", got " .. segments)
+  player.cheat_mode = false
 end)
 
 flow.run("paths")

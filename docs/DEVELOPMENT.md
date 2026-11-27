@@ -442,11 +442,18 @@ number at a time; each line's progress is kept in its `path_queue` item):
   runs, the entrance fed from behind and the exit feeding a cell that continues
   in line, chained for long runs. Pumps (pipes) go every `pump_spacing` cells
   on the next stretch straight enough for a pump with pipe in line at both ends.
-  The spacing is capped at the pipeline's extent limit less the pump's two
-  cells: `FluidBox::max_pipeline_extent`, the smallest of the pipe's and its
+  The pump is the layer's `pump` item (the base game's by default, else the
+  first by name that fits). It has to fit in the line, which is one cell wide:
+  `pipe.lua`'s `pump_length` takes a pump one tile wide, with just two pipe
+  connections, the output at the front and the input at the back, both on the
+  middle axis, and gives its length along the line (`layer.pump_length`, 2 for
+  the base pump). Wider pumps, or ones with offset connections, are refused by
+  the picker. The spacing is capped at the pipeline's extent limit less the
+  pump's cells: `FluidBox::max_pipeline_extent`, the smallest of the pipe's and its
   underground's, recorded by `data-final-fixes.lua` in the
   `bezierio-pipeline-extent` mod-data because the runtime API doesn't expose it.
-  Pumps carry `power`, so smart poles reach them.
+  Pumps that run on electricity carry `power` (`layer.pump_power`), so smart
+  poles reach them.
 Undergrounds and pumps are counted in `plan.extra_counts` for the totals.
 
 **Joins** (a stage between paths and spaced). Walls only connect side by side.
@@ -756,7 +763,7 @@ tests/run.sh points                                    # the pointer, point list
 tests/run.sh layers                                    # layer list and detail pane, presets, view settings
 tests/run.sh build                                     # preview, totals, builds in all modes, blueprints
 tests/run.sh types                                     # turrets, lamps, mines, radars, solar panels, accumulators (with space-age: railguns fed, lightning rods on Fulgora)
-tests/run.sh paths                                     # belts and pipes: real entities flow, undergrounds pair, pumps split segments
+tests/run.sh paths                                     # belts and pipes: real entities flow, undergrounds pair, pumps split segments, the pump picker
 tests/run.sh feeds                                     # inserters feed turrets, flamethrowers piped (straight, diagonal), gates over rails
 tests/run.sh rails                                     # continuous track, signal sides, ghosts, blueprints, gates across walls (elevated with the DLC)
 tests/run.sh build space-age quality elevated-rails    # same, with DLC mods enabled
@@ -777,7 +784,7 @@ tests/run.sh bench                                     # timing (read the BENCH 
 | `layers.lua` | Which layer settings survive picking another item (`registry.carry_over`). |
 | `presets.lua` | Preset list operations; export data round trip and import validation. |
 | `layer_types.lua` | Turret facing (both sides, inward) and non-square footprints (other types too), ammo, lamp colours and rainbow, radar and lightning attractor spacing, land mine density, determinism and wires; side wall layers around a circle joined side by side. |
-| `paths.lua` | Belts fed only from behind and lines continuous, undergrounds paired within reach, pipe lines connected and apart, pumps; on a gentle curve, a loop and random curves. |
+| `paths.lua` | Belts fed only from behind and lines continuous, undergrounds paired within reach, pipe lines connected and apart, pumps (1x3 ones too); on a gentle curve, a loop and random curves. |
 | `feeds.lua` | Fluid connection targets in every facing (straight and diagonal, against the game), inserters picking from a belt and dropping into their turret (normal and long reach, straight and curved lines; railguns, which don't fill their square, by their turned collision box), smart poles counting inserters of non-square turrets by their own footprint, pipe stubs reaching one network, and a plain pipe where the line has pipes-to-ground. |
 | `rails.lua` | The rail data; fits stay near calm curves, circles close, elevated track has ramps at both ends and supports in reach of every joint, slanted ends warn; signal counts follow the spacing (doubled both ways); planning progress never goes back. |
 | `shapes.lua` | What the handles mean; samples exactly on circles, (rotated) ellipses and arcs; direction; editing shapes and moving curves; spaced entities round a loop keep apart at the seam. |
@@ -802,6 +809,9 @@ tests/run.sh bench                                     # timing (read the BENCH 
 - Steps that start work wait for `dev("idle")`, i.e. for jobs to catch up.
 - Scenarios share helpers, a standard curve and layer stack, and the step runner
   in `tests/bezierio-test/lib/flow.lua`.
+- `tests/bezierio-test/data.lua` adds test-only prototypes standing in for other
+  mods' (a 1x3 pump that fits a pipe line, a 2x2 one that doesn't). They're in
+  every scenario's game, so pickers offer them too.
 - To add a scenario: create `tests/bezierio-test/scenarios/<name>/control.lua`,
   add steps with `flow.step` and end with `flow.run("<name>")`, and add it to
   `tests/run_all.sh`.

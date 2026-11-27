@@ -140,8 +140,8 @@ local function emit_piece(job, layer, line, piece)
         if not pipes then entity.direction = piece.direction end
         plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + 1
     elseif piece.kind == "pump" then
-        entity.name, entity.size, entity.w, entity.h = layer.pump_name, 2, piece.w, piece.h
-        entity.direction, entity.power = piece.direction, true
+        entity.name, entity.size, entity.w, entity.h = layer.pump_name, math.max(piece.w, piece.h), piece.w, piece.h
+        entity.direction, entity.power = piece.direction, layer.pump_power ~= false
         count_extra(plan, layer.idx, layer.pump_item)
     else
         entity.name, entity.direction = layer.underground_name, piece.direction
@@ -219,6 +219,7 @@ local function emit_path_line(job, item, budget)
                     undergrounds = layer.undergrounds and layer.underground_name and layer.underground_distance or nil,
                     pipes = pipes,
                     pump_spacing = pipes and layer.pumps and layer.pump_name and layer.pump_spacing or nil,
+                    pump_length = layer.pump_length,
                     loop = loop,
                     taken = not pipes and function(x, y) return job.belt_cells[cell_key(x, y)] == true end or nil,
                 })

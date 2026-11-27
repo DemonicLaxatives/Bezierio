@@ -121,6 +121,36 @@ for _, ug in ipairs({ false, true }) do
     check(plan.extra_counts[-1] and plan.extra_counts[-1].pump == n.pump, label .. ": pumps counted for the totals")
 end
 
+-- A longer pump (a modded 1x3): on a straight run, its cells free of anything else,
+-- with pipe of its line right behind and ahead of it
+do
+    local long = pipes(1, 1, false, true)
+    long.pump_name, long.pump_item, long.pump_length = "long-pump", "long-pump", 3
+    -- (mostly straight: on a staircase a 1x3 pump needs four moves the same way)
+    local plan = helpers.plan({ { x = 0.5, y = 0.5 }, { x = 150.5, y = 12.5 } }, { [0] = wall0, [-1] = long })
+    local taken, pumps, overlaps = {}, {}, 0
+    for _, e in ipairs(plan.entities) do
+        local w, h = e.w or e.size, e.h or e.size
+        for dx = 0, w - 1 do for dy = 0, h - 1 do
+            local k = math.floor(e.position.x - w / 2 + 0.5 + dx) .. "," .. math.floor(e.position.y - h / 2 + 0.5 + dy)
+            if taken[k] then overlaps = overlaps + 1 end
+            taken[k] = e
+        end end
+        if e.name == "long-pump" then pumps[#pumps + 1] = e end
+    end
+    local in_line = 0
+    for _, p in ipairs(pumps) do
+        local d = STEP[p.direction]
+        local along = (p.w or 1) > 1 and p.w or p.h
+        local behind = taken[math.floor(p.position.x - d[1] * 2) .. "," .. math.floor(p.position.y - d[2] * 2)]
+        local ahead = taken[math.floor(p.position.x + d[1] * 2) .. "," .. math.floor(p.position.y + d[2] * 2)]
+        if along == 3 and p.size == 3 and behind and behind.name == "pipe" and ahead and ahead.name == "pipe" then in_line = in_line + 1 end
+    end
+    check(#pumps >= 4 and in_line == #pumps and overlaps == 0,
+        string.format("1x3 pumps: %d, %d with pipe in line on both sides, %d overlapping cells", #pumps, in_line, overlaps))
+    check(plan.extra_counts[-1].pump == nil and plan.extra_counts[-1]["long-pump"] == #pumps, "the chosen pump counted for the totals")
+end
+
 -- Backward flow reverses the belts
 local back = belts(1, 0, false)
 back.flow = "backward"

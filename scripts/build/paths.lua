@@ -253,13 +253,14 @@ end
 --- @field x number          # entity position
 --- @field y number
 --- @field direction integer
---- @field w integer|nil      # footprint (pump: 2 x 1 or 1 x 2)
+--- @field w integer|nil      # footprint (pump: L x 1 or 1 x L)
 --- @field h integer|nil
 
 --- Entities for one segment (cells in flow order).
 --- @param segment PathCell[]
---- @param opts {undergrounds: integer|nil, pipes: boolean, pump_spacing: integer|nil, loop: boolean, taken: (fun(x: integer, y: integer): boolean)|nil}
+--- @param opts {undergrounds: integer|nil, pipes: boolean, pump_spacing: integer|nil, pump_length: integer|nil, loop: boolean, taken: (fun(x: integer, y: integer): boolean)|nil}
 ---   undergrounds: max distance between entrance and exit (nil: none)
+---   pump_length: cells a pump takes along the line (default 2, the base game's)
 ---   loop: the last cell feeds the first (closed curve, adjacent ends)
 ---   taken: cells of other belts, which the last belt must not point into (it would
 ---          feed them from the side)
@@ -319,8 +320,9 @@ function lib.pieces(segment, opts)
     for i = 1, n do kind[i] = "line" end
 
     -- Pumps (pipes): every `pump_spacing` cells, on the next straight stretch where
-    -- the pump (2 cells) has pipe in line on both sides.
-    local pump_at, missing = {}, 0
+    -- the pump (`pump_length` cells) has pipe in line on both sides.
+    local pump_at, pump_cells, missing = {}, {}, 0
+    local length = opts.pump_length or 2
     if opts.pump_spacing then
         local since = 0
         local i = 1
@@ -329,13 +331,20 @@ function lib.pieces(segment, opts)
             if since >= opts.pump_spacing then
                 local placed = false
                 local p = i
-                while p + 2 <= n and not placed do
+                while p + length <= n and not placed do
                     local d = moves[p]
-                    if p >= 2 and moves[p - 1] == d and moves[p + 1] == d then
+                    -- (cell p-1 moves into the pump, its last cell into the pipe after it)
+                    local straight = p >= 2
+                    for c = p - 1, p + length - 1 do
+                        if not straight then break end
+                        straight = moves[c] == d
+                    end
+                    if straight then
                         pump_at[p] = d
+                        for c = p, p + length - 1 do pump_cells[c] = true end
                         placed = true
                         since = 0
-                        i = p + 1
+                        i = p + length - 1
                     else
                         p = p + 1
                     end
@@ -363,7 +372,7 @@ function lib.pieces(segment, opts)
             while a + 2 <= k do
                 local b = math.min(a + opts.undergrounds, k)
                 local blocked = false
-                for c = a, b do if pump_at[c] or pump_at[c - 1] then blocked = true end end
+                for c = a, b do if pump_cells[c] then blocked = true end end
                 if blocked or b - a < 2 then break end
                 table.insert(pairs_out, { a, b, d })
                 a = b + 1
@@ -383,13 +392,13 @@ function lib.pieces(segment, opts)
         local c = segment[i]
         if pump_at[i] then
             local d = pump_at[i]
-            local nxt = segment[i + 1]
+            local last = segment[i + length - 1]
             local horizontal = d == lib.EAST or d == lib.WEST
             pieces[#pieces + 1] = {
-                kind = "pump", x = (c.x + nxt.x) / 2 + 0.5, y = (c.y + nxt.y) / 2 + 0.5, direction = d,
-                w = horizontal and 2 or 1, h = horizontal and 1 or 2,
+                kind = "pump", x = (c.x + last.x) / 2 + 0.5, y = (c.y + last.y) / 2 + 0.5, direction = d,
+                w = horizontal and length or 1, h = horizontal and 1 or length,
             }
-            i = i + 2
+            i = i + length
         else
             if kind[i] then
                 local d = moves[i]
