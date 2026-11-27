@@ -9,7 +9,7 @@ settings.lua             map setting: work budget per tick
 migrations/              storage upgrades, run by the game once per save (see Storage)
 prototypes/
   items.lua              bezierio-pointer: cursor-only item for placing control points
-  custom_input.lua       pointer click / shift-click / right-click / alt-wheel, Alt+Z
+  custom_input.lua       pointer click / shift-click / right-click / alt-wheel, Alt+Z, Confirm (E)
   sprites.lua            GUI icons: centred build icons, reverse, narrow / widen, colour swatches
   style.lua              GUI styles: shaded lists, add-layer bars, point chips
 scripts/
@@ -666,7 +666,20 @@ unique across all of them):
   (`ignored_by_interaction` on the main window would pass clicks through to the
   world, where the pointer acts on them.) Edits apply live; `ui.editing` keeps a copy of the layer from when it
   opened. OK (`accept`) keeps the edits, Cancel or Esc (`on_gui_closed`) puts the
-  copy back, or removes a new layer. Moving or deleting layers, switching
+  copy back, or removes a new layer. E, the game's Confirm control (a custom
+  input linked to `confirm-gui`, so it follows the player's binding), is OK while
+  the window is the opened GUI (`interactions.on_confirm_gui`). The mod hears the
+  key before the game, which then closes whatever was open when it was pressed:
+  the window is gone by then, so that isn't taken as Cancel, and the main window
+  becomes the opened GUI again only next tick (`window.in_key_event`), so the game
+  doesn't close that instead. With an item picker's selection popup open, E is
+  left to the game (it closes the popup). The API says nothing about that popup,
+  so `ui.picking` is set by the left click on a picker and cleared by the next
+  event in our windows (picking an item is one); a popup closed with Esc or a
+  click outside leaves it set, and the next E only clears it. The popup's title
+  ("Set the filter") is the game's `[gui] set-filter`, the same for every picker:
+  overriding it in our locale would rename every other picker too. Headless tests
+  can't press keys: `dev("confirm_gui")` raises the handler. Moving or deleting layers, switching
   presets, narrowing or closing the main window accept first.
 - **Settings** (`bezierio_settings_window`, the gear in the title bar): the view
   settings and the player's other settings, `controller.settings`

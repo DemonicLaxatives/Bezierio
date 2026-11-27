@@ -109,6 +109,11 @@ end
 --- Set while on_gui_closed runs (interactions.lua).
 lib.in_closed_event = false
 
+--- Set while the Confirm key's event runs (interactions.lua): the game handles the
+--- key after the mod (closing the GUI that was open when it was pressed), so the
+--- main window waits for the next tick too.
+lib.in_key_event = false
+
 --- Make the main window the opened GUI again (so Esc closes it), unless it's
 --- pinned or another of our windows holds that place. Inside on_gui_closed it
 --- waits for the next tick (`ui.reopen_main`, jobs.lua checks it each tick):
@@ -118,7 +123,7 @@ lib.in_closed_event = false
 --- @param player LuaPlayer
 --- @param ui InterfaceState
 function lib.focus_main(player, ui)
-    if lib.in_closed_event then
+    if lib.in_closed_event or lib.in_key_event then
         ui.reopen_main = true
         return
     end

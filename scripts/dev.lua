@@ -67,6 +67,10 @@ local function event(name, player_index, element, extra)
 end
 
 remote.add_interface("bezierio-dev", {
+    --- The game's Confirm key (E), as its custom input raises it.
+    confirm_gui = function(player_index)
+        interactions.on_confirm_gui({ name = 0, input_name = "bezierio-confirm-gui", player_index = player_index, tick = game.tick, cursor_position = { x = 0, y = 0 } })
+    end,
     --- A click exactly as the player makes it, locks included.
     click_raw = function(player_index, path)
         local element = find(player_index, path)

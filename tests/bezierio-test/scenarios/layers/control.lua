@@ -158,6 +158,41 @@ step("... the chest stays open", function(player)
   player.opened = nil
 end)
 
+step("E (the game's Confirm) on the layer window: as OK", function(player)
+  dev("confirm_gui", P) -- (no layer window: nothing happens)
+  check(not player.gui.screen.bezierio_layer_window and not controller().ui.editing, "nothing to confirm")
+  dev("click", P, "layer_settings_1")
+  storage.offset = layers()[1].offset
+  dev("set_value", P, "offset_slider", storage.offset + 2)
+  dev("confirm_gui", P)
+  check(not player.gui.screen.bezierio_layer_window and not controller().ui.editing and layers()[1].offset == storage.offset + 2,
+    "closed, the edit kept")
+  -- (the game closes what was open when E was pressed after the mod's event: the
+  -- main window is opened again only next tick, so that isn't what it closes)
+  check(player.opened ~= player.gui.screen.bezierio_window and controller().ui.reopen_main, "the main window waits a tick")
+end)
+
+step("... (next tick) the main window is the opened GUI", function(player)
+  check(player.opened == player.gui.screen.bezierio_window, "the main window is the opened GUI again")
+  dev("click", P, "layer_settings_1")
+  dev("set_value", P, "offset_slider", storage.offset)
+  dev("click", P, "layer_ok")
+end)
+
+step("E with an item picker's popup open: the game's, it closes the popup", function(player)
+  dev("click", P, "layer_settings_1")
+  dev("click", P, "layer_type") -- (opens the game's item selection popup)
+  check(controller().ui.picking, "the picker may be open")
+  dev("confirm_gui", P)
+  check(player.gui.screen.bezierio_layer_window and controller().ui.editing and not controller().ui.picking,
+    "the layer window stays open")
+  dev("click", P, "layer_type")
+  dev("set_elem", P, "layer_type", { name = layers()[1].placed_by, quality = layers()[1].quality }) -- (picked: popup closed)
+  check(not controller().ui.picking, "picking an item closes it")
+  dev("confirm_gui", P)
+  check(not player.gui.screen.bezierio_layer_window, "then E is OK again")
+end)
+
 step("... closed: the main window is the opened GUI again", function(player)
   check(player.opened == player.gui.screen.bezierio_window, "the main window is opened again")
   storage.chest.destroy()

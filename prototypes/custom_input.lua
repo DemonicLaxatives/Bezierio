@@ -35,6 +35,15 @@ data:extend {
     key_sequence = "ALT + mouse-wheel-up",
     consuming = "none",
   },
+  -- The game's Confirm (E by default, as the player has it bound): in the layer
+  -- settings window, OK. (Linked controls aren't listed in the controls settings.)
+  {
+    type = "custom-input",
+    name = "bezierio-confirm-gui",
+    key_sequence = "",
+    linked_game_control = "confirm-gui",
+    consuming = "none",
+  },
   -- Take the pointer.
   {
     type = "custom-input",

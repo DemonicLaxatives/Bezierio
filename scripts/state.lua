@@ -28,6 +28,7 @@ local lib = {}
 --- @field pinned boolean|nil            # the window stays open when other GUIs open
 --- @field editing {idx: integer, backup: Layer|nil, new: boolean|nil, revision: integer|nil, locked: table<integer, true>|nil}|nil  # layer settings window open (backup: to cancel to; revision: when it opened; locked: main window elements greyed out, window.lock_main)
 --- @field reopen_main boolean|nil      # make the main window the opened GUI next tick (window.focus_main)
+--- @field picking boolean|nil          # an item picker's popup may be open (interactions.on_confirm_gui)
 --- @field marks_off table<HighlightKind, true>|nil  # warning marks the player clicked off (shown by default)
 
 --- @class Preset

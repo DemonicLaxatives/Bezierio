@@ -34,6 +34,15 @@ function lib.handle_event(e)
     local element = e.element
     if not (element and element.valid) then return end
     if element.get_mod() ~= script.mod_name then return end
+    local controller = storage.controllers and storage.controllers[e.player_index]
+    if controller then
+        -- A left click on an item picker opens the game's selection popup, which E
+        -- closes: until something else happens in our windows (picking an item
+        -- included), E isn't OK (on_confirm_gui).
+        local opens = e.name == defines.events.on_gui_click and element.type == "choose-elem-button" and not element.locked
+            and (e.button == nil or e.button == defines.mouse_button_type.left)
+        controller.ui.picking = opens or nil
+    end
     local routed = lib.routed_types[e.name]
     if not (routed and routed[element.type]) then return end
     -- Buttons act on the left mouse button only (a right-click on a delete button
@@ -45,7 +54,6 @@ function lib.handle_event(e)
 
     -- While a layer's settings are open the main window is locked: its events do
     -- nothing (the window still takes the click, so it doesn't reach the world).
-    local controller = storage.controllers and storage.controllers[e.player_index]
     if controller and controller.ui.editing then
         local root = element
         while root.parent and root.parent.parent do root = root.parent end
@@ -98,6 +106,31 @@ script.on_event(defines.events.on_gui_closed,
             if not ok then error(err, 0) end
         end
     end)
+
+--- The game's Confirm key (E by default, `bezierio-confirm-gui`): OK in the layer
+--- settings window, when that's the GUI the player has open (not, say, a chest
+--- opened over it). The mod hears the key before the game, which then closes what
+--- was open: the window is gone by then, so that's not taken as Cancel. With an
+--- item picker's popup open, E is the game's: it closes the popup. (The API tells
+--- nothing about that popup: `ui.picking` is set by the click that opened it, and
+--- cleared by whatever happens next in our windows. A popup closed with Esc or a
+--- click outside leaves it set, so the next E only clears it.)
+--- @param e EventData.CustomInputEvent
+function lib.on_confirm_gui(e)
+    local player = game.get_player(e.player_index)
+    local frame = player and player.gui.screen[layer_view.WINDOW]
+    if not (frame and frame.valid and player.opened == frame) then return end
+    local ui = state.ui(player.index)
+    if ui.picking then
+        ui.picking = nil
+        return
+    end
+    window.in_key_event = true
+    local ok, err = pcall(layer_view.accept, player)
+    window.in_key_event = false
+    if not ok then error(err, 0) end
+end
+script.on_event("bezierio-confirm-gui", lib.on_confirm_gui)
 
 --- The layer settings pickers offer what the force has unlocked: follow research
 --- (and anything else that resets what it has) while the window is open.
