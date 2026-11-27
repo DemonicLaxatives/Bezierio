@@ -1,6 +1,7 @@
-.vscode/**
 **/**/**.kra
 **/__pycache__/**
 *.png~
 dist/
 .pytest_cache/
+.vscode/launch.json
+.vscode/settings.json

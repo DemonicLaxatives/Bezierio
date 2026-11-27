@@ -1,0 +1,208 @@
+{
+    // Terminal > Run Task... (test tasks also under Run Test Task; Ctrl+Shift+B runs the game).
+    // Status bar buttons: options.statusbar, for the Tasks extension (actboy168.tasks).
+    "version": "2.0.0",
+    "options": {
+        "env": {
+            "FACTORIO": "${env:HOME}/Games/factorio/bin/x64/factorio"
+        }
+    },
+    "presentation": {
+        "panel": "dedicated",
+        "clear": true
+    },
+    "tasks": [
+        {
+            "label": "Run Factorio (no debugger)",
+            "options": {
+                "statusbar": {
+                    "label": "$(play) Factorio",
+                    "detail": "Start the game without the debugger"
+                }
+            },
+            "type": "shell",
+            "command": "\"$FACTORIO\" --disable-migration-window",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Test: all (unit, game, migration)",
+            "options": {
+                "statusbar": {
+                    "label": "$(beaker) All tests",
+                    "detail": "Unit tests, every game scenario, the save migration"
+                }
+            },
+            "type": "shell",
+            "command": "tests/run_all.sh",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Test: unit",
+            "options": {
+                "statusbar": {
+                    "label": "$(beaker) Unit",
+                    "detail": "Unit tests (no game)"
+                }
+            },
+            "type": "shell",
+            "command": "tests/unit/run_all.sh",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Test: game scenario",
+            "options": {
+                "statusbar": {
+                    "label": "$(beaker) Scenario",
+                    "detail": "One game scenario: pick it and the extra mods"
+                }
+            },
+            "type": "shell",
+            "command": "tests/run.sh ${input:scenario} ${input:dlc}",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Test: save migration",
+            "options": {
+                "statusbar": {
+                    "label": "$(beaker) Migration",
+                    "detail": "The game applies migrations/ to a real save"
+                }
+            },
+            "type": "shell",
+            "command": "tests/migrate-save.sh",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Test: lint (type check, locale keys)",
+            "options": {
+                "statusbar": {
+                    "label": "$(checklist) Lint",
+                    "detail": "Type check and locale keys"
+                }
+            },
+            "type": "shell",
+            // LUALS and LUALS_LIBRARY as set, else the language server bundled with the Lua
+            // extension and the newest API stubs FMTK made for a workspace (they hold factorio/)
+            "command": "[ -n \"$LUALS\" ] || export LUALS=\"$(ls -d \"$HOME\"/.vscode/extensions/sumneko.lua-*/server/bin/lua-language-server | sort -V | tail -1)\"; [ -n \"$LUALS_LIBRARY\" ] || export LUALS_LIBRARY=\"$(ls -dt \"$HOME\"/.config/Code/User/workspaceStorage/*/justarandomgeek.factoriomod-debug/sumneko-3rd | head -1)\"; tests/lint/check.sh && python3 tests/lint/locale_keys.py",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Test: release scripts (pytest)",
+            "options": {
+                "statusbar": {
+                    "label": "$(beaker) Pytest",
+                    "detail": "The release scripts' tests"
+                }
+            },
+            "type": "shell",
+            "command": "pytest -q release/tests tests/lint",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "label": "Release: bump version",
+            "options": {
+                "statusbar": {
+                    "label": "$(versions) Bump",
+                    "detail": "Set the version X.Y.Z in info.json and the changelog"
+                }
+            },
+            "type": "shell",
+            "command": "python3 release/bump.py --version '${input:version}'",
+            "problemMatcher": []
+        },
+        {
+            "label": "Release: push portal tag",
+            "options": {
+                "statusbar": {
+                    "label": "$(cloud-upload) Portal tag",
+                    "detail": "Push the branch and a portal-… tag: syncs the mod portal page"
+                }
+            },
+            "type": "shell",
+            "command": "release/push_tag.sh portal '${input:portalName}'",
+            "problemMatcher": []
+        },
+        {
+            "label": "Release: push release tag",
+            "options": {
+                "statusbar": {
+                    "label": "$(rocket) Release tag",
+                    "detail": "Validate, push the branch and a vX.Y.Z tag: publishes the release"
+                }
+            },
+            "type": "shell",
+            "command": "release/push_tag.sh release '${input:releaseVersion}'",
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "scenario",
+            "type": "pickString",
+            "description": "Game test scenario",
+            "options": [
+                "smoke",
+                "points",
+                "layers",
+                "build",
+                "types",
+                "paths",
+                "feeds",
+                "rails",
+                "bench"
+            ],
+            "default": "smoke"
+        },
+        {
+            "id": "dlc",
+            "type": "pickString",
+            "description": "Extra mods",
+            "options": [
+                {
+                    "label": "base only",
+                    "value": ""
+                },
+                {
+                    "label": "space-age, quality, elevated-rails",
+                    "value": "space-age quality elevated-rails"
+                }
+            ],
+            "default": ""
+        },
+        {
+            "id": "version",
+            "type": "promptString",
+            "description": "New version X.Y.Z (sets info.json and the changelog's top section)",
+            "placeHolder": "X.Y.Z"
+        },
+        {
+            "id": "portalName",
+            "type": "promptString",
+            "description": "Tag portal-… (empty: today's date, -1, -2, ... if taken). Pushes the branch and the tag.",
+            "placeHolder": "YYYY-MM-DD"
+        },
+        {
+            "id": "releaseVersion",
+            "type": "promptString",
+            "description": "Tag v… (empty: info.json's version). Validates, pushes the branch and the tag: publishes the release.",
+            "placeHolder": "X.Y.Z"
+        }
+    ]
+}

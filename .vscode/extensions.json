@@ -1,0 +1,8 @@
+{
+    // Tasks: the tasks in tasks.json as status bar buttons
+    "recommendations": [
+        "actboy168.tasks",
+        "justarandomgeek.factoriomod-debug",
+        "sumneko.lua"
+    ]
+}

@@ -67,7 +67,9 @@ See docs/DEVELOPMENT.md, Testing, for what each test checks and how to add one.
    stays `Version: 0.0.0` while unreleased.
 2. `python3 release/bump.py --version X.Y.Z`: sets the version in `info.json` and
    on that section, with today's date (fails if the changelog isn't ready).
-3. Commit, tag `vX.Y.Z`, push the tag.
+3. Commit, tag `vX.Y.Z`, push the tag (`release/push_tag.sh release [X.Y.Z]`
+   validates, pushes the branch, then tags HEAD and pushes the tag;
+   `release/push_tag.sh portal [name]` does the same for a portal tag).
 
 The release workflow (`.github/workflows/release.yml`) then checks the tag against
 `info.json` and the changelog, the changelog's format and that no locale comment
