@@ -103,12 +103,14 @@ end
 
 --- An entity's footprint in tiles, turned the way it's placed: a pump's own, a
 --- non-square turret's (or modded entity's) from its layer, square otherwise
---- (also facing diagonally, where the footprint is about the square).
+--- (also facing diagonally, where the footprint is about the square). A layer's
+--- other entities (a turret's inserter or pipe stub) are their own size.
 --- @param e PlannedEntity
 --- @param owner Layer
 --- @return number w, number h
 function lib.footprint(e, owner)
     if e.w and e.h then return e.w, e.h end
+    if e.name ~= owner.name then return e.size, e.size end
     local w, h = owner.tile_w, owner.tile_h
     if not (w and h) or w == h then return e.size, e.size end
     local d = e.direction or 0
@@ -458,6 +460,9 @@ function lib.step(job, walk, band, budget, h)
 
     if walk.phase == "poles" then
         if not walk.last then
+            -- Until refined, the line's poles may still move or go: the preview
+            -- leaves them for later (draw.lua).
+            job.plan.draft_from = job.plan.draft_from or #job.plan.entities + 1
             local target, direction = point_at(walk, 0)
             local spot, more = h.search_spot(job, layer.size, target, direction)
             used = used + more
@@ -482,6 +487,7 @@ function lib.step(job, walk, band, budget, h)
     end
 
     if walk.phase == "count" then
+        job.plan.draft_from = nil
         -- Count what no pole powers: poles bucketed by position, then each consumer
         -- checks only the buckets its supply reach touches.
         local r = layer.reach or 0

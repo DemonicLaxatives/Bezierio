@@ -295,7 +295,15 @@ spot, counted in `plan.unfed`). Then `attach` adds the feed through a
 `FeedContext`, which sees the belt and pipe cells the paths stage made:
 - an inserter in a free cell beside the turret, turned so its drop (the inserter
   prototype's `inserter_drop_position`) lands in the turret and its pickup on a
-  belt. An inserter's direction is its pickup side;
+  belt. An inserter's direction is its pickup side. "In the turret" means the
+  tile under the drop position overlaps the turret's collision box
+  (`layer.turret_box`, facing north) turned with the turret, 45° steps included
+  (`feeds.box_over_tile`, a separating-axis test). That matched the game on every
+  one of about 1,800 inserters around railguns in all 8 facings (`drop_target`).
+  The turret's square isn't enough: a 3x5 railgun leaves strips of it empty, and
+  its corners too when facing diagonally. On a 45° stretch a diagonal railgun's
+  back stays two or three cells from the belt beyond the pole band, out of a
+  straight inserter's reach, so many of those are unfed;
 - a pipe stub of up to `MAX_STUB` cells from one of the turret's fluid
   connections to a pipe line, touching no other pipe line. Connections facing
   straight are the prototype's north ones rotated. Facing diagonally, each north
@@ -376,7 +384,8 @@ clamped to the new range, plus the offset.
    - **Smart pole layers** (`smart_poles.lua`) ignore the spacing. A consumer's
      footprint is checked per axis (`smart_poles.footprint`: a pump's own, a
      non-square turret's or modded entity's turned the way it's placed, square
-     when facing diagonally); planning the layout still treats it as a square. After the greedy
+     when facing diagonally; a turret's inserter or pipe stub its own size, not
+     the turret's); planning the layout still treats it as a square. After the greedy
      walk, a refine pass drops poles nothing needs (neighbours in reach, every
      consumer they power powered by another pole too; an open line's end pole if
      the next is within a third of the reach) and slides the rest towards the middle
@@ -395,7 +404,10 @@ clamped to the new range, plus the offset.
      consumer against every pole in one call took 0.45 s at 8,000 tiles.) Spaced entities record the sample they were placed at
      (`frame`), so projection doesn't jump to another stretch where the curve
      crosses itself. Pole layers run last (lowest priority), so every consumer is
-     already planned.
+     already planned. From the first pole until refining is done,
+     `plan.draft_from` marks where the line's poles start in `plan.entities`: the
+     preview draws only what comes before it, since refining moves, drops and
+     rewrites those poles.
 
 **Path layers** (belts, pipes; `build/paths.lua`). Each line is a one-cell
 sub-band of the layer's band (`lines` of them, `line_gap` empty cells between).
@@ -741,7 +753,7 @@ tests/run.sh smoke                                     # loads, runs 120 ticks w
 tests/run.sh points                                    # the pointer, point list, closed loops
 tests/run.sh layers                                    # layer list and detail pane, presets, view settings
 tests/run.sh build                                     # preview, totals, builds in all modes, blueprints
-tests/run.sh types                                     # turrets, lamps, mines, radars, solar panels, accumulators
+tests/run.sh types                                     # turrets, lamps, mines, radars, solar panels, accumulators (railguns fed: with space-age)
 tests/run.sh paths                                     # belts and pipes: real entities flow, undergrounds pair, pumps split segments
 tests/run.sh feeds                                     # inserters feed turrets, flamethrowers piped (straight, diagonal), gates over rails
 tests/run.sh rails                                     # continuous track, signal sides, ghosts, blueprints, gates across walls (elevated with the DLC)
@@ -764,7 +776,7 @@ tests/run.sh bench                                     # timing (read the BENCH 
 | `presets.lua` | Preset list operations; export data round trip and import validation. |
 | `layer_types.lua` | Turret facing (both sides, inward) and non-square footprints (other types too), ammo, lamp colours and rainbow, radar spacing, land mine density, determinism and wires; side wall layers around a circle joined side by side. |
 | `paths.lua` | Belts fed only from behind and lines continuous, undergrounds paired within reach, pipe lines connected and apart, pumps; on a gentle curve, a loop and random curves. |
-| `feeds.lua` | Fluid connection targets in every facing (straight and diagonal, against the game), inserters picking from a belt and dropping into their turret (normal and long reach, straight and curved lines), pipe stubs reaching one network, and a plain pipe where the line has pipes-to-ground. |
+| `feeds.lua` | Fluid connection targets in every facing (straight and diagonal, against the game), inserters picking from a belt and dropping into their turret (normal and long reach, straight and curved lines; railguns, which don't fill their square, by their turned collision box), smart poles counting inserters of non-square turrets by their own footprint, pipe stubs reaching one network, and a plain pipe where the line has pipes-to-ground. |
 | `rails.lua` | The rail data; fits stay near calm curves, circles close, elevated track has ramps at both ends and supports in reach of every joint, slanted ends warn; signal counts follow the spacing (doubled both ways); planning progress never goes back. |
 | `shapes.lua` | What the handles mean; samples exactly on circles, (rotated) ellipses and arcs; direction; editing shapes and moving curves; spaced entities round a loop keep apart at the seam. |
 | `migrations.lua` | The files in `migrations/`, run like the game does: 0.1 data discarded, pre-release dev data reset, current data untouched, newer data reset. |

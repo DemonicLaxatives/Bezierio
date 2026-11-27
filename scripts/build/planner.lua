@@ -92,6 +92,7 @@ lib.bands = bands.bands
 --- @field unfed integer          # turrets set to be fed that no belt or pipe line reaches
 --- @field unpowered_at PlanMark[]  # where the unpowered ones are
 --- @field unfed_at PlanMark[]      # ... and the unfed ones
+--- @field draft_from integer|nil  # entities from here on may still change (a smart pole line being refined)
 --- @field warnings Vector[]       # where a bend is tighter than the layers on its inside
 --- @field closed boolean        # the curve is a loop (pole chains close too)
 --- @field done boolean

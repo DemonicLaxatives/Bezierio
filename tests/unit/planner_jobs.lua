@@ -90,5 +90,36 @@ do
         print("FAIL finished job lost its plan or points")
     end
 end
+-- What the preview draws while planning (the entities before `plan.draft_from`)
+-- is final: a smart pole line's poles wait until refining has moved or dropped them.
+do
+    local planner = require("scripts.build.planner")
+    local curve = require("scripts.curve.curve")
+    local held, changed = 0, 0
+    for _ = 1, 6 do
+        local c = curve.new()
+        for _, p in ipairs(helpers.random_points(r)) do curve.append(c, p) end
+        local job = planner.new_job(c, special)
+        local seen = {}
+        repeat
+            local done = planner.step(job, 50)
+            local plan = job.plan
+            if plan.draft_from then held = held + 1 end
+            for idx = 1, plan.draft_from and plan.draft_from - 1 or #plan.entities do
+                local e = plan.entities[idx]
+                seen[idx] = seen[idx] or (e.name .. "@" .. e.position.x .. "," .. e.position.y)
+            end
+        until done
+        for idx, key in pairs(seen) do
+            local e = job.plan.entities[idx]
+            if not e or key ~= e.name .. "@" .. e.position.x .. "," .. e.position.y then changed = changed + 1 end
+        end
+    end
+    if held == 0 or changed > 0 then
+        failures = failures + 1
+        print(string.format("FAIL preview-ready entities changed later: %d (held back in %d steps)", changed, held))
+    end
+end
+
 print(string.format("%d/%d sliced plans match", cases * #budgets - failures, cases * #budgets))
 os.exit(failures == 0 and 0 or 1)

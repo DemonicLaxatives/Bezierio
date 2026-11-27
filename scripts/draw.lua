@@ -297,15 +297,16 @@ end
 --- @param list (PlannedTile|PlannedEntity)[]
 --- @param i integer
 --- @param cell fun(item: any): integer, integer
+--- @param last integer|nil  # don't go past this index
 --- @return integer
-local function run_end(list, i, cell)
+local function run_end(list, i, cell, last)
     local first = list[i]
     if (first.size and first.size ~= 1) or first.w then return i end
     local limit = first.direction and lib.ARROW_RUN or math.huge
     local px, py = cell(first)
     local dx, dy
     local j = i + 1
-    while list[j] do
+    while list[j] and j <= (last or math.huge) do
         local item = list[j]
         if item.layer ~= first.layer or (item.size and item.size ~= 1) or item.w
             or item.direction ~= first.direction or item.name ~= first.name or j - i >= limit then
@@ -358,6 +359,14 @@ local function draw_arrow(player, sprites, center, direction, scale, alpha)
     table.insert(sprites, rendering.draw_polygon(params))
 end
 
+--- How many of the plan's entities are there to stay: a smart pole line still
+--- being refined (`plan.draft_from` on) may yet move or drop its poles.
+--- @param plan BuildPlan
+--- @return integer
+local function settled_entities(plan)
+    return plan.draft_from and plan.draft_from - 1 or #plan.entities
+end
+
 --- @param player LuaPlayer
 --- @param view ViewSettings
 --- @param progress DrawProgress
@@ -397,13 +406,13 @@ local function step_preview(player, view, progress, plan, hidden, budget)
             progress.preview_count = progress.preview_count + 1
             used = used + lib.COST.circle
             goto continue
-        elseif progress.preview_entities < #plan.entities then
+        elseif progress.preview_entities < settled_entities(plan) then
             local i = progress.preview_entities + 1
             local entity = plan.entities[i]
             rect.color = palette.layer_color(entity.layer, entity_alpha)
             arrow = nil
             if entity.size == 1 and not entity.w then
-                local j = run_end(plan.entities, i, entity_cell)
+                local j = run_end(plan.entities, i, entity_cell, settled_entities(plan))
                 rect.left_top, rect.right_bottom = run_box(plan.entities, i, j, entity_cell)
                 progress.preview_entities = j
                 used = used + (j - i + 1) * lib.COST.cell

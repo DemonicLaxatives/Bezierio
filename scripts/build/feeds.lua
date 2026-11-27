@@ -25,17 +25,57 @@ end
 
 local function key(x, y) return x .. "," .. y end
 
+--- Whether the tile at (tx, ty) overlaps a turret's collision box (`box`: facing
+--- north, relative to its position), turned the way the turret faces. That's
+--- where an inserter drops into it: the tile under the drop position (checked in
+--- the game for railguns in all 8 facings).
+--- @param entity PlannedEntity
+--- @param box {left: number, top: number, right: number, bottom: number}
+--- @param tx integer
+--- @param ty integer
+--- @return boolean
+function lib.box_over_tile(entity, box, tx, ty)
+    local a = (entity.direction or 0) / 16 * 2 * math.pi
+    local c, s = math.cos(a), math.sin(a)
+    local px, py = entity.position.x, entity.position.y
+    local tile = { { tx, ty }, { tx + 1, ty }, { tx, ty + 1 }, { tx + 1, ty + 1 } }
+    local turned = {}
+    for _, p in ipairs({ { box.left, box.top }, { box.right, box.top }, { box.left, box.bottom }, { box.right, box.bottom } }) do
+        turned[#turned + 1] = { px + p[1] * c - p[2] * s, py + p[1] * s + p[2] * c }
+    end
+    -- Separating axes: the tile's and the turned box's edges.
+    for _, axis in ipairs({ { 1, 0 }, { 0, 1 }, { c, s }, { -s, c } }) do
+        local t_lo, t_hi, b_lo, b_hi = math.huge, -math.huge, math.huge, -math.huge
+        for _, p in ipairs(tile) do
+            local v = p[1] * axis[1] + p[2] * axis[2]
+            t_lo, t_hi = math.min(t_lo, v), math.max(t_hi, v)
+        end
+        for _, p in ipairs(turned) do
+            local v = p[1] * axis[1] + p[2] * axis[2]
+            b_lo, b_hi = math.min(b_lo, v), math.max(b_hi, v)
+        end
+        if t_hi <= b_lo + 1e-6 or b_hi <= t_lo + 1e-6 then return false end
+    end
+    return true
+end
+
 --- An inserter for an ammo turret: a free cell beside the turret where the
---- inserter drops into the turret and picks up from a belt cell.
+--- inserter drops into the turret and picks up from a belt cell. The drop has to
+--- land on a tile the turret's collision box covers if the box is known (a
+--- non-square turret doesn't fill its square: a 3x5 railgun, more so facing
+--- diagonally), else in its square.
 --- @param ctx FeedContext
 --- @param entity PlannedEntity  # the turret
---- @param inserter {pickup: Vector, drop: Vector}  # facing north
+--- @param inserter {pickup: Vector, drop: Vector, box: {left: number, top: number, right: number, bottom: number}|nil}  # facing north
 --- @return {x: integer, y: integer, direction: integer}|nil
 function lib.inserter_spot(ctx, entity, inserter)
     local size = entity.size
     local x0 = math.floor(entity.position.x - size / 2 + 0.5)
     local y0 = math.floor(entity.position.y - size / 2 + 0.5)
-    local function inside(px, py)
+    local box = inserter.box
+    local function lands(drop_x, drop_y)
+        local px, py = math.floor(drop_x), math.floor(drop_y)
+        if box then return lib.box_over_tile(entity, box, px, py) end
         return px >= x0 and px < x0 + size and py >= y0 and py < y0 + size
     end
     -- Cells around the footprint, in a fixed order.
@@ -52,9 +92,8 @@ function lib.inserter_spot(ctx, entity, inserter)
             for _, direction in ipairs({ 0, 4, 8, 12 }) do
                 local drop = lib.rotate(inserter.drop, direction)
                 local pickup = lib.rotate(inserter.pickup, direction)
-                local dx, dy = math.floor(cx + 0.5 + drop.x), math.floor(cy + 0.5 + drop.y)
                 local px, py = math.floor(cx + 0.5 + pickup.x), math.floor(cy + 0.5 + pickup.y)
-                if inside(dx, dy) and ctx.belt(px, py) then
+                if lands(cx + 0.5 + drop.x, cy + 0.5 + drop.y) and ctx.belt(px, py) then
                     return { x = cx, y = cy, direction = direction }
                 end
             end

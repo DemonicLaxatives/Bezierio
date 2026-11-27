@@ -83,6 +83,12 @@ return {
             end
             if #ports > 0 then layer.fluid_ports = ports end
         end
+        -- Where an inserter can drop into it: its collision box, facing north.
+        local box = prototype.collision_box
+        layer.turret_box = box and {
+            left = box.left_top.x or box.left_top[1], top = box.left_top.y or box.left_top[2],
+            right = box.right_bottom.x or box.right_bottom[1], bottom = box.right_bottom.y or box.right_bottom[2],
+        } or nil
         -- The chosen inserter's reach, facing north (pickup side).
         layer.inserter_name, layer.inserter_pickup, layer.inserter_drop, layer.inserter_power = nil, nil, nil, nil
         local item = layer.inserter and prototypes.item[layer.inserter]
@@ -117,7 +123,7 @@ return {
     --- @return boolean
     can_attach = function(layer, entity, ctx)
         if layer.inserter_name and layer.ammo_inventory then
-            return feeds.inserter_spot(ctx, entity, { pickup = layer.inserter_pickup, drop = layer.inserter_drop }) ~= nil
+            return feeds.inserter_spot(ctx, entity, { pickup = layer.inserter_pickup, drop = layer.inserter_drop, box = layer.turret_box }) ~= nil
         elseif layer.pipe_feed and layer.fluid_ports then
             return feeds.pipe_stub(ctx, feeds.fluid_targets(entity, layer.fluid_ports)) ~= nil
         end
@@ -129,7 +135,7 @@ return {
     --- @param ctx FeedContext
     attach = function(layer, entity, ctx)
         if layer.inserter_name and layer.ammo_inventory then
-            local spot = feeds.inserter_spot(ctx, entity, { pickup = layer.inserter_pickup, drop = layer.inserter_drop })
+            local spot = feeds.inserter_spot(ctx, entity, { pickup = layer.inserter_pickup, drop = layer.inserter_drop, box = layer.turret_box })
             if spot then
                 ctx.add({ name = layer.inserter_name, x = spot.x, y = spot.y, direction = spot.direction, power = layer.inserter_power, item = layer.inserter })
             else

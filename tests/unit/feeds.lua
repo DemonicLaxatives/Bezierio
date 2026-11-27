@@ -162,5 +162,85 @@ for ci, pts in ipairs(curves) do
     check(cut == 0, "curve " .. ci .. ": every stub joins a plain pipe (" .. cut .. " of " .. groups .. " don't)")
 end
 
+-- Smart poles power inserters by the inserter's own footprint, not that of the
+-- (non-square) turret they feed: every one out of reach is counted.
+do
+    local smart_r = helpers.rng(5)
+    local uncovered, inserters, reported = 0, 0, 0
+    for _ = 1, 30 do
+        local feed_layers = {
+            [0] = wall0,
+            [-1] = { idx = -1, type = "turret", name = "long-gun", quality = "normal", size = 4, tile_w = 2, tile_h = 4, turn_limited = true, directions = 4,
+                facing = "outward", offset = 0, spacing = 5, ammo_inventory = "turret_ammo", inserter = "ins", inserter_name = "ins",
+                inserter_pickup = { x = 0, y = -1 }, inserter_drop = { x = 0, y = 1.2 }, inserter_power = true },
+            [-2] = { idx = -2, type = "belt", name = "belt", quality = "normal", size = 1, offset = 0, lines = 1, line_gap = 0, flow = "forward" },
+            [-3] = { idx = -3, type = "electric-pole", name = "pole", quality = "normal", size = 1, offset = 0, spacing = 6, wire_distance = 9, reach = 2.5, smart = true },
+        }
+        local smart_plan = helpers.plan(helpers.random_points(smart_r), feed_layers)
+        local poles = {}
+        for _, e in ipairs(smart_plan.entities) do if e.layer == -3 then poles[#poles + 1] = e.position end end
+        for _, e in ipairs(smart_plan.entities) do
+            if e.name == "ins" then
+                inserters = inserters + 1
+                local powered = false
+                for _, p in ipairs(poles) do
+                    -- (a 1x1 footprint less the 0.3 margin: 0.2 each side)
+                    if math.abs(e.position.x - p.x) < 2.7 and math.abs(e.position.y - p.y) < 2.7 then powered = true break end
+                end
+                if not powered then uncovered = uncovered + 1 end
+            end
+        end
+        reported = reported + smart_plan.unpowered
+    end
+    check(inserters > 100 and uncovered == reported,
+        string.format("inserters of non-square turrets: %d of %d out of reach, %d reported", uncovered, inserters, reported))
+end
+
+-- A turret that doesn't fill its square (a 3x5 railgun, facing 8 ways): its
+-- inserters drop on a tile its turned collision box covers, never beside it.
+do
+    local RAIL_BOX = { left = -1.40625, top = -1.8984375, right = 1.40625, bottom = 2.09765625 }
+    -- (the game's box; at (0.5, 0.5) facing north it covers tiles x -1..1, y -2..2)
+    local north = { position = { x = 0.5, y = 0.5 }, direction = 0 }
+    check(feeds.box_over_tile(north, RAIL_BOX, -1, -2) and feeds.box_over_tile(north, RAIL_BOX, 1, 2)
+        and not feeds.box_over_tile(north, RAIL_BOX, -2, 0) and not feeds.box_over_tile(north, RAIL_BOX, 2, 0),
+        "railgun facing north covers 3x5 tiles")
+    local east = { position = { x = 0.5, y = 0.5 }, direction = 4 }
+    check(feeds.box_over_tile(east, RAIL_BOX, -2, -1) and not feeds.box_over_tile(east, RAIL_BOX, 0, -2),
+        "railgun facing east covers 5x3 tiles")
+    local ne = { position = { x = 0.5, y = 0.5 }, direction = 2 }
+    check(feeds.box_over_tile(ne, RAIL_BOX, 0, 0) and not feeds.box_over_tile(ne, RAIL_BOX, -2, -2) and not feeds.box_over_tile(ne, RAIL_BOX, 2, 2),
+        "railgun facing north-east leaves the square's other corners")
+    local rail_layers = {
+        [-2] = { idx = -2, type = "belt", name = "belt", quality = "normal", size = 1, offset = 0, lines = 1, line_gap = 0, flow = "forward" },
+        [-1] = { idx = -1, type = "electric-pole", name = "pole", quality = "normal", size = 1, offset = 0, spacing = 8, wire_distance = 9, reach = 3.5, smart = true },
+        [0] = { idx = 0, type = "turret", name = "rg", quality = "normal", size = 5, tile_w = 3, tile_h = 5, turn_limited = true, directions = 8,
+            facing = "outward", offset = 0, spacing = 5, ammo_inventory = "turret_ammo", inserter = "ins", inserter_name = "ins",
+            inserter_pickup = { x = 0, y = -1 }, inserter_drop = { x = 0, y = 1.2 }, inserter_power = true, turret_box = RAIL_BOX },
+    }
+    local rail_r = helpers.rng(31)
+    local rail_curves = { { { x = 0.3, y = 0.5 }, { x = 80.5, y = 0.5 } }, { { x = 0.5, y = 0.3 }, { x = 0.5, y = 80.5 } } }
+    for _ = 1, 6 do rail_curves[#rail_curves + 1] = helpers.random_points(rail_r) end
+    for ci, pts in ipairs(rail_curves) do
+        local rail_plan = helpers.plan(pts, rail_layers)
+        local guns, ins = {}, {}
+        for _, e in ipairs(rail_plan.entities) do
+            if e.name == "rg" then guns[#guns + 1] = e end
+            if e.name == "ins" then ins[#ins + 1] = e end
+        end
+        local into = 0
+        for _, i in ipairs(ins) do
+            local drop = feeds.rotate({ x = 0, y = 1.2 }, i.direction)
+            local tx, ty = math.floor(i.position.x + drop.x), math.floor(i.position.y + drop.y)
+            for _, g in ipairs(guns) do
+                if feeds.box_over_tile(g, RAIL_BOX, tx, ty) then into = into + 1 break end
+            end
+        end
+        check(into == #ins and #ins + rail_plan.unfed == #guns,
+            string.format("railgun curve %d: %d of %d inserters drop into a railgun; %d fed + %d unfed of %d", ci, into, #ins, #ins, rail_plan.unfed, #guns))
+        if ci <= 2 then check(#guns > 10 and rail_plan.unfed == 0, "railguns along a straight line all fed: " .. #ins .. " of " .. #guns) end
+    end
+end
+
 print(string.format("%d/%d feed checks passed", checks - failures, checks))
 os.exit(failures == 0 and 0 or 1)

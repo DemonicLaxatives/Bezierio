@@ -234,4 +234,74 @@ step("a layer that isn't placed keeps its room", function(player)
   check(layers()[1].place == nil and #on_layer(dev("plan", P), 1) > 5, "placed again")
 end)
 
+-- Railguns (Space Age): 3x5 and facing 8 ways, so they don't fill their square;
+-- every inserter has to drop into the turret itself (it once never did).
+local RAILGUN_PRESET = {
+  format = "bezierio-preset", version = 1, name = "railguns",
+  layers = {
+    { idx = -2, offset = 0, item = "turbo-transport-belt", quality = "normal", lines = 1, line_gap = 0, flow = "forward", undergrounds = false },
+    { idx = -1, offset = 0, item = "medium-electric-pole", quality = "normal", spacing = 8, smart = true, red_wire = false, green_wire = false },
+    { idx = 0, offset = 0, item = "railgun-turret", quality = "normal", spacing = 5, facing = "outward", inserter = "inserter", pipe_feed = false, ammo_count = 10 },
+  },
+}
+
+step("railguns: fed from the belt", function(player)
+  if not prototypes.entity["railgun-turret"] then return log("railguns: no Space Age, skipped") end
+  local s = player.surface
+  clear_all(s)
+  for _, t in pairs({ "railgun", "turbo-transport-belt" }) do
+    if player.force.technologies[t] then player.force.technologies[t].researched = true end
+  end
+  if player.gui.screen.bezierio_layer_window then dev("click", P, "layer_ok") end
+  dev("click", P, "preset_import")
+  el(player, "preset_import_text").text = helpers.encode_string(helpers.table_to_json(RAILGUN_PRESET))
+  dev("click", P, "preset_import_confirm")
+  check(layers()[0].name == "railgun-turret" and layers()[0].inserter == "inserter", "railgun preset imported")
+  dev("click", P, "control_points_clear")
+  dev("click", P, "pointer_button")
+  -- straight, then bending through the diagonals (the curve of the bug report)
+  dev("pointer", P, { x = -40.5, y = -30.5 })
+  dev("pointer", P, { x = -10.5, y = 12.5 })
+  dev("pointer", P, { x = 30.5, y = 20.5 })
+  dev("pointer", P, { x = 50.5, y = 50.5 })
+  dev("click", P, "pointer_button")
+  player.cheat_mode = true
+  dev("click", P, "build")
+end, "idle")
+
+step("railguns: every inserter drops into a railgun", function(player)
+  if not prototypes.entity["railgun-turret"] then return end
+  local s = player.surface
+  local plan = dev("plan", P)
+  local guns = s.find_entities_filtered { name = "railgun-turret" }
+  local inserters = s.find_entities_filtered { name = "inserter" }
+  local facings = {}
+  for _, g in pairs(guns) do facings[g.direction] = true end
+  local n = 0
+  for _ in pairs(facings) do n = n + 1 end
+  local fed_by = {}
+  for _, ins in pairs(inserters) do if ins.drop_target then fed_by[ins.drop_target.unit_number] = true end end
+  local per = {}
+  for _, g in pairs(guns) do
+    per[g.direction] = per[g.direction] or { 0, 0 }
+    per[g.direction][fed_by[g.unit_number] and 1 or 2] = per[g.direction][fed_by[g.unit_number] and 1 or 2] + 1
+  end
+  log("railguns: (fed, unfed) per facing " .. serpent.line(per) .. " inserters " .. #inserters .. " unfed " .. plan.unfed)
+  check(#guns > 8 and n >= 2, "railguns built facing straight and diagonally: " .. #guns .. ", " .. n .. " facings")
+  -- Straight, every one is fed; on a diagonal the body leaves a gap to the belt
+  -- that a straight inserter can't always bridge (those are counted unfed).
+  for d, counts in pairs(per) do
+    if d % 4 == 0 then check(counts[2] == 0, "facing " .. d .. ": every railgun fed (" .. counts[1] .. ")") end
+  end
+  for _, ins in pairs(inserters) do
+    check(ins.drop_target and ins.drop_target.name == "railgun-turret",
+      "inserter at " .. ins.position.x .. "," .. ins.position.y .. " drops into a railgun")
+    check(s.find_entities_filtered { position = ins.pickup_position, name = "turbo-transport-belt", limit = 1 }[1],
+      "inserter at " .. ins.position.x .. "," .. ins.position.y .. " picks up from the belt")
+  end
+  check(#inserters + plan.unfed == #guns and #inserters >= #guns / 2,
+    "railguns fed: " .. #inserters .. ", counted unfed: " .. plan.unfed .. ", of " .. #guns)
+  player.cheat_mode = false
+end)
+
 flow.run("types")
