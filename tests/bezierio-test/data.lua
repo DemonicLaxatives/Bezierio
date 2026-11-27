@@ -9,10 +9,9 @@ local function pump(name, collision, selection, output_at, input_at)
     entity.collision_box, entity.selection_box = collision, selection
     entity.fast_replaceable_group = nil
     entity.next_upgrade = nil
-    entity.fluid_box.pipe_connections = {
-        { direction = defines.direction.north, position = output_at, flow_direction = "output" },
-        { direction = defines.direction.south, position = input_at, flow_direction = "input" },
-    }
+    -- (the base pump's: output north, input south; moved to the new ends)
+    local connections = entity.fluid_box.pipe_connections
+    connections[1].position, connections[2].position = output_at, input_at
     local item = table.deepcopy(data.raw["item"]["pump"])
     item.name, item.place_result, item.order = name, name, "b[pipe]-c[pump]-z[" .. name .. "]"
     data:extend({ entity, item })
