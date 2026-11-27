@@ -304,4 +304,67 @@ step("railguns: every inserter drops into a railgun", function(player)
   player.cheat_mode = false
 end)
 
+-- Lightning attractors (Space Age): spaced by their attraction range, which grows
+-- with quality; smart poles reach them (they deliver electricity).
+local ROD_PRESET = {
+  format = "bezierio-preset", version = 1, name = "rods",
+  layers = {
+    { idx = 0, offset = 0, item = "lightning-rod", quality = "normal" },
+    { idx = 1, offset = 0, item = "small-electric-pole", quality = "normal", smart = true },
+  },
+}
+
+step("lightning rods: spacing from the range, quality included", function(player)
+  if not prototypes.entity["lightning-rod"] then return log("lightning rods: no Space Age, skipped") end
+  local s = player.surface
+  clear_all(s)
+  local range = prototypes.entity["lightning-rod"].get_attraction_range_elongation("normal")
+  dev("click", P, "preset_import")
+  el(player, "preset_import_text").text = helpers.encode_string(helpers.table_to_json(ROD_PRESET))
+  dev("click", P, "preset_import_confirm")
+  dev("click", P, "layer_select_0")
+  dev("set_elem", P, "layer_type", { name = "lightning-rod", quality = "normal" })
+  local rod = layers()[0]
+  check(rod.type == "lightning-attractor" and rod.attraction_range == range and rod.spacing == math.floor(range),
+    "rods: range " .. tostring(rod.attraction_range) .. ", spacing " .. tostring(rod.spacing))
+  check(el(player, "spacing_slider").get_slider_maximum() == math.floor(2 * range), "spacing up to twice the range")
+  check(rod.needs_power, "smart poles reach rods")
+  if prototypes.quality["legendary"] then
+    local legendary = prototypes.entity["lightning-rod"].get_attraction_range_elongation("legendary")
+    dev("set_elem", P, "layer_type", { name = "lightning-rod", quality = "legendary" })
+    rod = layers()[0]
+    check(legendary > range and rod.attraction_range == legendary, "legendary rods reach further: " .. legendary .. " (normal " .. range .. ")")
+    check(el(player, "spacing_slider").get_slider_maximum() == math.floor(2 * legendary), "and may be spaced further apart")
+    dev("set_elem", P, "layer_type", { name = "lightning-rod", quality = "normal" })
+  end
+  dev("click", P, "layer_select_0")
+  -- The game only lets players build them where there is lightning (manual and
+  -- ghost checks refuse them on Nauvis): build on Fulgora.
+  local fulgora = game.planets["fulgora"].surface or game.planets["fulgora"].create_surface()
+  flow.prepare_ground(fulgora)
+  storage.home = { surface = player.surface.name, position = player.position }
+  player.teleport({ 0, -20 }, fulgora)
+  check(fulgora.can_place_entity { name = "lightning-rod", position = { 0.5, 40.5 }, force = player.force, build_check_type = defines.build_check_type.manual },
+    "rods can be built on Fulgora")
+  dev("click", P, "control_points_clear")
+  dev("click", P, "pointer_button")
+  dev("pointer", P, { x = -40.5, y = 0.5 })
+  dev("pointer", P, { x = 40.5, y = 20.5 })
+  dev("click", P, "pointer_button")
+  player.cheat_mode = true
+  dev("click", P, "build")
+end, "idle")
+
+step("lightning rods: built along the curve, on the network", function(player)
+  if not prototypes.entity["lightning-rod"] then return end
+  local rods = player.surface.find_entities_filtered { name = "lightning-rod" }
+  check(#rods >= 4, "rods built: " .. #rods)
+  for _, r in pairs(rods) do
+    check(r.electric_network_id ~= nil, "rod at " .. r.position.x .. "," .. r.position.y .. " in a pole's supply area")
+  end
+  check(dev("plan", P).unpowered == 0, "none reported unpowered")
+  player.cheat_mode = false
+  player.teleport(storage.home.position, storage.home.surface)
+end)
+
 flow.run("types")

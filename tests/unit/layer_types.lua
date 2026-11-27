@@ -120,6 +120,22 @@ local radar_def = registry.types["radar"]
 local radar = { size = 3, reveal_chunks = 3 }
 check(radar_def.fields[1].max(radar) == 224 and radar_def.fields[1].default(radar) == 192, "radar spacing from its range")
 
+-- Lightning attractors: spacing up to twice the attraction range, the range by default
+local rod_def = registry.types["lightning-attractor"]
+local rod, collector, no_range = { size = 1, attraction_range = 15 }, { size = 2, attraction_range = 25 }, { size = 2 }
+check(rod_def.fields[1].max(rod) == 30 and rod_def.fields[1].default(rod) == 15
+    and rod_def.fields[1].max(collector) == 50 and rod_def.fields[1].default(collector) == 25, "lightning attractor spacing from its range")
+check(rod_def.fields[1].max(no_range) == 2 and rod_def.fields[1].default(no_range) == 2,
+    "no range: spacing is the size")
+local rods = helpers.plan({ { x = 0.5, y = 0.5 }, { x = 100.5, y = 0.5 } },
+    { [0] = wall0, [1] = { idx = 1, type = "lightning-attractor", name = "rod", quality = "normal", size = 1, offset = 0, spacing = 15, attraction_range = 15 } })
+local rod_xs = {}
+for _, e in ipairs(of_layer(rods, 1)) do rod_xs[#rod_xs + 1] = e.position.x end
+table.sort(rod_xs)
+local even = #rod_xs >= 6
+for i = 2, #rod_xs do even = even and math.abs(rod_xs[i] - rod_xs[i - 1] - 15) <= 1 end
+check(even, "rods every 15 tiles along the curve: " .. table.concat(rod_xs, " "))
+
 -- Land mines: about `density` percent of the band, the same cells every time,
 -- wired into trees within reach
 local mine = { idx = 1, type = "land-mine", name = "mine", quality = "normal", size = 1, offset = 0, radius = 6, density = 15,

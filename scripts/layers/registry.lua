@@ -65,6 +65,7 @@ local TYPE_FILES = {
     "scripts.layers.solar_panel",
     "scripts.layers.accumulator",
     "scripts.layers.radar",
+    "scripts.layers.lightning_attractor",
     "scripts.layers.lamp",
     "scripts.layers.land_mine",
     "scripts.layers.belt",

@@ -34,6 +34,7 @@ scripts/
     common.lua           pieces shared by layer types
     empty.lua wall.lua tile.lua electric_pole.lua electric_turret.lua turret.lua roboport.lua rail.lua
     belt.lua pipe.lua lamp.lua land_mine.lua radar.lua solar_panel.lua accumulator.lua
+    lightning_attractor.lua
   build/
     geometry.lua         frames, spatial index, grid distance from the curve
     planner.lua          curve + layers -> BuildPlan, as a resumable job: makes the job, runs the stages
@@ -277,7 +278,8 @@ A layer type is one file in `scripts/layers/`, listed in `TYPE_FILES` in
   isn't placed for an empty stand-in of the same width (`stage_bands`), so the
   layers outside it don't move;
 - `init(layer, prototype)` for derived values (e.g. pole wire reach, a turret's
-  turn range and ammo categories), and `thickness(layer)` if the band width isn't
+  turn range and ammo categories, a lightning attractor's range: all taken for
+  the layer's quality, so they grow with it), and `thickness(layer)` if the band width isn't
   the footprint size;
 - band layers: `keep(layer, x, y)` instead of the checkerboard (land mine density:
   a fixed per-cell hash, exact in both integers and doubles), and `join_corners`
@@ -753,7 +755,7 @@ tests/run.sh smoke                                     # loads, runs 120 ticks w
 tests/run.sh points                                    # the pointer, point list, closed loops
 tests/run.sh layers                                    # layer list and detail pane, presets, view settings
 tests/run.sh build                                     # preview, totals, builds in all modes, blueprints
-tests/run.sh types                                     # turrets, lamps, mines, radars, solar panels, accumulators (railguns fed: with space-age)
+tests/run.sh types                                     # turrets, lamps, mines, radars, solar panels, accumulators (with space-age: railguns fed, lightning rods on Fulgora)
 tests/run.sh paths                                     # belts and pipes: real entities flow, undergrounds pair, pumps split segments
 tests/run.sh feeds                                     # inserters feed turrets, flamethrowers piped (straight, diagonal), gates over rails
 tests/run.sh rails                                     # continuous track, signal sides, ghosts, blueprints, gates across walls (elevated with the DLC)
@@ -774,7 +776,7 @@ tests/run.sh bench                                     # timing (read the BENCH 
 | `curve_edit.lua` | Inserting (including where a shift-click goes); reversing keeps the points and samples the curve backwards. |
 | `layers.lua` | Which layer settings survive picking another item (`registry.carry_over`). |
 | `presets.lua` | Preset list operations; export data round trip and import validation. |
-| `layer_types.lua` | Turret facing (both sides, inward) and non-square footprints (other types too), ammo, lamp colours and rainbow, radar spacing, land mine density, determinism and wires; side wall layers around a circle joined side by side. |
+| `layer_types.lua` | Turret facing (both sides, inward) and non-square footprints (other types too), ammo, lamp colours and rainbow, radar and lightning attractor spacing, land mine density, determinism and wires; side wall layers around a circle joined side by side. |
 | `paths.lua` | Belts fed only from behind and lines continuous, undergrounds paired within reach, pipe lines connected and apart, pumps; on a gentle curve, a loop and random curves. |
 | `feeds.lua` | Fluid connection targets in every facing (straight and diagonal, against the game), inserters picking from a belt and dropping into their turret (normal and long reach, straight and curved lines; railguns, which don't fill their square, by their turned collision box), smart poles counting inserters of non-square turrets by their own footprint, pipe stubs reaching one network, and a plain pipe where the line has pipes-to-ground. |
 | `rails.lua` | The rail data; fits stay near calm curves, circles close, elevated track has ramps at both ends and supports in reach of every joint, slanted ends warn; signal counts follow the spacing (doubled both ways); planning progress never goes back. |
