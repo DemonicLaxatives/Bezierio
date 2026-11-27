@@ -1,6 +1,6 @@
 # Bézierio
 
-Draw a curve, stack up layers of walls, floors, power lines, turrets, belts, pipes or rails along it, and build the lot in one go: as ghosts for your robots, as a blueprint, or straight away in the map editor.
+Draw a curve, stack up layers of walls, floors, power lines, turrets, belts, pipes or rails along it, and build it all in one go: as ghosts for your robots, as a blueprint, or straight away in the map editor.
 
 ## Escape the grid
 ![An ore bus going around a lake](images/belt-bus.png "A belt bus")
@@ -24,7 +24,7 @@ Draw a curve, stack up layers of walls, floors, power lines, turrets, belts, pip
     - walls and floor tiles, in a checkerboard if you like;
     - electric poles, wired red and green, or placed smartly so everything in the build gets power;
     - turrets facing outward or inward, with targeting priorities, and an inserter or pipe feed from a belt or pipe layer next to them;
-    - radars, solar panels, accumulators, roboports, lamps, land mines;
+    - radars, solar panels, accumulators, roboports, lightning rods, lamps, land mines;
     - belts and pipes as continuous lines, with undergrounds and pumps;
     - rails following the curve as best they can, with signals; elevated rails supported.
 - **Presets:** save layer stacks, and share them (or curves) as strings.
@@ -78,7 +78,8 @@ Some build mistakes will crop up, not everything gets a warning, so some manual 
 - Sometimes layers collide and override each other.
 - Parallel belts in the same layer can collide with one another.
 - Turrets don't always get properly fed; in most cases there should be a warning on that.
-- Not everything scales well, so bigger build jobs will still tank the UPS.
+- Not everything scales well, so bigger/complex build jobs will still tank the UPS.
+- Self intersecting curves are not handled.
 
 ## AI disclosure
 Claude opus 5.5 was heavily used in the development. If it's any consolation, the project was started in late 2023 by hand, touched here and there over the years, so there is some human written base to it all. But ultimately my ambition outgrew the scope I was able to manage in a LUA project, so I stopped working on it for over a year. That didn't end the dream of having this tool, so despite knowing how the community felt about AI work, I had to make it work.
