@@ -39,6 +39,7 @@ step("setup: belts and pipes along a bend", function(player)
   -- pipe line (a test 2x2) is refused
   check(el(player, "pump") and el(player, "pump").elem_value == "pump" and layers()[-1].pump == "pump"
     and layers()[-1].pump_length == 2, "pump picker shows the base pump, 1x2: " .. tostring(layers()[-1].pump_length))
+  check(el(player, "pump").elem_tooltip and el(player, "pump").elem_tooltip.name == "pump", "with the pump's own tooltip")
   dev("set_elem", P, "pump", "bezierio-test-wide-pump")
   check(layers()[-1].pump == "pump" and el(player, "pump").elem_value == "pump", "a 2x2 pump refused")
   check(layers()[-1].pump_spacing == 318 and el(player, "pump_spacing_slider").get_slider_maximum() == 318,

@@ -101,6 +101,9 @@ step("layer settings window: locks the main window, OK keeps, Cancel and Esc rev
   dev("click", P, "layer_settings_1")
   local frame = player.gui.screen.bezierio_layer_window
   check(frame and player.opened == frame and controller().ui.editing, "open, editing")
+  local picker = el(player, "layer_type")
+  check(picker.elem_tooltip and picker.elem_tooltip.type == "item-with-quality" and picker.elem_tooltip.name == layers()[1].placed_by
+    and (picker.tooltip == "" or picker.tooltip == nil), "the picker shows the picked item's own tooltip")
   dev("click_raw", P, "main_narrow_button")
   check(not controller().ui.narrow and player.gui.screen.bezierio_layer_window, "the main window is locked")
   check(not el(player, "preset_select").enabled and not el(player, "layer_settings_1").enabled
@@ -133,6 +136,9 @@ step("layer settings window: locks the main window, OK keeps, Cancel and Esc rev
   for k in pairs(layers()) do top = math.max(top, k) end
   dev("click", P, "add_layer_above")
   check(layers()[top + 1] and player.gui.screen.bezierio_layer_window, "a new layer opens its settings")
+  local empty = el(player, "layer_type")
+  check(empty.elem_tooltip == nil and type(empty.tooltip) == "table" and empty.tooltip[1] == "tooltip.layer-type",
+    "nothing picked yet: the picker says what it's for")
   dev("click", P, "layer_cancel")
   check(layers()[top + 1] == nil and not el(player, "layer_select_" .. (top + 1)), "Cancel removes the new layer")
 end)

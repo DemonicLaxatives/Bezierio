@@ -169,10 +169,12 @@ local function add_targets_field(flow, layer, field)
             name = field.name .. "_" .. i,
             elem_type = "entity",
             elem_filters = filters,
-            tooltip = { "tooltip." .. key },
+            -- (picked: that entity's own tooltip)
+            tooltip = not list[i] and { "tooltip." .. key } or nil,
             tags = { group = "layer", action = "set_target", field = field.name, idx = layer.idx, index = i },
         }
         picker.elem_value = list[i]
+        if list[i] then picker.elem_tooltip = { type = "entity", name = list[i] } end
     end
 end
 
@@ -195,6 +197,8 @@ local function add_item_field(flow, layer, field)
         tags = { group = "layer", action = "set_item", field = field.name, idx = layer.idx },
     }
     picker.elem_value = layer[field.name]
+    -- (the picked item's own tooltip, as the game shows it elsewhere)
+    if layer[field.name] then picker.elem_tooltip = { type = "item", name = layer[field.name] } end
 end
 
 --- @param detail LuaGuiElement
@@ -213,10 +217,13 @@ local function fill_detail(detail, layer)
         tags = { group = "layer", action = "type", idx = layer.idx },
         elem_type = "item-with-quality",
         elem_filters = unlocks.filter(detail.gui.player.force --[[@as LuaForce]], state.layer_items(), layer.placed_by),
-        tooltip = { "tooltip.layer-type" },
+        -- (picked: the item's own tooltip, as the game shows it elsewhere; the
+        -- label beside it still says what the picker is for)
+        tooltip = not layer.placed_by and { "tooltip.layer-type" } or nil,
     }
     if layer.placed_by then
         picker.elem_value = { name = layer.placed_by, quality = layer.quality or "normal" }
+        picker.elem_tooltip = { type = "item-with-quality", name = layer.placed_by, quality = layer.quality or "normal" }
     else
         header.add { type = "label", caption = { "label.no-layer-item" } }
     end
