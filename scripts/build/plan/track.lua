@@ -40,7 +40,8 @@ end
 --- @param job PlannerJob
 --- @param layer Layer
 --- @param at TrackEnd  # the joint, facing along the track
-local function place_signals(job, layer, at)
+--- @param elevated boolean  # the track is elevated (signals up there too)
+local function place_signals(job, layer, at, elevated)
     local plan = job.plan
     local placed = false
     local function put(facing)
@@ -50,13 +51,13 @@ local function place_signals(job, layer, at)
         local key = cell_key(math.floor(x), math.floor(y))
         -- (Signals on elevated track are up there too: nothing on the ground.)
         -- (Signals stand beside rails, on tiles a rail piece clips.)
-        if not layer.elevated then
+        if not elevated then
             if job.occupied[key] and job.occupied[key] ~= "rail" then return end
             job.occupied[key] = true
         end
         table.insert(plan.entities, {
             name = layer.signal_name, quality = "normal", position = { x = x, y = y }, size = 1,
-            layer = layer.idx, direction = loc.direction, rail_layer = layer.elevated and "elevated" or nil,
+            layer = layer.idx, direction = loc.direction, rail_layer = elevated and "elevated" or nil,
         })
         count_extra(plan, layer.idx, layer.signal_item)
         placed = true
@@ -74,25 +75,39 @@ end
 local function lay_track(job, band, fit)
     local plan, layer = job.plan, band.layer
     local travelled, next_signal = 0, (layer.signal_spacing or 0) * lib.WAGON
-    -- Elevated track stands on supports, built first.
-    if fit.elevated and layer.support_name then
-        for _, at in ipairs(rails.supports(fit)) do
-            for dx = -1, 0 do for dy = -1, 0 do job.occupied[cell_key(math.floor(at.x) + dx, math.floor(at.y) + dy)] = true end end
-            table.insert(plan.entities, {
-                name = layer.support_name, quality = "normal", position = { x = at.x, y = at.y }, size = 2,
-                layer = layer.idx, direction = at.direction,
-            })
-            count_extra(plan, layer.idx, layer.support_item)
-        end
-    end
+    -- Only ground-level pieces (and ramps) take up ground, claimed first so
+    -- supports keep off ramps.
     for _, piece in ipairs(fit.pieces) do
-        -- Only ground-level pieces (and ramps) take up ground.
         if not fit.elevated or piece.ground_name == "rail-ramp" then
             for _, c in ipairs(rails.cells(piece.ground_name or piece.name, piece.direction)) do
                 local key = cell_key(math.floor(piece.x + c[1]), math.floor(piece.y + c[2]))
                 job.occupied[key] = job.occupied[key] or "rail"
             end
         end
+    end
+    -- Elevated track stands on supports, built first. Each takes the tiles its
+    -- turned collision box covers (wider than the track), where nothing else
+    -- may be: another track, a ramp or an earlier support.
+    if fit.elevated and layer.support_name then
+        local function try(at)
+            local cells = rails.support_cells(at.direction)
+            for _, c in ipairs(cells) do
+                if job.occupied[cell_key(at.x + c[1], at.y + c[2])] then return false end
+            end
+            for _, c in ipairs(cells) do job.occupied[cell_key(at.x + c[1], at.y + c[2])] = true end
+            return true
+        end
+        local supports, missing = rails.supports(fit, try)
+        for _, at in ipairs(supports) do
+            table.insert(plan.entities, {
+                name = layer.support_name, quality = "normal", position = { x = at.x, y = at.y }, size = 4,
+                layer = layer.idx, direction = at.direction % 8, arrow = false,
+            })
+            count_extra(plan, layer.idx, layer.support_item)
+        end
+        for _, at in ipairs(missing) do table.insert(plan.warnings, { x = at.x, y = at.y }) end
+    end
+    for k, piece in ipairs(fit.pieces) do
         table.insert(plan.entities, {
             name = piece.name, quality = layer.quality, position = { x = piece.x, y = piece.y }, size = 2,
             layer = layer.idx, direction = piece.direction,
@@ -106,8 +121,13 @@ local function lay_track(job, band, fit)
             plan.counts[layer.idx] = (plan.counts[layer.idx] or 0) + ((layer.rail_costs or {})[piece.ground_name or piece.name] or 1)
         end
         travelled = travelled + vect.distance(piece.from, piece.goal)
-        if next_signal > 0 and layer.signal_name and travelled >= next_signal then
-            if place_signals(job, layer, piece.goal) then
+        -- (No signal at either end of a ramp: the game doesn't let a player place
+        -- one there, top or foot, even with track on both sides. Such a signal
+        -- moves on to the next joint, like one whose spot is taken.)
+        local next_piece = fit.pieces[k + 1]
+        local at_ramp = piece.ground_name == "rail-ramp" or (next_piece and next_piece.ground_name == "rail-ramp")
+        if next_signal > 0 and layer.signal_name and travelled >= next_signal and not at_ramp then
+            if place_signals(job, layer, piece.goal, fit.elevated) then
                 next_signal = travelled + layer.signal_spacing * lib.WAGON
             end
         end
@@ -134,9 +154,11 @@ local function stage_rails(job, budget)
         local band = job.bands[b]
         if not job.rail_fit then
             job.rail_line = rail_line(job, band)
+            used = used + rails.round_line(job.rail_line)
             job.rail_fit = rails.new_fit(job.rail_line, {
                 elevated = band.layer.elevated == true and band.layer.can_elevate == true,
                 ramps = band.layer.ramps ~= false and not job.closed,
+                smoothing = band.layer.smoothing,
             })
         end
         used = used + rails.step(job.rail_fit, job.rail_line, job.closed)

@@ -141,6 +141,52 @@ step("blueprint stamps rails onto the plan", function(player)
   player.clear_cursor()
 end)
 
+-- Blueprints of track keep to the 2x2 rail grid wherever the build is: the
+-- game rounds an odd grid size up (the blueprint would no longer snap onto the
+-- preview), and its blueprint window refuses an odd grid position. The curve
+-- moved a tile at a time, so the build's corner falls on odd tiles too.
+local BEND = { { x = -50.5, y = 20.5 }, { x = 0.5, y = 10.5 }, { x = 40.5, y = -40.5 } }
+local function set_curve(points, dx, dy)
+  dev("click", P, "control_points_clear")
+  dev("click", P, "pointer_button")
+  for _, p in ipairs(points) do dev("pointer", P, { x = p.x + dx, y = p.y + dy }) end
+  dev("click", P, "pointer_button")
+end
+for _, shift in ipairs({ { 1, 0 }, { 0, 1 }, { 1, 1 } }) do
+  local name = "moved " .. shift[1] .. "," .. shift[2]
+  step("blueprint of the track, " .. name, function(player)
+    for _, e in pairs(player.surface.find_entities_filtered { area = { { -90, -90 }, { 90, 90 } } }) do
+      if e.type ~= "character" then e.destroy() end
+    end
+    set_curve(BEND, shift[1], shift[2])
+    dev("click", P, "blueprint_build")
+  end, "idle")
+  step("... on the rail grid, and stamps the track onto the plan, " .. name, function(player)
+    local s, stack = player.surface, player.cursor_stack
+    check(stack.valid_for_read and stack.is_blueprint, "blueprint in cursor")
+    local grid, rel = stack.blueprint_snap_to_grid, stack.blueprint_position_relative_to_grid
+    check(grid and rel and grid.x % 2 == 0 and grid.y % 2 == 0 and rel.x % 2 == 0 and rel.y % 2 == 0,
+      string.format("grid %s,%s at %s,%s: all even", grid and grid.x, grid and grid.y, rel and rel.x, rel and rel.y))
+    local plan = dev("plan", P)
+    local first
+    for _, e in pairs(plan.entities) do if e.track then first = first or e end end
+    stack.build_blueprint { surface = s, force = player.force, position = first.position, build_mode = defines.build_mode.forced }
+    local missing, total = 0, 0
+    for _, e in pairs(plan.entities) do
+      if e.track or e.name == "stone-wall" then
+        total = total + 1
+        if not s.find_entities_filtered { ghost_name = e.name, position = e.position, limit = 1 }[1] then missing = missing + 1 end
+      end
+    end
+    check(missing == 0, "track and walls stamped on the planned spots: missing " .. missing .. "/" .. total)
+    player.clear_cursor()
+    for _, e in pairs(s.find_entities_filtered { area = { { -90, -90 }, { 90, 90 } } }) do
+      if e.type ~= "character" then e.destroy() end
+    end
+    set_curve(BEND, 0, 0)
+  end)
+end
+
 -- Elevated rails (elevated-rails mod): supports and ramps, built in that order.
 local ELEVATED = { "elevated-straight-rail", "elevated-half-diagonal-rail", "elevated-curved-rail-a", "elevated-curved-rail-b" }
 
@@ -149,6 +195,44 @@ local function clear_all(s)
     if e.type ~= "character" then e.destroy() end
   end
 end
+
+-- Smoothing: longer straights and steadier bends, still one continuous track.
+step("smoothing: a smoother track", function(player)
+  clear_all(player.surface)
+  local function bends(plan)
+    local n, prev = 0, nil
+    for _, e in ipairs(plan.entities) do
+      if e.track then
+        local bend = e.name:find("curved") and "c" or "s"
+        if prev and bend ~= prev then n = n + 1 end
+        prev = bend
+      end
+    end
+    return n
+  end
+  check(layers()[0].smoothing == 2, "smoothing 2 by default")
+  dev("set_value", P, "smoothing_slider", 0)
+  local tight = bends(dev("plan", P))
+  dev("set_value", P, "smoothing_slider", 6)
+  check(layers()[0].smoothing == 6, "smoothing set")
+  local plan = dev("plan", P)
+  local rails = 0
+  for _, e in pairs(plan.entities) do if e.track then rails = rails + 1 end end
+  check(bends(plan) < tight, "fewer changes between bending and straight: " .. bends(plan) .. " vs " .. tight)
+  check(#plan.warnings == 0, "no warnings: " .. #plan.warnings)
+  storage.smooth_rails = rails
+  player.cheat_mode = true
+  dev("click", P, "build")
+end, "idle")
+
+step("smoothing: built, one continuous track", function(player)
+  local s = player.surface
+  check(s.count_entities_filtered { name = RAILS } == storage.smooth_rails, "all rails built: " .. s.count_entities_filtered { name = RAILS } .. "/" .. storage.smooth_rails)
+  check(loose_ends(s) == 2, "one continuous track (two loose ends): " .. loose_ends(s))
+  player.cheat_mode = false
+  dev("set_value", P, "smoothing_slider", 2)
+  clear_all(s)
+end)
 
 step("elevated: plan", function(player)
   if not prototypes.entity["elevated-straight-rail"] then
@@ -160,16 +244,88 @@ step("elevated: plan", function(player)
   check(el(player, "elevated"), "elevated option offered")
   dev("set_checked", P, "elevated", true)
   check(el(player, "ramps") and el(player, "ramps").state, "ramps on")
+  -- the walls right beside the band: supports and ramps are wider than the track
+  for _, idx in ipairs({ -1, 1 }) do
+    dev("click", P, "layer_settings_" .. idx)
+    dev("set_value", P, "offset_slider", 0)
+  end
+  dev("click", P, "layer_select_0")
   local plan = dev("plan", P)
-  local n = { rails = 0, supports = 0, ramps = 0, signals = 0 }
+  local n = { rails = 0, supports = 0, ramps = 0, signals = 0, walls = 0 }
   for _, e in pairs(plan.entities) do
     if e.track and e.name ~= "rail-ramp" then n.rails = n.rails + 1 end
     if e.name == "rail-ramp" then n.ramps = n.ramps + 1 end
-    if e.name == "rail-support" then n.supports = n.supports + 1 end
+    if e.name == "rail-support" then
+      n.supports = n.supports + 1
+      check(e.arrow == false, "a support is previewed without an arrow")
+    end
     if e.name == "rail-signal" then n.signals = n.signals + 1 end
+    if e.name == "stone-wall" then n.walls = n.walls + 1 end
   end
-  check(n.rails > 20 and n.supports >= 5 and n.ramps >= 1, string.format("elevated track: %d rails, %d supports, %d ramps", n.rails, n.supports, n.ramps))
+  check(n.rails > 20 and n.supports >= 5 and n.ramps >= 1 and n.walls > 50,
+    string.format("elevated track: %d rails, %d supports, %d ramps, %d walls", n.rails, n.supports, n.ramps, n.walls))
   storage.elevated = n
+end)
+
+--- Every planned elevated piece is carried by the planned supports and ramps: on
+--- a clear stretch of `s` with only those, each piece passes the check a
+--- player's build gets (a script or ghost placement doesn't check supports). A
+--- support carries track joined to it, so pieces are placed over and over, those
+--- that pass each time, until no more do. Returns how many never do, and how
+--- many planned signals a player couldn't place on that track.
+local function unsupported(s, plan, force)
+  clear_all(s)
+  local pieces = {}
+  for _, e in ipairs(plan.entities) do
+    if e.name == "rail-support" or e.name == "rail-ramp" then
+      s.create_entity { name = e.name, position = e.position, direction = e.direction, force = force }
+    elseif e.track then
+      pieces[#pieces + 1] = e
+    end
+  end
+  local progress = true
+  while progress do
+    progress = false
+    local left = {}
+    for _, e in ipairs(pieces) do
+      if s.can_place_entity { name = e.name, position = e.position, direction = e.direction, force = force,
+            build_check_type = defines.build_check_type.manual } then
+        s.create_entity { name = e.name, position = e.position, direction = e.direction, force = force }
+        progress = true
+      else
+        left[#left + 1] = e
+      end
+    end
+    pieces = left
+  end
+  -- and the signals, where a player could place them on that track
+  local signals = 0
+  for _, e in ipairs(plan.entities) do
+    if e.name == "rail-signal" and not s.can_place_entity { name = e.name, position = e.position, direction = e.direction, force = force,
+          rail_layer = e.rail_layer and defines.rail_layer[e.rail_layer] or nil, build_check_type = defines.build_check_type.manual } then
+      signals = signals + 1
+    end
+  end
+  clear_all(s)
+  return #pieces, signals
+end
+
+step("elevated: every piece carried by the supports, which are as few as that allows", function(player)
+  if not storage.elevated then return end
+  local plan = dev("plan", P)
+  local bad, signals = unsupported(player.surface, plan, player.force)
+  check(bad == 0, "elevated pieces out of the supports' reach: " .. bad)
+  check(signals == 0, "signals a player couldn't place there (at a ramp's end): " .. signals)
+  -- (a support carries 10 tiles either way: about one per 20 tiles of track,
+  -- less the 8 tiles past each ramp top)
+  local length = 0
+  for _, e in ipairs(plan.entities) do
+    if e.track and e.name ~= "rail-ramp" then
+      length = length + math.sqrt((e.track.to.x - e.track.from.x) ^ 2 + (e.track.to.y - e.track.from.y) ^ 2)
+    end
+  end
+  check(storage.elevated.supports <= math.ceil(length / 20) + 2,
+    string.format("supports: %d for %.0f tiles of elevated track", storage.elevated.supports, length))
   player.cheat_mode = true
   dev("click", P, "build")
 end, "idle")
@@ -179,11 +335,19 @@ step("elevated: built on its supports", function(player)
   local s = player.surface
   local n = storage.elevated
   check(s.count_entities_filtered { name = ELEVATED } == n.rails, "elevated rails built: " .. s.count_entities_filtered { name = ELEVATED } .. "/" .. n.rails)
-  check(s.count_entities_filtered { name = "rail-support" } == n.supports, "supports built")
+  check(s.count_entities_filtered { name = "rail-support" } == n.supports, "supports built: " .. s.count_entities_filtered { name = "rail-support" } .. "/" .. n.supports)
+  check(s.count_entities_filtered { name = "stone-wall" } == n.walls, "walls built right beside them: " .. s.count_entities_filtered { name = "stone-wall" } .. "/" .. n.walls)
   check(s.count_entities_filtered { name = "rail-ramp" } == n.ramps, "ramps built: " .. s.count_entities_filtered { name = "rail-ramp" } .. "/" .. n.ramps)
   local signals = s.find_entities_filtered { name = "rail-signal" }
   check(#signals == n.signals, "signals built: " .. #signals .. "/" .. n.signals)
-  for _, sig in pairs(signals) do check(sig.rail_layer == defines.rail_layer.elevated, "signal on the elevated track") end
+  -- every signal joined to the track: elevated, or on the ground at a ramp's foot
+  for _, sig in pairs(signals) do
+    local joined = sig.get_connected_rails()
+    check(#joined > 0, "signal at " .. sig.position.x .. "," .. sig.position.y .. " joined to the track")
+    if sig.rail_layer ~= defines.rail_layer.elevated then
+      check(joined[1] and joined[1].name == "rail-ramp", "a signal on the ground only at a ramp's foot")
+    end
+  end
   local all = {}
   for _, name in ipairs(ELEVATED) do all[#all + 1] = name end
   for _, name in ipairs(RAILS) do all[#all + 1] = name end
@@ -211,6 +375,50 @@ step("elevated: ghosts", function(player)
   for _, name in ipairs(ELEVATED) do ghosts = ghosts + #s.find_entities_filtered { ghost_name = name } end
   check(ghosts == storage.elevated.rails, "elevated rail ghosts: " .. ghosts .. "/" .. storage.elevated.rails)
   check(#s.find_entities_filtered { ghost_name = "rail-support" } == storage.elevated.supports, "support ghosts")
+  check(#s.find_entities_filtered { ghost_name = "rail-ramp" } == storage.elevated.ramps, "ramp ghosts")
+  check(#s.find_entities_filtered { ghost_name = "stone-wall" } == storage.elevated.walls, "wall ghosts: " .. #s.find_entities_filtered { ghost_name = "stone-wall" } .. "/" .. storage.elevated.walls)
+  dev("set_checked", P, "elevated", false)
+  for _, idx in ipairs({ -1, 1 }) do
+    dev("click", P, "layer_settings_" .. idx)
+    dev("set_value", P, "offset_slider", 2)
+  end
+  dev("click", P, "layer_select_0")
+end)
+
+-- A straight and a diagonal stretch of elevated track: supports as far apart as
+-- the game lets them carry the track (20 tiles straight): it carries all of it,
+-- and wouldn't without any one of them.
+step("elevated: supports 20 tiles apart on a straight, carrying it all", function(player)
+  if not storage.elevated then return end
+  for _, case in ipairs({ { name = "straight", to = { x = 80.5, y = 0.5 }, from = { x = -80.5, y = 0.5 }, most = 7 },
+                          { name = "diagonal", from = { x = -60.5, y = 60.5 }, to = { x = 60.5, y = -60.5 }, most = 11 } }) do
+    dev("click", P, "control_points_clear")
+    dev("click", P, "pointer_button")
+    dev("pointer", P, case.from)
+    dev("pointer", P, case.to)
+    dev("click", P, "pointer_button")
+    dev("click", P, "layer_settings_0")
+    dev("set_checked", P, "elevated", true)
+    dev("set_checked", P, "ramps", case.name == "straight")
+    dev("click", P, "layer_select_0")
+    local plan = dev("plan", P)
+    local supports = 0
+    for _, e in ipairs(plan.entities) do if e.name == "rail-support" then supports = supports + 1 end end
+    local bad = unsupported(player.surface, plan, player.force)
+    check(bad == 0, case.name .. ": elevated pieces out of the supports' reach: " .. bad)
+    check(supports >= 3 and supports <= case.most, case.name .. ": " .. supports .. " supports")
+    -- none of them is needless: without any one, some piece isn't carried
+    local needless = 0
+    for k, e in ipairs(plan.entities) do
+      if e.name == "rail-support" then
+        local without = { entities = {} }
+        for m, f in ipairs(plan.entities) do if m ~= k then without.entities[#without.entities + 1] = f end end
+        if unsupported(player.surface, without, player.force) == 0 then needless = needless + 1 end
+      end
+    end
+    check(needless == 0, case.name .. ": supports that could go: " .. needless)
+  end
+  dev("set_checked", P, "ramps", true)
   dev("set_checked", P, "elevated", false)
 end)
 

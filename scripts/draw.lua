@@ -417,7 +417,7 @@ local function step_preview(player, view, progress, plan, hidden, budget)
                 progress.preview_entities = j
                 used = used + (j - i + 1) * lib.COST.cell
                 if hidden[entity.layer] then goto continue end
-                if entity.direction then
+                if entity.direction and entity.arrow ~= false then
                     local a, b = plan.entities[i].position, plan.entities[j].position
                     arrow = { center = { x = (a.x + b.x) / 2, y = (a.y + b.y) / 2 }, direction = entity.direction, scale = 1 }
                 end
@@ -441,7 +441,7 @@ local function step_preview(player, view, progress, plan, hidden, budget)
                 rect.left_top = vect.sub(entity.position, { x = hw, y = hh })
                 rect.right_bottom = vect.add(entity.position, { x = hw, y = hh })
                 progress.preview_entities = i
-                if entity.direction then
+                if entity.direction and entity.arrow ~= false then
                     arrow = { center = entity.position, direction = entity.direction, scale = math.min(entity.w or entity.size, entity.h or entity.size) }
                 end
             end

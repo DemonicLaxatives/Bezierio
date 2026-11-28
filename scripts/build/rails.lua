@@ -16,6 +16,8 @@ local lib = {}
 lib.DEPTH = 4
 --- Weight of a direction error (radians squared) against a distance error (tiles squared).
 lib.ANGLE_WEIGHT = 3
+--- Pieces looked ahead while the track is off the line, to find the way back.
+lib.RECOVER_DEPTH = 6
 --- Pieces laid without getting further along the line before giving up.
 lib.STALL = 15
 
@@ -110,6 +112,105 @@ end
 --- @field ty number[]
 --- @field n integer
 
+--- Tightest bend rails make (1 / tiles of radius): a curved piece turns 22.5°
+--- over about 5.1 tiles, and only another one can follow it to keep turning.
+lib.MAX_CURVATURE = (math.pi / 8) / 5.1
+--- Half the stretch of line (tiles, each way) a bend is measured over.
+lib.BEND_SPAN = 3
+--- Widest averaging window tried (points each way).
+lib.ROUND_WINDOW = 64
+
+--- Round the line where it bends tighter than rails can turn (the middle of a
+--- band on the inside of a bend tighter than the band's distance from the
+--- curve: nearly a corner). The track can't follow such a corner: it overshoots
+--- it, onto the layers on the other side, and swings back. Rounded, it starts
+--- turning before the corner and cuts inside it instead. Each stretch where the
+--- line bends too tightly (measured over BEND_SPAN tiles each way) and around it
+--- is replaced by its average over a window of points (twice: a smooth blend),
+--- the window doubled until the rails can follow; the rest of the line is left
+--- as it is.
+--- @param line RailLine
+--- @return integer used  # work done (points averaged), for budgeting
+function lib.round_line(line)
+    local xs, ys, n = line.xs, line.ys, line.n
+    if n < 5 then return 0 end
+    local limit = lib.MAX_CURVATURE * 1.05
+    local used = 0
+    --- The point BEND_SPAN tiles of line before (step -1) or after (1) point i.
+    local function reach(px, py, i, step)
+        local j, run = i, 0
+        while run < lib.BEND_SPAN do
+            local k = j + step
+            if k < 1 or k > n then break end
+            run = run + math.sqrt((px[k] - px[j]) ^ 2 + (py[k] - py[j]) ^ 2)
+            j = k
+        end
+        return j, run
+    end
+    local function too_tight(px, py, i)
+        local a, ra = reach(px, py, i, -1)
+        local b, rb = reach(px, py, i, 1)
+        if ra < lib.BEND_SPAN or rb < lib.BEND_SPAN then return false end -- (near an end)
+        local ux, uy = px[i] - px[a], py[i] - py[a]
+        local vx, vy = px[b] - px[i], py[b] - py[i]
+        local lu, lv = math.sqrt(ux * ux + uy * uy), math.sqrt(vx * vx + vy * vy)
+        if lu < 1e-6 or lv < 1e-6 then return true end -- (doubles back on itself)
+        local turn = math.acos(math.max(-1, math.min(1, (ux * vx + uy * vy) / (lu * lv))))
+        return turn / ((ra + rb) / 2) > limit
+    end
+    -- The stretches too tight: runs of such points, merged when close.
+    local stretches = {}
+    for i = 2, n - 1 do
+        used = used + 1
+        if too_tight(xs, ys, i) then
+            local last = stretches[#stretches]
+            if last and i - last[2] <= 4 then last[2] = i else stretches[#stretches + 1] = { i, i } end
+        end
+    end
+    if #stretches == 0 then return used end
+    --- `px, py` averaged over `r` points each way, for points lo..hi (fewer near
+    --- the ends, keeping them in place).
+    local function average(px, py, r, lo, hi)
+        local ox, oy = {}, {}
+        for i = 1, n do ox[i], oy[i] = px[i], py[i] end
+        for i = lo, hi do
+            local w = math.min(r, i - 1, n - i)
+            local sx, sy = 0, 0
+            for k = i - w, i + w do sx, sy = sx + px[k], sy + py[k] end
+            ox[i], oy[i] = sx / (2 * w + 1), sy / (2 * w + 1)
+            used = used + 2 * w + 1
+        end
+        return ox, oy
+    end
+    local touched_lo, touched_hi = n, 1
+    for _, st in ipairs(stretches) do
+        local r = 2
+        while true do
+            local lo, hi = math.max(2, st[1] - 2 * r), math.min(n - 1, st[2] + 2 * r)
+            local ax, ay = average(xs, ys, r, lo, hi)
+            ax, ay = average(ax, ay, r, lo, hi)
+            local ok = true
+            for i = math.max(2, lo - 4), math.min(n - 1, hi + 4) do
+                if too_tight(ax, ay, i) then ok = false break end
+            end
+            if ok or r >= lib.ROUND_WINDOW then
+                for i = lo, hi do xs[i], ys[i] = ax[i], ay[i] end
+                touched_lo, touched_hi = math.min(touched_lo, lo), math.max(touched_hi, hi)
+                break
+            end
+            r = r * 2
+        end
+    end
+    -- The tangents where points moved, from their neighbours.
+    for i = math.max(1, touched_lo - 1), math.min(n, touched_hi + 1) do
+        local a, b = math.max(1, i - 1), math.min(n, i + 1)
+        local dx, dy = xs[b] - xs[a], ys[b] - ys[a]
+        local len = math.sqrt(dx * dx + dy * dy)
+        if len > 1e-9 then line.tx[i], line.ty[i] = dx / len, dy / len end
+    end
+    return used
+end
+
 --- Nearest line point to (x, y), searching around `hint` (the fit moves forward).
 --- @param line RailLine
 --- @return integer index, number distance
@@ -142,19 +243,52 @@ local function angle_error(line, i, d)
     return math.acos(math.max(-1, math.min(1, dot)))
 end
 
+--- Which way a piece turns: 0 straight on, 1 right, -1 left.
+local function turn_of(from_direction, ext)
+    local t = (ext.goal.direction - from_direction) % 16
+    return t == 0 and 0 or (t == 1 and 1 or -1)
+end
+
+--- @class RailSmoothing
+--- @field slack number   # tiles the track may stray from the line at no cost
+--- @field switch number  # cost of a piece turning another way than the one before
+
+--- The rail layer's Smoothing (0..6) as fit settings; nil for 0, the tightest fit.
+--- Each level lets the track stray another half tile from the line freely, and
+--- makes changing between turning and going straight cost more (up to level 4),
+--- so it keeps to longer straights and steadier bends. Tuned on random calm
+--- curves: level 6 changes its turning about a third as often as level 0 and
+--- strays about 2 tiles on average (0.4 at level 0); beyond that it no longer
+--- gets smoother.
+--- @param level number|nil
+--- @return RailSmoothing|nil
+function lib.smoothing(level)
+    if not level or level <= 0 then return nil end
+    return { slack = level * 0.5, switch = math.min(3, level * 0.75) }
+end
+
 --- Cost of following `depth` pieces from `loc` (best over all sequences), and the
---- first piece of the best sequence.
+--- first piece of the best sequence. `turn` is the way the piece before turned.
+--- @param smooth RailSmoothing|nil
 --- @return number cost, table|nil first, integer hint
-local function search(line, loc, hint, depth)
+local function search(line, loc, hint, depth, turn, smooth)
     if depth == 0 then return 0, nil, hint end
     local best_cost, best_first, best_hint = math.huge, nil, hint
     for _, ext in ipairs(extensions(loc.direction)) do
         local goal = { x = loc.x + ext.goal.x, y = loc.y + ext.goal.y, direction = ext.goal.direction }
         local i, dist = nearest(line, goal.x, goal.y, hint)
-        local cost = dist * dist + lib.ANGLE_WEIGHT * angle_error(line, i, goal.direction) ^ 2
+        local t = turn_of(loc.direction, ext)
+        local cost
+        if smooth then
+            local d = math.max(0, dist - smooth.slack)
+            cost = d * d + lib.ANGLE_WEIGHT * angle_error(line, i, goal.direction) ^ 2
+            if t ~= turn then cost = cost + smooth.switch end
+        else
+            cost = dist * dist + lib.ANGLE_WEIGHT * angle_error(line, i, goal.direction) ^ 2
+        end
         if i < hint - 2 then cost = cost + 20 end -- going back along the line
         if cost < best_cost then
-            local rest = search(line, goal, i, depth - 1)
+            local rest = search(line, goal, i, depth - 1, t, smooth)
             cost = cost + rest
             if cost < best_cost then best_cost, best_first, best_hint = cost, ext, i end
         end
@@ -175,15 +309,19 @@ end
 --- @field closed boolean|nil     # a loop that got back to its start
 --- @field stalled boolean|nil    # stopped getting along the line
 --- @field progress_at integer|nil  # pieces when it last got further along
+--- @field smooth RailSmoothing|nil  # nil: the tightest fit
+--- @field turn integer|nil       # the way the last piece turned (0 straight on, 1 right, -1 left)
+--- @field tolerance number       # ends further than this from the line are reported
 
 --- @param line RailLine
---- @param opts {elevated: boolean|nil, ramps: boolean|nil}|nil
+--- @param opts {elevated: boolean|nil, ramps: boolean|nil, smoothing: number|nil}|nil
 ---   elevated: elevated rails (needing supports); ramps: a ramp up at the start and
 ---   down at the end (they only go straight: the start is turned to the nearest
----   straight direction)
+---   straight direction); smoothing: the layer's Smoothing (`lib.smoothing`)
 --- @return RailFit
 function lib.new_fit(line, opts)
     opts = opts or {}
+    local smooth = lib.smoothing(opts.smoothing)
     local tx, ty = line.tx[1], line.ty[1]
     local ramps = opts.elevated and opts.ramps and data.ramps and next(data.ramps.up) ~= nil
     if ramps then
@@ -192,7 +330,9 @@ function lib.new_fit(line, opts)
     end
     local start = lib.start({ x = line.xs[1], y = line.ys[1] }, tx, ty)
     local fit = { loc = start, start = start, hint = 1, pieces = {}, off = {}, done = line.n < 2,
-        elevated = opts.elevated == true, ramps = ramps }
+        elevated = opts.elevated == true, ramps = ramps, smooth = smooth,
+        -- (smoother track strays further on purpose: warned only well beyond that)
+        tolerance = lib.TOLERANCE + 1.5 * (smooth and smooth.slack or 0) }
     if ramps and not fit.done then
         local up = data.ramps.up[start.direction]
         if up then lib.lay(fit, line, up) end
@@ -297,7 +437,13 @@ function lib.step(fit, line, closed)
         fit.done = true
         return 1
     end
-    local _, first = search(line, loc, fit.hint, lib.DEPTH)
+    -- Off the line (past a corner tighter than rails turn), look further ahead:
+    -- over DEPTH pieces every way back first leads further away, so the track
+    -- would run on straight, far from the line.
+    local depth = lib.DEPTH
+    local _, away = nearest(line, loc.x, loc.y, fit.hint)
+    if away > (fit.tolerance or lib.TOLERANCE) then depth = lib.RECOVER_DEPTH end
+    local _, first = search(line, loc, fit.hint, depth, fit.turn or 0, fit.smooth)
     if not first then
         fit.done = true
         return 1
@@ -314,7 +460,7 @@ function lib.step(fit, line, closed)
     local before = fit.hint
     lib.lay(fit, line, first)
     if fit.hint > before then fit.progress_at = #fit.pieces end
-    return 3 ^ lib.DEPTH
+    return 3 ^ depth
 end
 
 --- Add a piece at the current end; an end further than `tolerance` (default
@@ -329,41 +475,145 @@ function lib.lay(fit, line, ext, tolerance)
         from = { x = loc.x, y = loc.y, direction = loc.direction }, goal = goal,
     }
     local i, dist = nearest(line, goal.x, goal.y, fit.hint)
-    if dist > (tolerance or lib.TOLERANCE) then fit.off[#fit.off + 1] = goal end
+    if dist > (tolerance or fit.tolerance or lib.TOLERANCE) then fit.off[#fit.off + 1] = goal end
     fit.hint = math.max(fit.hint, i)
+    fit.turn = turn_of(loc.direction, ext)
     fit.loc = goal
 end
 
---- Where elevated track needs supports: at joints, each where the track would
---- otherwise run out of reach of the last support (or of a ramp's top).
+--- The tiles a rail support facing `direction` covers, relative to its position
+--- (a rail end, always on a tile corner). Measured in the game (rail-data
+--- scenario): its collision box turns with its 8 directions (d and d + 8 are the
+--- same support), so it covers a 4x4 square, or one with its corners cut when
+--- facing diagonally. Without the data, the whole square.
+--- @param direction integer
+--- @return integer[][]
+function lib.support_cells(direction)
+    local cells = data.support and data.support.cells and data.support.cells[direction % 8]
+    if cells then return cells end
+    local out = {}
+    for dx = -2, 1 do for dy = -2, 1 do out[#out + 1] = { dx, dy } end end
+    return out
+end
+
+--- How wide (tiles) a support or a ramp is at most, in either axis: the band an
+--- elevated rail layer takes, so the layers beside it keep clear of them.
+--- @return integer
+local elevated_width -- (from the data: worked out once)
+function lib.elevated_width()
+    if elevated_width then return elevated_width end
+    local width = 0
+    local function measure(cells)
+        local x0, x1, y0, y1 = math.huge, -math.huge, math.huge, -math.huge
+        for _, c in ipairs(cells) do
+            x0, x1 = math.min(x0, c[1]), math.max(x1, c[1])
+            y0, y1 = math.min(y0, c[2]), math.max(y1, c[2])
+        end
+        if x1 >= x0 then
+            -- (a ramp is long one way: only its width across the track counts)
+            width = math.max(width, math.min(x1 - x0 + 1, y1 - y0 + 1))
+        end
+    end
+    for d = 0, 7 do measure(lib.support_cells(d)) end
+    for d = 0, 12, 4 do measure(lib.cells("rail-ramp", d)) end
+    elevated_width = width
+    return width
+end
+
+local function dist(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) end
+
+--- Where elevated track needs supports. Measured in the game: a piece is carried
+--- when both its ends are within `range - 1` of one support (10 tiles), or within
+--- `ramp_range - 1` of a ramp's top (8), and two supports 20 apart carry all the
+--- straight track between them; a piece with each end reached by another support
+--- isn't carried. Supports stand at joints (not at a ramp's top or foot).
+--- Greedily as far apart as that allows: at the first piece not carried, the
+--- support goes at the furthest joint ahead that carries it and every piece
+--- between. Where a support doesn't fit there (`try` says no: something else
+--- stands in its tiles), the next nearer joint is tried, then earlier ones that
+--- still carry the piece, nearest first. A piece nothing can carry has its far
+--- end returned in `missing`.
 --- @param fit RailFit
---- @return TrackEnd[]
-function lib.supports(fit)
+--- @param try (fun(at: TrackEnd): boolean)|nil  # place a support at `at` if it fits (default: it always does)
+--- @return TrackEnd[] supports, TrackEnd[] missing
+function lib.supports(fit, try)
+    try = try or function() return true end
     local range = (data.support and data.support.range or 11) - 1
     local ramp_range = (data.support and data.support.ramp_range or 9) - 1
-    local out = {}
-    local last, reach = nil, 0
-    for k, piece in ipairs(fit.pieces) do
-        if piece.ground_name == "rail-ramp" then
-            -- a ramp carries the track a little past its top
+    local pieces = fit.pieces
+    local n = #pieces
+    if n == 0 then return {}, {} end
+    -- joints[k]: the end between pieces k and k + 1 (0: the start); spot = a
+    -- support may stand there
+    local joints = {}
+    for k = 0, n do joints[k] = { at = k == 0 and pieces[1].from or pieces[k].goal, spot = true } end
+    if fit.closed then joints[n].spot = false end -- (a loop's last end is its first)
+    local is_ramp, top_of = {}, {}
+    for k, p in ipairs(pieces) do
+        if p.ground_name == "rail-ramp" then
+            is_ramp[k] = true
             -- going up the ramp faces the way it climbs (its top is the goal);
             -- going down it faces back (its top is where it starts)
-            local top = piece.goal.direction == piece.direction and piece.goal or piece.from
-            last, reach = top, ramp_range
-        else
-            if not last then
-                out[#out + 1] = piece.from
-                last, reach = piece.from, range
+            local up = p.goal.direction == p.direction
+            top_of[k] = up and k or k - 1
+            joints[k - 1].spot, joints[k].spot = false, false
+        end
+    end
+    --- Joint `m` (or a ramp's top at joint m) carries piece q.
+    local function carries(m, q, reach)
+        return dist(joints[m].at, joints[q - 1].at) <= reach and dist(joints[m].at, joints[q].at) <= reach
+    end
+    -- the next ramp's top (a ramp down) from each piece on
+    local next_top = {}
+    local top
+    for k = n, 1, -1 do
+        if is_ramp[k] then top = top_of[k] end
+        next_top[k] = top
+    end
+    local out, missing = {}, {}
+    local last, reach, first = nil, 0, nil -- the last support's (or ramp top's) joint and how far it carries
+    for k = 1, n do
+        if is_ramp[k] then
+            if top_of[k] == k then last, reach = k, ramp_range end
+        elseif not ((last and carries(last, k, reach))
+                or (next_top[k] and carries(next_top[k], k, ramp_range))
+                or (fit.closed and first and carries(first, k, range))) then
+            -- the joints ahead that carry this piece and all up to them, furthest
+            -- first; then earlier ones that carry it, nearest first
+            local order = {}
+            local stop = k - 1
+            for m = k, n do
+                if is_ramp[m] or not carries(m, k, range) then break end
+                stop = m
             end
-            local g = piece.goal
-            local nxt = fit.pieces[k + 1]
-            if not (nxt and nxt.ground_name == "rail-ramp") and math.sqrt((g.x - last.x) ^ 2 + (g.y - last.y) ^ 2) > reach then
-                out[#out + 1] = g
-                last, reach = g, range
+            for m = stop, k - 1, -1 do
+                local all = joints[m].spot
+                for q = k, m do
+                    if all and not carries(m, q, range) then all = false end
+                end
+                if all then order[#order + 1] = m end
+            end
+            for m = k - 2, (last or -1) + 1, -1 do
+                if joints[m].spot and carries(m, k, range) then order[#order + 1] = m end
+            end
+            local found
+            for _, m in ipairs(order) do
+                if try(joints[m].at) then
+                    found = m
+                    break
+                end
+            end
+            if found then
+                out[#out + 1] = joints[found].at
+                first = first or found
+                last, reach = found, range
+            else
+                missing[#missing + 1] = joints[k].at
+                last, reach = k, range -- (carry on as if it had one)
             end
         end
     end
-    return out
+    return out, missing
 end
 
 --- Pieces looked ahead when closing a loop.

@@ -324,12 +324,15 @@ function lib.refresh(layer, prototype)
     return true
 end
 
---- Keep a layer's settings within what its fields allow now: numbers clamped,
---- items and priority targets that are gone (or no longer fit) dropped.
+--- Keep a layer's settings within what its fields allow now: numbers clamped
+--- (a missing one set to its default), items and priority targets that are gone
+--- (or no longer fit) dropped.
 --- @param layer Layer
 function lib.check_fields(layer)
     for _, field in ipairs(lib.type_of(layer).fields) do
         local value = layer[field.name]
+        -- (a slider added after the layer was made: its default)
+        if value == nil and field.widget == "slider" then value = resolve(layer, field, "default") end
         if type(value) == "number" then
             local min, max = resolve(layer, field, "min"), resolve(layer, field, "max")
             if min then value = math.max(min, value) end

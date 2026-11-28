@@ -130,6 +130,32 @@ script.on_event(defines.events.on_tick, function(e)
     end
     local support = prototypes.entity["rail-support"]
     data.support = { name = "rail-support", range = support and support.support_range, ramp_range = prototypes.entity["rail-ramp"].support_range }
+    -- The tiles a support covers, by direction, relative to its position (a rail
+    -- end, always a whole tile corner): where the probe, a wall filling almost
+    -- its tile, can't go next to it. The collision box turns with the support's
+    -- direction, so this isn't the 2x2 square of the rails. A support has 8
+    -- directions: one placed facing d + 8 faces d.
+    if support and prototypes.entity["bezierio-test-probe"] then
+      data.support.cells = {}
+      for d = 0, 15 do
+        local spot = fresh_spot()
+        local placed = s.create_entity { name = "rail-support", position = spot, direction = d, force = force }
+        if not placed or placed.position.x ~= spot.x or placed.position.y ~= spot.y or placed.direction ~= d % 8 then
+          log("RAILDATA-SUPPORT not placed as asked: " .. d .. " (" .. (placed and placed.direction or "none") .. ")")
+        elseif d < 8 then
+          local out = {}
+          for x = spot.x - 4, spot.x + 3 do
+            for y = spot.y - 4, spot.y + 3 do
+              if not s.can_place_entity { name = "bezierio-test-probe", position = { x + 0.5, y + 0.5 }, force = force } then
+                out[#out + 1] = { x - spot.x, y - spot.y }
+              end
+            end
+          end
+          data.support.cells[d] = out
+          log("RAILDATA-SUPPORT " .. d .. ": " .. #out .. " tiles")
+        end
+      end
+    end
   end
   -- Cover: the tiles a piece needs under it on water (landfill), relative to its
   -- position. On water with landfill under the piece's box, give each cell back to

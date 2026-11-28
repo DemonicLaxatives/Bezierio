@@ -1,4 +1,5 @@
 local common = require("scripts.layers.common")
+local rails = require("scripts.build.rails")
 
 --- Rails: track fitted to the middle of the band from the game's rail pieces
 --- (build/rails.lua), with signals every so many wagons on the side trains travel
@@ -20,6 +21,10 @@ return {
             },
         },
         { name = "signal_spacing", widget = "slider", min = 0, max = 20, default = 0 },
+        -- 0: as close to the curve as rails go; higher: longer straights and
+        -- steadier bends, straying further (build/rails.lua, `smoothing`); 2
+        -- calms the back and forth of the tightest fit, staying close
+        { name = "smoothing", widget = "slider", min = 0, max = 6, default = 2 },
         {
             name = "wall_gates", widget = "checkbox", default = true,
             visible_if = function(layer) return layer.gate_name ~= nil end,
@@ -33,6 +38,14 @@ return {
             visible_if = function(layer) return layer.can_elevate == true and layer.elevated == true end,
         },
     },
+    --- Ground track is as wide as its rails (the footprint size). Elevated track
+    --- stands on supports and ramps twice as wide: its band makes room for them,
+    --- so the layers beside it don't run into them.
+    --- @param layer Layer
+    thickness = function(layer)
+        if layer.elevated and layer.can_elevate then return math.max(layer.size or 1, rails.elevated_width()) end
+        return layer.size or 1
+    end,
     --- @param layer Layer
     init = function(layer)
         -- Rail items per piece (curved and half-diagonal pieces cost more).

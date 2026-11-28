@@ -46,6 +46,7 @@ lib.bands = bands.bands
 --- @field layer integer
 --- @field frame integer|nil   # spaced entities: the curve sample they were placed at
 --- @field direction integer|nil  # defines.direction (0..15), if not north
+--- @field arrow false|nil        # no arrow in the preview: a direction that tells the player nothing (rail supports)
 --- @field color Color|nil        # lamps
 --- @field ammo {name: string, quality: string, count: integer, inventory: string}|nil  # turrets: ammo to request
 --- @field belt_type "input"|"output"|nil  # underground belts

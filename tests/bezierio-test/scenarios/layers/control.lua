@@ -236,6 +236,7 @@ step("built-in presets, as new players get them", function(player)
   check(mid[-1].type == "turret" and mid[-1].name == "flamethrower-turret" and mid[-2].type == "pipe" and mid[0].name == "stone-wall",
     "mid-game wall: flamethrowers, a pipe line, walls")
   check(list[4].layers[1].type == "straight-rail" and list[4].layers[0].type == "electric-pole", "railway: rails and big poles")
+  check(list[4].layers[1].smoothing == 2 and list[4].layers[-2].smoothing == 2, "railway: both tracks smoothed (2)")
   for _ = 1, 3 do
     dev("select", P, "preset_select", 2)
     dev("click", P, "preset_delete")

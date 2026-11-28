@@ -8,7 +8,8 @@
 ---
 --- The blueprint uses absolute snapping with a grid the size of the build, offset
 --- so that it snaps exactly onto where the plan was previewed (and stamps further
---- copies end to end).
+--- copies end to end). With track, the grid keeps to the 2x2 rail grid: its corner
+--- on an even tile and its size even (up to a tile more each way).
 local wires = require("scripts.build.wires")
 
 local lib = {}
@@ -36,6 +37,7 @@ lib.COST = { entity = 1, tile = 1, wire = 1, write = 0.5 }
 --- @field min_y number|nil
 --- @field max_x number|nil
 --- @field max_y number|nil
+--- @field rail_grid boolean|nil               # it holds track: its grid on the 2x2 rail grid
 --- @field origin {x: integer, y: integer}|nil   # world position of blueprint (0, 0)
 --- @field size {x: integer, y: integer}|nil
 --- @field entities BlueprintEntity[]
@@ -110,6 +112,7 @@ local function step_bounds(job, budget)
             local e = plan.entities[i]
             local half = e.size / 2
             grow(job, e.position.x - half, e.position.y - half, e.position.x + half, e.position.y + half)
+            if e.track then job.rail_grid = true end
         else
             local t = plan.tiles[i - n_entities]
             grow(job, t.x, t.y, t.x + 1, t.y + 1)
@@ -119,8 +122,19 @@ local function step_bounds(job, budget)
     end
     if job.cursor > total then
         local ox, oy = math.floor(job.min_x), math.floor(job.min_y)
+        local sx, sy = math.max(1, math.ceil(job.max_x) - ox), math.max(1, math.ceil(job.max_y) - oy)
+        if job.rail_grid then
+            -- Track lies on a 2x2 grid: the blueprint's grid has to as well (the
+            -- game rounds an odd grid size up, and its blueprint window refuses an
+            -- odd grid position: "need to be either all even or all odd"). So
+            -- the corner goes to an even tile and the size up to an even one.
+            local ex, ey = ox % 2, oy % 2
+            ox, oy = ox - ex, oy - ey
+            sx, sy = sx + ex, sy + ey
+            sx, sy = sx + sx % 2, sy + sy % 2
+        end
         job.origin = { x = ox, y = oy }
-        job.size = { x = math.max(1, math.ceil(job.max_x) - ox), y = math.max(1, math.ceil(job.max_y) - oy) }
+        job.size = { x = sx, y = sy }
         job.stage, job.cursor = "entities", 1
     end
     return used

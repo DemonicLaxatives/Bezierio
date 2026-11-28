@@ -481,6 +481,30 @@ elevated-rails quality` if the game's rails change.
   line (squared) plus `ANGLE_WEIGHT` × the direction error (squared), and lays
   the first piece of the best. Past the line's ends, distance is to the line
   extended, so the lookahead doesn't bend the track towards the end point.
+- Before the fit, `rails.round_line` rounds the line where it bends tighter than
+  rails turn (`MAX_CURVATURE`: 22.5° per 5.1-tile curved piece, about 13 tiles of
+  radius, measured over `BEND_SPAN` tiles each way). That happens to the middle
+  of a band on the inside of a bend tighter than its distance from the curve:
+  nearly a corner. The track used to overshoot it and, looking only `DEPTH`
+  pieces ahead, find no way back that didn't first lead further away, so it ran
+  on straight (70 tiles in a reported railway) before swinging back. Each such
+  stretch is replaced by its average over a window of points, twice, the window
+  doubled until the rails can follow; the rest of the line stays as it is. So the
+  track turns early and cuts inside the corner, away from the layers on the
+  other side. As a safety net, a fit that is off the line anyway looks
+  `RECOVER_DEPTH` pieces ahead until it's back.
+- *Smoothing* (0 to 6, default 2, also in the built-in railway preset;
+  `rails.smoothing`) trades closeness for calm track. Layers from before the
+  setting get the default too (`registry.check_fields`). The
+  fit at 0 hugs the line, so where the line heads between two of the 16 rail
+  directions it turns back and forth every few pieces. Each level lets the track
+  stray another half tile from the line at no cost (only distance beyond that
+  counts), and charges for every piece that turns another way than the one
+  before (straight on, left, right: up to 3 from level 4). Longer runs of one
+  direction come out of that, within the same 4-piece lookahead. Tuned on random
+  calm curves: level 6 changes its turning about a third as often as 0 and strays
+  about 2 tiles on average (0.4 at 0); beyond that it got no smoother. Ends are
+  reported only beyond `TOLERANCE` plus 1.5 times the free distance.
 - A closed curve closes when a search of up to `CLOSE_DEPTH` pieces reaches the
   start end within `TOLERANCE`. An open one stops near its end. Ends further than
   `TOLERANCE` from the line, a fit that stops getting along the line (`STALL`),
@@ -490,16 +514,38 @@ elevated-rails quality` if the game's rails change.
 - Signals every `signal_spacing × WAGON` tiles along the track, at the end's
   `out_signal_location` (the side for forward travel; verified in the game),
   or the reversed end's for backward travel, both for both ways. They may stand on
-  `"rail"` cells.
+  `"rail"` cells. None goes at either end of a ramp: the game doesn't let a player
+  place a signal there, top or foot, even with track on both sides (script
+  creation does, so an instant build got one: at the foot, given as elevated,
+  it hung in the air beyond the ramp). Such a signal moves on to the next joint.
 - Elevated (the elevated-rails mod): pieces are `elevated-*`, claim no tiles and
   signals get `rail_layer = "elevated"` (the outputs pass it to `create_entity`;
   the executor skips ground checks for them). With *Ramps* (open curves only), the
   fit starts with a ramp up and finishes with a ramp down at the last orthogonal
   end it can. If the band bends until too near its end for a ramp to land there,
   the ramp goes down from where the track ends, past the curve's end. Ramps are straight and orthogonal only. `rails.supports` then puts
-  supports at joints greedily as far apart as their range allows (`range - 1`
-  from a support, `ramp_range - 1` past a ramp top). Supports are planned before
+  supports at joints greedily as far apart as the game lets them carry the track.
+  Measured there: a piece is carried when both its ends are within `range - 1` (10)
+  of one support, or `ramp_range - 1` (8) of a ramp's top; two supports 20 apart
+  carry all the straight track between them, but a piece with each end in reach
+  of a different support isn't carried. At the first piece not carried, the
+  support goes at the furthest joint ahead that carries it and everything up to
+  there. Script and ghost placement don't check this (an instant build or ghosts
+  succeed without supports): the `rails` scenario places the planned pieces with
+  a player's check instead, and checks that no support could be left out.
+  Supports and ramps are wider than the track. A support's collision box turns
+  with its 8 directions (d and d + 8 are the same support), so it covers a 4x4
+  square around its joint, with the corners cut facing diagonally
+  (`rails.support_cells`, measured by the `rail-data` scenario with a probe wall
+  filling almost its tile); a ramp is 4 tiles across. The ramps' tiles are claimed
+  first, then each support claims its own, at the joint where it would go if
+  those tiles are free (of other track, ramps and earlier supports), else at the
+  next nearer one, else an earlier one that still carries the piece; a piece no
+  support can carry is a warning. An elevated layer's band is that wide (`rails.elevated_width`,
+  4), so the layers beside it keep clear of them. Supports are planned before
   the rails, so their ghosts are there when the elevated rail ghosts are placed.
+  The preview draws them without an arrow (`arrow = false`): their direction
+  only follows the track's.
 Rail items per piece come from `items_to_place_this` (curved pieces cost more).
 
 A finished job keeps only what's read afterwards (`planner.KEEP_WHEN_DONE`:
@@ -511,7 +557,7 @@ Values a layer derives from its prototype (size, wire reach, supply area,
 layers and again on every configuration change; layers whose prototype is gone
 become empty, and so do layers whose item is gone. An unknown quality becomes
 normal. `registry.check_fields` then clamps the numbers into their (possibly
-new) ranges and drops items and priority targets that are gone or no longer
+new) ranges (a slider missing from an older layer gets its default) and drops items and priority targets that are gone or no longer
 fit; it also runs on new layers after their defaults, and import strings go
 through `registry.carry_over`, which rounds and clamps like the sliders and
 takes only enemy types as priority targets (`registry.is_target`).
@@ -620,6 +666,14 @@ the description a note. **Load from generated blueprint** (`gui/control.lua`) re
 from the held blueprint (cursor item, the active one in a book, or a library
 record) and loads both through the import paths (`curve_control.load`,
 `preset_control.load`).
+
+A blueprint with track keeps its grid on the 2x2 rail grid: its corner on an even
+tile and its size even, a tile bigger each way at most (`rail_grid`). The game
+rounds an odd grid size of such a blueprint up (it would no longer snap onto the
+preview), and its blueprint window refuses an odd grid position ("Grid position
+and blueprint grid position coordinates need to be either all even or all
+odd"); the API accepts both. Without track the grid is exactly the build's
+size, so copies stamp end to end.
 
 When a plan's warnings are shown (a finished preview, once per plan revision:
 `work.marks_revision`) and again after an executor build, `jobs.lua` marks the
@@ -778,7 +832,7 @@ tests/run.sh build                                     # preview, totals, builds
 tests/run.sh types                                     # turrets, lamps, mines, radars, solar panels, accumulators (with space-age: railguns fed, lightning rods on Fulgora)
 tests/run.sh paths                                     # belts and pipes: real entities flow, undergrounds pair, pumps split segments, the pump picker
 tests/run.sh feeds                                     # inserters feed turrets, flamethrowers piped (straight, diagonal), gates over rails
-tests/run.sh rails                                     # continuous track, signal sides, ghosts, blueprints, gates across walls (elevated with the DLC)
+tests/run.sh rails                                     # continuous track, signal sides, ghosts, blueprints, gates across walls (blueprints of track on the rail grid and stamping onto the plan wherever the build lies; smoothing: fewer turns, one continuous track; elevated with the DLC: every piece carried by the supports, every signal one a player could place there, none of the supports needless, 20 apart on a straight; walls right beside them all built)
 tests/run.sh build space-age quality elevated-rails    # same, with DLC mods enabled
 tests/gen-rail-data.sh space-age elevated-rails quality # regenerate scripts/build/rail_data.lua
 tests/migrate-save.sh                                  # the game applies migrations/ to a real save
@@ -799,7 +853,7 @@ tests/run.sh bench                                     # timing (read the BENCH 
 | `layer_types.lua` | Turret facing (both sides, inward) and non-square footprints (other types too), ammo, lamp colours and rainbow, radar and lightning attractor spacing, land mine density, determinism and wires; side wall layers around a circle joined side by side. |
 | `paths.lua` | Belts fed only from behind and lines continuous, undergrounds paired within reach, pipe lines connected and apart, pumps (1x3 ones too); on a gentle curve, a loop and random curves. |
 | `feeds.lua` | Fluid connection targets in every facing (straight and diagonal, against the game), inserters picking from a belt and dropping into their turret (normal and long reach, straight and curved lines; railguns, which don't fill their square, by their turned collision box), smart poles counting inserters of non-square turrets by their own footprint, pipe stubs reaching one network, and a plain pipe where the line has pipes-to-ground. |
-| `rails.lua` | The rail data; fits stay near calm curves, circles close, elevated track has ramps at both ends and supports in reach of every joint, slanted ends warn; signal counts follow the spacing (doubled both ways); planning progress never goes back. |
+| `rails.lua` | The rail data; fits stay near calm curves, circles close, elevated track has ramps at both ends and every piece carried by a support or a ramp, supports 20 apart on a straight, slanted ends warn; each smoothing level turns back and forth less and stays within its allowance; a railway with a bend tighter than its inner track can follow has that track cut inside the corner, near the curve and apart from the other track; `round_line` rounds a right angle to what rails follow and leaves the rest; no signal at a ramp's ends, the rest of an elevated track's elevated; no support shares a tile with anything (two elevated tracks side by side with walls beside them, a figure eight crossing itself), a support whose joint is taken moves to another in reach, and one that fits nowhere is reported; signal counts follow the spacing (doubled both ways); planning progress never goes back. |
 | `shapes.lua` | What the handles mean; samples exactly on circles, (rotated) ellipses and arcs; direction; editing shapes and moving curves; spaced entities round a loop keep apart at the seam. |
 | `migrations.lua` | The files in `migrations/`, run like the game does: 0.1 data discarded, pre-release dev data reset, current data untouched, newer data reset. |
 
@@ -824,7 +878,9 @@ tests/run.sh bench                                     # timing (read the BENCH 
   in `tests/bezierio-test/lib/flow.lua`.
 - `tests/bezierio-test/data.lua` adds test-only prototypes standing in for other
   mods' (a 1x3 pump that fits a pipe line, a 2x2 one that doesn't). They're in
-  every scenario's game, so pickers offer them too.
+  every scenario's game, so pickers offer them too. It also adds
+  `bezierio-test-probe`, a wall filling almost its whole tile (no item), with
+  which the `rail-data` scenario measures the tiles a rail support covers.
 - To add a scenario: create `tests/bezierio-test/scenarios/<name>/control.lua`,
   add steps with `flow.step` and end with `flow.run("<name>")`, and add it to
   `tests/run_all.sh`.

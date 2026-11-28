@@ -1,6 +1,7 @@
 -- Test-only prototypes, standing in for what other mods add.
 --   bezierio-test-long-pump: a 1x3 pump, input and output in line (fits a pipe line)
 --   bezierio-test-wide-pump: a 2x2 pump (doesn't: refused by the pipe layer's pump picker)
+--   bezierio-test-probe: a wall filling almost its tile (below)
 
 local function pump(name, collision, selection, output_at, input_at)
     local entity = table.deepcopy(data.raw["pump"]["pump"])
@@ -19,3 +20,14 @@ end
 
 pump("bezierio-test-long-pump", { { -0.29, -1.4 }, { 0.29, 1.4 } }, { { -0.5, -1.5 }, { 0.5, 1.5 } }, { 0, -1 }, { 0, 1 })
 pump("bezierio-test-wide-pump", { { -0.9, -0.9 }, { 0.9, 0.9 } }, { { -1, -1 }, { 1, 1 } }, { -0.5, -0.5 }, { -0.5, 0.5 })
+
+-- bezierio-test-probe: a wall filling almost its whole tile, no item. The
+-- rail-data scenario puts one in each tile around a rail support: where it
+-- can't go, the support covers that tile (a stone wall is smaller, ±0.29).
+local probe = table.deepcopy(data.raw["wall"]["stone-wall"])
+probe.name = "bezierio-test-probe"
+probe.collision_box = { { -0.49, -0.49 }, { 0.49, 0.49 } }
+probe.minable = nil
+probe.next_upgrade = nil
+probe.fast_replaceable_group = nil
+data:extend({ probe })

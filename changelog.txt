@@ -1,4 +1,17 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.2.3
+Date: 28.11.2026
+  Features:
+    - Rail layers have a Smoothing setting: higher values let the track stray further from the curve for longer straights and steadier bends. It is 2 by default.
+  Changes:
+    - Elevated rail layers now take a band as wide as their supports and ramps (4 tiles), so the layers beside them keep clear.
+  Bugfixes:
+    - Rail supports are planned with their actual footprint, and no longer collide with walls, ramps, other supports or other tracks.
+    - Rail supports no longer show a direction arrow in the preview.
+    - Rail supports are placed as far apart as the game allows (20 tiles on a straight stretch), instead of about twice as often as needed.
+    - Rail track on the inside of a bend tighter than rails can turn now cuts inside the corner, instead of running straight on far past it and swinging back.
+    - Blueprints with rails keep their grid on the rail grid.
+---------------------------------------------------------------------------------------------------
 Version: 0.2.2
 Date: 27.11.2026
   Features:
