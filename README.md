@@ -101,6 +101,11 @@ releases too (`.github/workflows/portal.yml`):
   the portal's page data doesn't include, always goes), with the description's
   image links (relative, `images/NAME`, so GitHub shows them on any branch)
   swapped for the portal's.
+- Videos (`.webm`, `.mp4`, ...) can't be uploaded to the portal. Keep them in
+  `images/` too, committed, but out of `order.txt`: `detail.py` links them in
+  the GitHub repository at the commit being synced (the tag's, in the workflow;
+  by hand HEAD, which must be pushed, or `--ref`), so the page keeps showing the
+  video it was synced with.
 
 Both take `--dry-run` (they only read the public page then; any non-empty
 `FACTORIO_API_KEY` will do). The key needs "ModPortal: Edit Mods" for this, and

@@ -114,3 +114,18 @@ def test_an_image_stored_but_off_the_page_is_put_back(tmp_path):
     changed, entries = images.sync(client, "Bezierio", d)
     assert changed and client.calls == [("set", [sha(b"A")])]
     assert entries[0]["id_on_mod_portal"] == sha(b"A") and entries[0]["url"] == f"https://assets/{sha(b'A')}.png"
+
+
+def test_a_video_in_the_order_stops_it(tmp_path):
+    d = folder(tmp_path, {"a.png": b"A", "demo.webm": b"V"}, ["a.png", "demo.webm"])
+    client = FakePortal()
+    with pytest.raises(common.ReleaseError, match="videos"):
+        images.sync(client, "Bezierio", d)
+    assert client.calls == []
+
+
+def test_a_video_beside_the_images_is_left_alone(tmp_path):
+    d = folder(tmp_path, {"a.png": b"A", "demo.webm": b"V"}, ["a.png"])
+    client = FakePortal()
+    changed, entries = images.sync(client, "Bezierio", d)
+    assert [e["name_in_repo"] for e in entries] == ["a.png"] and ("add", "demo.webm") not in client.calls

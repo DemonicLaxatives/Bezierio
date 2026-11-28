@@ -9,6 +9,8 @@ tag), or by hand with FACTORIO_API_KEY ("ModPortal: Edit Mods").
   off the page), unless it's that already.
 - mod-portal-ids.json is rewritten: per image, its file's SHA1 and its id, url
   and thumbnail on the portal (detail.py links the description's images to them).
+- Videos in the folder are none of its business: the portal takes none, so
+  order.txt mustn't name them (detail.py links them in the repository).
 
 Usage: python3 release/images.py [--dry-run]
 """
@@ -67,6 +69,10 @@ def sync(client, mod, images_dir=IMAGES, dry_run=False):
     """Bring the portal in line; (changed: bool, entries: [ids.json entry])."""
     images_dir = pathlib.Path(images_dir)
     order = read_order((images_dir / "order.txt").read_text(encoding="utf-8"))
+    videos = [n for n in order if common.is_video(n)]
+    if videos:
+        raise common.ReleaseError(f"order.txt names videos, which the portal doesn't take: {videos} "
+                                  "(leave them out: detail.py links them in the repository)")
     missing = [n for n in order if not (images_dir / n).exists()]
     if missing:
         raise common.ReleaseError(f"order.txt names images that aren't there: {missing}")

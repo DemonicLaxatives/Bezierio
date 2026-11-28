@@ -21,6 +21,15 @@ SEPARATOR = "-" * 99
 VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
 
+#: Video files: the mod portal takes none (images.py won't upload them; detail.py
+#: links them in the GitHub repository).
+VIDEO_TYPES = ("webm", "mp4", "m4v", "mov", "ogv")
+
+
+def is_video(name):
+    return name.rsplit(".", 1)[-1].lower() in VIDEO_TYPES
+
+
 class ReleaseError(Exception):
     """Something that must stop a release, with what to do about it."""
 
