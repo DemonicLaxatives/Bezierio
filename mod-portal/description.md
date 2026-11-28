@@ -34,6 +34,8 @@ Draw a curve, stack up layers of walls, floors, power lines, turrets, belts, pip
 
 ## How to use
 
+![A demonstration](images/demo.webm "Demo")
+
 1. **Open the window** with the Bézierio button at the top left. It has three sections: Curve, Layers and Build.
 
 2. **Draw the curve.** Take the pointer (the pointer button, or Alt+Z):
